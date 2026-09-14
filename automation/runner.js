@@ -785,6 +785,36 @@ async function run() {
                 await page.waitForTimeout(1000);
             }
         }
+
+        if (data.documentForTradeNameFile) {
+            sendUpdate('Uploading Document for Trade Name...');
+            let filePathToUpload = data.documentForTradeNameFile;
+            
+            if (data.documentForTradeNameFile.startsWith('data:image') || data.documentForTradeNameFile.startsWith('data:application/pdf')) {
+                const base64Data = data.documentForTradeNameFile.replace(/^data:(image|application)\/\w+;base64,/, "");
+                const fs = require('fs');
+                const path = require('path');
+                const ext = data.documentForTradeNameFile.includes('application/pdf') ? 'pdf' : 'jpg';
+                const tempFilePath = path.join(__dirname, `temp_tradename.${ext}`);
+                fs.writeFileSync(tempFilePath, base64Data, 'base64');
+                filePathToUpload = tempFilePath;
+            }
+            
+            try {
+                // Wait for the upload inputs and try to use the last one (since trade name upload is second)
+                const fileInputs = page.locator('input[type="file"]');
+                const count = await fileInputs.count();
+                if (count > 1) {
+                    await fileInputs.nth(1).setInputFiles(filePathToUpload);
+                } else if (count > 0) {
+                    await fileInputs.last().setInputFiles(filePathToUpload);
+                }
+            } catch (e) {
+                sendUpdate('Warning: Could not upload Trade Name Document');
+            }
+            await page.waitForTimeout(1000);
+        }
+
         await page.waitForTimeout(2000);
         await saveAndContinueToTab(page, 'Promoter', '#newRegForm button.btn.btn-primary:has-text("Save & Continue")');
 

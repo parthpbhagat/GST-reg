@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: gst-automation-backend
+    env: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: SUPABASE_URL
+        value: https://mgxsxpbrzmcmzlzgzfde.supabase.co
+      - key: SUPABASE_KEY
+        value: sb_publishable_159AAeN0gJjlQK7IgozhRQ_5yWUUKmm

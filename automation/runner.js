@@ -424,6 +424,33 @@ async function run() {
 
         await page.waitForSelector('#trnno', { state: 'visible', timeout: 30000 });
         await page.fill('#trnno', trnText);
+        
+        // Attempt to fill Email Address on TRN login screen (new portal update)
+        try {
+            sendUpdate('Checking for Email Address field on TRN login...');
+            // Try common selectors for the email field
+            const emailLocators = [
+                page.locator('#email'),
+                page.locator('#trn_email'),
+                page.getByRole('textbox', { name: /Email/i }),
+                page.locator('label').filter({ hasText: /Email/i }).locator('..').locator('input')
+            ];
+            
+            let emailFilled = false;
+            for (const loc of emailLocators) {
+                if (await loc.count() > 0 && await loc.first().isVisible()) {
+                    await loc.first().fill(data.email);
+                    emailFilled = true;
+                    sendUpdate('Successfully filled Email Address on TRN login.');
+                    break;
+                }
+            }
+            if (!emailFilled) {
+                sendUpdate('Could not find Email field, skipping (might not be required).');
+            }
+        } catch (e) {
+            console.error('Error filling TRN email:', e);
+        }
 
         let trnLoginSuccess = false;
         while (!trnLoginSuccess) {

@@ -11,7 +11,10 @@ if (!supabaseUrl || !supabaseKey) {
     process.exit(1);
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+const WebSocket = require('ws');
+const supabase = createClient(supabaseUrl, supabaseKey, {
+    global: { WebSocket }
+});
 
 console.log('Connected to Supabase client successfully.');
 

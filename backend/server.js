@@ -73,7 +73,7 @@ app.get('/api/hsn/:code', (req, res) => {
 });
 
 // POST /api/applications - Submit a new application
-app.post('/api/applications', (req, res) => {
+app.post('/api/applications', async (req, res) => {
     const { appId, data } = req.body;
     
     if (!appId || !data) {
@@ -81,46 +81,44 @@ app.post('/api/applications', (req, res) => {
     }
 
     const userEmail = req.body.userEmail || data.userEmail || null;
-    const dataString = JSON.stringify(data);
     const status = 'Pending'; // Default status
 
-    db.run(
-        `INSERT INTO applications (appId, data, status, userEmail) VALUES (?, ?, ?, ?)
-         ON CONFLICT(appId) DO UPDATE SET data = excluded.data, status = excluded.status, userEmail = excluded.userEmail`,
-        [appId, dataString, status, userEmail],
-        function (err) {
-            if (err) {
-                console.error('Error saving application:', err.message);
-                return res.status(500).json({ error: 'Failed to save application' });
-            }
-            res.status(201).json({ message: 'Application submitted successfully', appId });
-        }
-    );
+    const { error } = await db.from('applications').upsert({
+        appId: appId,
+        data: data,
+        status: status,
+        userEmail: userEmail
+    }, { onConflict: 'appId' });
+
+    if (error) {
+        console.error('Error saving application:', error.message);
+        return res.status(500).json({ error: 'Failed to save application' });
+    }
+    res.status(201).json({ message: 'Application submitted successfully', appId });
 });
 
 // GET /api/applications - Get all applications
-app.get('/api/applications', (req, res) => {
-    db.all(`SELECT * FROM applications ORDER BY createdAt DESC`, [], (err, rows) => {
-        if (err) {
-            console.error('Error fetching applications:', err.message);
-            return res.status(500).json({ error: 'Failed to fetch applications' });
-        }
-        
-        // Parse the JSON data string back into an object before sending to frontend
-        const applications = rows.map(row => ({
-            appId: row.appId,
-            status: row.status,
-            date: row.createdAt,
-            trn: row.trn,
-            data: JSON.parse(row.data)
-        }));
+app.get('/api/applications', async (req, res) => {
+    const { data: rows, error } = await db.from('applications').select('*').order('createdAt', { ascending: false });
 
-        res.json(applications);
-    });
+    if (error) {
+        console.error('Error fetching applications:', error.message);
+        return res.status(500).json({ error: 'Failed to fetch applications' });
+    }
+    
+    const applications = rows.map(row => ({
+        appId: row.appId,
+        status: row.status,
+        date: row.createdAt,
+        trn: row.trn,
+        data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data
+    }));
+
+    res.json(applications);
 });
 
 // PUT /api/applications/:id/status - Update application status (Admin Approve/Reject)
-app.put('/api/applications/:id/status', (req, res) => {
+app.put('/api/applications/:id/status', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
@@ -128,154 +126,140 @@ app.put('/api/applications/:id/status', (req, res) => {
         return res.status(400).json({ error: 'status is required' });
     }
 
-    db.get(`SELECT * FROM applications WHERE appId = ?`, [id], (err, row) => {
-        if (err || !row) {
-            return res.status(404).json({ error: 'Application not found' });
-        }
+    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).single();
 
-        let dataString = row.data;
-        
-        if (status === 'Accepted' || status === 'Approved') {
-            try {
-                const appData = JSON.parse(row.data);
-                const legalName = appData.legalName || id;
-                const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                const fs = require('fs');
-                const path = require('path');
-                const dirPath = path.join(__dirname, 'data', safeLegalName);
-                
-                if (!fs.existsSync(dirPath)) {
-                    fs.mkdirSync(dirPath, { recursive: true });
-                }
+    if (fetchErr || !row) {
+        return res.status(404).json({ error: 'Application not found' });
+    }
 
-                function processFiles(obj, parentKey = '') {
-                    let updated = false;
-                    for (let key in obj) {
-                        if (typeof obj[key] === 'string' && obj[key].startsWith('data:')) {
-                            const matches = obj[key].match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-                            if (matches && matches.length === 3) {
-                                const mimeType = matches[1];
-                                const base64Data = matches[2];
-                                let ext = mimeType.split('/')[1] || 'bin';
-                                if (ext === 'jpeg') ext = 'jpg';
-                                if (ext === 'vnd.openxmlformats-officedocument.wordprocessingml.document') ext = 'docx';
-                                
-                                let prefix = parentKey ? `${parentKey}_` : '';
-                                let fileName;
+    let appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+    
+    if (status === 'Accepted' || status === 'Approved') {
+        try {
+            const legalName = appData.legalName || id;
+            const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            const fs = require('fs');
+            const path = require('path');
+            const dirPath = path.join(__dirname, 'data', safeLegalName);
+            
+            if (!fs.existsSync(dirPath)) {
+                fs.mkdirSync(dirPath, { recursive: true });
+            }
+
+            function processFiles(obj, parentKey = '') {
+                let updated = false;
+                for (let key in obj) {
+                    if (typeof obj[key] === 'string' && obj[key].startsWith('data:')) {
+                        const matches = obj[key].match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+                        if (matches && matches.length === 3) {
+                            const mimeType = matches[1];
+                            const base64Data = matches[2];
+                            let ext = mimeType.split('/')[1] || 'bin';
+                            if (ext === 'jpeg') ext = 'jpg';
+                            if (ext === 'vnd.openxmlformats-officedocument.wordprocessingml.document') ext = 'docx';
+                            
+                            let prefix = parentKey ? `${parentKey}_` : '';
+                            let fileName;
+                            if (key === 'promoterPhotoFile' && obj.firstName) {
+                                const safeFirstName = obj.firstName.replace(/[^a-zA-Z0-9]/g, '_');
+                                fileName = `promoterPhoto_${safeFirstName}.${ext}`;
+                            } else {
+                                fileName = `${prefix}${key}.${ext}`;
+                            }
+                            console.log(`[DEBUG processFiles] key: ${key}, parentKey: '${parentKey}', obj.firstName: '${obj.firstName}', prefix: '${prefix}', fileName: ${fileName}`);
+                            let filePath = path.join(dirPath, fileName);
+                            
+                            if (fs.existsSync(filePath)) {
                                 if (key === 'promoterPhotoFile' && obj.firstName) {
                                     const safeFirstName = obj.firstName.replace(/[^a-zA-Z0-9]/g, '_');
-                                    fileName = `promoterPhoto_${safeFirstName}.${ext}`;
+                                    fileName = `promoterPhoto_${safeFirstName}_${Date.now()}.${ext}`;
                                 } else {
-                                    fileName = `${prefix}${key}.${ext}`;
+                                    fileName = `${prefix}${key}_${Date.now()}.${ext}`;
                                 }
-                                console.log(`[DEBUG processFiles] key: ${key}, parentKey: '${parentKey}', obj.firstName: '${obj.firstName}', prefix: '${prefix}', fileName: ${fileName}`);
-                                let filePath = path.join(dirPath, fileName);
-                                
-                                if (fs.existsSync(filePath)) {
-                                    if (key === 'promoterPhotoFile' && obj.firstName) {
-                                        const safeFirstName = obj.firstName.replace(/[^a-zA-Z0-9]/g, '_');
-                                        fileName = `promoterPhoto_${safeFirstName}_${Date.now()}.${ext}`;
-                                    } else {
-                                        fileName = `${prefix}${key}_${Date.now()}.${ext}`;
-                                    }
-                                    filePath = path.join(dirPath, fileName);
-                                }
-                                
-                                fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-                                
-                                // Save the full absolute file path in the database
-                                obj[key] = filePath;
-                                updated = true;
+                                filePath = path.join(dirPath, fileName);
                             }
-                        } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-                            if (processFiles(obj[key], Array.isArray(obj) ? parentKey : key)) {
-                                updated = true;
-                            }
+                            
+                            fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+                            
+                            // Save the full absolute file path in the database
+                            obj[key] = filePath;
+                            updated = true;
+                        }
+                    } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+                        if (processFiles(obj[key], Array.isArray(obj) ? parentKey : key)) {
+                            updated = true;
                         }
                     }
-                    return updated;
                 }
-
-                let dataUpdated = processFiles(appData);
-                
-                if (dataUpdated) {
-                    dataString = JSON.stringify(appData);
-                }
-            } catch (e) {
-                console.error('Error processing application documents:', e);
+                return updated;
             }
+
+            processFiles(appData);
+        } catch (e) {
+            console.error('Error processing application documents:', e);
         }
+    }
 
-        db.run(
-            `UPDATE applications SET status = ?, data = ? WHERE appId = ?`,
-            [status, dataString, id],
-            function (updateErr) {
-                if (updateErr) {
-                    console.error('Error updating status:', updateErr.message);
-                    return res.status(500).json({ error: 'Failed to update status' });
-                }
-                res.json({ message: 'Status updated successfully', appId: id, status });
-            }
-        );
-    });
+    const { error: updateErr } = await db.from('applications').update({ status, data: appData }).eq('appId', id);
+
+    if (updateErr) {
+        console.error('Error updating status:', updateErr.message);
+        return res.status(500).json({ error: 'Failed to update status' });
+    }
+    res.json({ message: 'Status updated successfully', appId: id, status });
 });
 
 // DELETE /api/applications/:id - Delete an application
-app.delete('/api/applications/:id', (req, res) => {
+app.delete('/api/applications/:id', async (req, res) => {
     const { id } = req.params;
 
     // First fetch the application to get the legalName and delete its folder
-    db.get(`SELECT * FROM applications WHERE appId = ?`, [id], (fetchErr, row) => {
-        if (!fetchErr && row) {
-            try {
-                const appData = JSON.parse(row.data);
-                const legalName = appData.legalName || id;
-                const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                const fs = require('fs');
-                const path = require('path');
-                const dirPath = path.join(__dirname, 'data', safeLegalName);
-                
-                if (fs.existsSync(dirPath)) {
-                    fs.rmSync(dirPath, { recursive: true, force: true });
-                }
-            } catch (e) {
-                console.error('Error deleting application folder:', e);
-            }
-        }
+    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).single();
 
-        // Then delete from the database
-        db.run(
-            `DELETE FROM applications WHERE appId = ?`,
-            [id],
-            function (err) {
-                if (err) {
-                    console.error('Error deleting application:', err.message);
-                    return res.status(500).json({ error: 'Failed to delete application' });
-                }
-                if (this.changes === 0) {
-                    return res.status(404).json({ error: 'Application not found' });
-                }
-                res.json({ message: 'Application and associated files deleted successfully', appId: id });
+    if (!fetchErr && row) {
+        try {
+            const appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            const legalName = appData.legalName || id;
+            const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            const fs = require('fs');
+            const path = require('path');
+            const dirPath = path.join(__dirname, 'data', safeLegalName);
+            
+            if (fs.existsSync(dirPath)) {
+                fs.rmSync(dirPath, { recursive: true, force: true });
             }
-        );
-    });
+        } catch (e) {
+            console.error('Error deleting application folder:', e);
+        }
+    }
+
+    // Then delete from the database
+    const { error: deleteErr, count } = await db.from('applications').delete({ count: 'exact' }).eq('appId', id);
+
+    if (deleteErr) {
+        console.error('Error deleting application:', deleteErr.message);
+        return res.status(500).json({ error: 'Failed to delete application' });
+    }
+    if (count === 0) {
+        return res.status(404).json({ error: 'Application not found' });
+    }
+    res.json({ message: 'Application and associated files deleted successfully', appId: id });
 });
 
 // PUT /api/applications/:id/trn - Save TRN
-app.put('/api/applications/:id/trn', (req, res) => {
+app.put('/api/applications/:id/trn', async (req, res) => {
     const { id } = req.params;
     const { trn } = req.body;
 
     if (!trn) return res.status(400).json({ error: 'trn is required' });
 
-    db.run(
-        `UPDATE applications SET trn = ? WHERE appId = ?`,
-        [trn, id],
-        function (err) {
-            if (err) return res.status(500).json({ error: 'Failed to update TRN' });
-            res.json({ message: 'TRN saved successfully', appId: id, trn });
-        }
-    );
+    const { error } = await db.from('applications').update({ trn }).eq('appId', id);
+    
+    if (error) {
+        console.error('Error updating TRN:', error.message);
+        return res.status(500).json({ error: 'Failed to update TRN' });
+    }
+    res.json({ message: 'TRN saved successfully', appId: id, trn });
 });
 
 const { spawn } = require('child_process');

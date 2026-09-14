@@ -1,21 +1,18 @@
-const sqlite3 = require('sqlite3').verbose();
+require('dotenv').config();
+const { createClient } = require('@supabase/supabase-js');
 
-console.log("[GST DB] Connecting to local SQLite database...");
+console.log("[GST DB] Connecting to Supabase database...");
 
-const db = new sqlite3.Database('./database.sqlite', (err) => {
-    if (err) {
-        console.error('Error opening database', err.message);
-    } else {
-        console.log('Connected to the SQLite database.');
-        db.run(`CREATE TABLE IF NOT EXISTS applications (
-            appId TEXT PRIMARY KEY,
-            data TEXT,
-            status TEXT,
-            userEmail TEXT,
-            trn TEXT,
-            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-        )`);
-    }
-});
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
 
-module.exports = db;
+if (!supabaseUrl || !supabaseKey) {
+    console.error("Missing SUPABASE_URL or SUPABASE_KEY in environment variables.");
+    process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+console.log('Connected to Supabase client successfully.');
+
+module.exports = supabase;

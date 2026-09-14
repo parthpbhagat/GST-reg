@@ -3158,25 +3158,97 @@ window.handleFileUpload = function (input, type, maxKB, updateFn) {
     if (!input.files || !input.files[0]) return;
     const file = input.files[0];
     const sizeKB = file.size / 1024;
-
-    if (sizeKB > maxKB) {
-        alert(`File size exceeds the limit of ${maxKB >= 1024 ? (maxKB / 1024) + ' MB' : maxKB + ' KB'}.`);
-        input.value = '';
-        return;
-    }
-
     const ext = file.name.split('.').pop().toLowerCase();
+    
     let validExt = [];
     if (type === 'pdf/jpeg') validExt = ['pdf', 'jpeg', 'jpg'];
     else if (type === 'jpeg') validExt = ['jpeg', 'jpg'];
 
-    if (!validExt.includes(ext)) {
+    // If it's not a valid format, but it's an image (like png), we can auto-convert it if 'type' allows jpeg!
+    const isImage = file.type.startsWith('image/');
+    
+    if (!validExt.includes(ext) && !isImage) {
         alert(`Invalid file type. Only ${type.toUpperCase()} allowed.`);
         input.value = '';
         return;
     }
 
-    const reader = new FileReader(); reader.onload = function (e) { updateFn(e.target.result, file.name); }; reader.readAsDataURL(file);
+    if (sizeKB > maxKB) {
+        if (isImage) {
+            // Auto compress image
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+                    
+                    // Scale down to max 1200px width/height for compression
+                    if (width > 1200 || height > 1200) {
+                        const ratio = Math.min(1200 / width, 1200 / height);
+                        width = width * ratio;
+                        height = height * ratio;
+                    }
+                    
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // Try quality until it fits, starting at 0.7
+                    let quality = 0.7;
+                    let dataUrl = canvas.toDataURL('image/jpeg', quality);
+                    
+                    while (dataUrl.length / 1370 > maxKB && quality > 0.1) {
+                        quality -= 0.1;
+                        dataUrl = canvas.toDataURL('image/jpeg', quality);
+                    }
+                    
+                    if (dataUrl.length / 1370 > maxKB) {
+                        alert(`Could not compress image below ${maxKB}KB. Please choose a smaller image.`);
+                        input.value = '';
+                    } else {
+                        // Successfully compressed! Rename to .jpg
+                        const newName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
+                        updateFn(dataUrl, newName);
+                    }
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            return;
+        } else {
+            alert(`File size exceeds the limit of ${maxKB >= 1024 ? (maxKB / 1024) + ' MB' : maxKB + ' KB'}. Please compress your PDF manually.`);
+            input.value = '';
+            return;
+        }
+    }
+
+    if (!validExt.includes(ext) && isImage && (type === 'jpeg' || type === 'pdf/jpeg')) {
+        // It's an image but wrong extension (like .png). Convert to .jpg
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                const newName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
+                updateFn(dataUrl, newName);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+        return;
+    }
+
+    const reader = new FileReader(); 
+    reader.onload = function (e) { updateFn(e.target.result, file.name); }; 
+    reader.readAsDataURL(file);
 };
 
 window.cancelExistingRegistration = function () {

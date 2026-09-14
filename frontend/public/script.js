@@ -1,3 +1,5 @@
+const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3002' : 'https://YOUR_BACKEND_URL.onrender.com';
+
 const mapplsService = {
     parseAddressComponents(data) {
         return {
@@ -795,7 +797,7 @@ window.submitApplication = async function () {
     });
 
     try {
-        const res = await fetch('http://localhost:3002/api/applications', {
+        const res = await fetch(`${API_BASE_URL}/api/applications`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ appId, data: payload })
@@ -1005,7 +1007,7 @@ window.renderAdminDashboard = async function () {
     }
 
     try {
-        const res = await fetch('http://localhost:3002/api/applications');
+        const res = await fetch(`${API_BASE_URL}/api/applications`);
         allApps = await res.json();
     } catch (e) {
         console.error(e);
@@ -1061,7 +1063,7 @@ window.previewApplication = function (id) {
 window.deleteApplication = async function (id) {
     if (!confirm('Are you sure you want to delete this application permanently?')) return;
     try {
-        await fetch(`http://localhost:3002/api/applications/${id}`, {
+        await fetch(`${API_BASE_URL}/api/applications/${id}`, {
             method: 'DELETE',
         });
         renderAdminDashboard();
@@ -1073,7 +1075,7 @@ window.deleteApplication = async function (id) {
 
 window.updateAppStatus = async function (id, status) {
     try {
-        await fetch(`http://localhost:3002/api/applications/${id}/status`, {
+        await fetch(`${API_BASE_URL}/api/applications/${id}/status`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status })
@@ -1278,13 +1280,13 @@ window.saveMissingFields = async function() {
     });
 
     try {
-        await fetch('http://localhost:3002/api/applications', {
+        await fetch(`${API_BASE_URL}/api/applications`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ appId: app.appId, data: app.data })
         });
         
-        await fetch(`http://localhost:3002/api/applications/${app.appId}/status`, {
+        await fetch(`${API_BASE_URL}/api/applications/${app.appId}/status`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: app.status })
@@ -1311,7 +1313,7 @@ window.startAutomationPipeline = async function (id) {
     activeAutomationAppId = id;
 
     if (!socket) {
-        socket = io('http://localhost:3002');
+        socket = io(`${API_BASE_URL}`);
         socket.on('automation_update', (msg) => {
             const status = msg.status;
             addTerminalLog(status);
@@ -1349,7 +1351,7 @@ window.startAutomationPipeline = async function (id) {
                 addTerminalLog('Application submitted successfully.');
 
                 // Fetch the updated TRN and display the big success card (with cache busting)
-                fetch(`http://localhost:3002/api/applications?t=${Date.now()}`)
+                fetch(`${API_BASE_URL}/api/applications?t=${Date.now()}`)
                     .then(res => res.json())
                     .then(apps => {
                         const app = apps.find(a => a.appId === activeAutomationAppId);
@@ -1386,7 +1388,7 @@ window.startAutomationPipeline = async function (id) {
 
     setTimeout(async () => {
         try {
-            await fetch(`http://localhost:3002/api/automation/start`, {
+            await fetch(`${API_BASE_URL}/api/automation/start`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ appId: id })
@@ -1410,7 +1412,7 @@ window.submitCaptcha = async function () {
     document.getElementById('auto-status-badge').style.color = '#60a5fa';
 
     try {
-        await fetch(`http://localhost:3002/api/automation/captcha`, {
+        await fetch(`${API_BASE_URL}/api/automation/captcha`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ appId: activeAutomationAppId, captcha: val })
@@ -1434,7 +1436,7 @@ window.submitOtp = async function () {
     document.getElementById('auto-status-badge').style.color = '#60a5fa';
 
     try {
-        await fetch(`http://localhost:3002/api/automation/otp`, {
+        await fetch(`${API_BASE_URL}/api/automation/otp`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ appId: activeAutomationAppId, mobileOtp, emailOtp })
@@ -1456,7 +1458,7 @@ window.submitTrnOtp = async function () {
 
     try {
         // We can reuse the captcha endpoint since it just pipes a single string to stdin
-        await fetch(`http://localhost:3002/api/automation/captcha`, {
+        await fetch(`${API_BASE_URL}/api/automation/captcha`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ appId: activeAutomationAppId, captcha: otp })
@@ -1473,7 +1475,7 @@ window.submitWarningResponse = async function (choice) {
     document.getElementById('auto-status-badge').style.color = '#60a5fa';
 
     try {
-        await fetch(`http://localhost:3002/api/automation/warning_response`, {
+        await fetch(`${API_BASE_URL}/api/automation/warning_response`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ appId: activeAutomationAppId, choice })
@@ -1486,7 +1488,7 @@ window.submitWarningResponse = async function (choice) {
 window.deleteFile = async function (filePath, callback) {
     if (filePath && !filePath.startsWith('data:')) {
         try {
-            await fetch('http://localhost:3002/api/file', {
+            await fetch(`${API_BASE_URL}/api/file`, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filePath })
@@ -1499,7 +1501,7 @@ window.deleteFile = async function (filePath, callback) {
 window.closeAutomationModal = async function () {
     if (typeof activeAutomationAppId !== 'undefined' && activeAutomationAppId) {
         try {
-            await fetch('http://localhost:3002/api/automation/stop', {
+            await fetch(`${API_BASE_URL}/api/automation/stop`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ appId: activeAutomationAppId })

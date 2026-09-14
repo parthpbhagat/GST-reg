@@ -690,12 +690,12 @@ async function run() {
             await page.fill('#lib', convertDateToDDMMYYYY(data.dateOfLiability));
         }
 
-        if (data.reasonToObtainRegistration) {
+        if ((data.reasonToObtainRegistration || data.reasonToObtain)) {
             sendUpdate('Selecting Reason to Obtain Registration...');
             try {
-                await page.selectOption('#bd_rsl', { label: data.reasonToObtainRegistration });
+                await page.selectOption('#bd_rsl', { label: (data.reasonToObtainRegistration || data.reasonToObtain) });
             } catch (e) {
-                sendUpdate(`Warning: Could not select Reason: ${data.reasonToObtainRegistration}`);
+                sendUpdate(`Warning: Could not select Reason: ${(data.reasonToObtainRegistration || data.reasonToObtain)}`);
             }
         }
 

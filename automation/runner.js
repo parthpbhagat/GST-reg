@@ -86,6 +86,7 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
 
     if (expectedTabName) {
         sendUpdate(`Waiting for '${expectedTabName}' tab...`);
+        let isFinished = false;
         try {
             // Race: either the next tab becomes active, OR a validation error appears within 8 seconds
             const result = await Promise.race([
@@ -102,31 +103,59 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
 
                 // Condition 2: Validation errors appear - detect and report them
                 (async () => {
-                    await new Promise(r => setTimeout(r, 5000)); // wait 5s for page to respond
-                    const errors = await page.evaluate(() => {
-                        const selectors = [
-                            '.text-danger', '.error-msg', '.has-error .help-block',
-                            'span[ng-message]', 'div.error-message', '.alert-danger',
-                            'p.text-danger', 'small.text-danger', 'label.error'
-                        ];
-                        const found = [];
-                        for (const sel of selectors) {
-                            document.querySelectorAll(sel).forEach(el => {
-                                const txt = el.innerText && el.innerText.trim();
-                                if (txt && txt.length > 2 && el.offsetParent !== null) {
-                                    found.push(txt);
-                                }
-                            });
+                    while (!isFinished) {
+                        await new Promise(r => setTimeout(r, 5000)); // wait 5s for page to respond
+                        if (isFinished) break;
+                        const errors = await page.evaluate(() => {
+                            const selectors = [
+                                '.text-danger', '.error-msg', '.has-error .help-block',
+                                'span[ng-message]', 'div.error-message', '.alert-danger',
+                                'p.text-danger', 'small.text-danger', 'label.error'
+                            ];
+                            const found = [];
+                            for (const sel of selectors) {
+                                document.querySelectorAll(sel).forEach(el => {
+                                    const txt = el.innerText && el.innerText.trim();
+                                    if (txt && txt.length > 2 && el.offsetParent !== null) {
+                                        found.push(txt);
+                                    }
+                                });
+                            }
+                            return [...new Set(found)];
+                        }).catch(() => []);
+                        if (errors.length > 0) {
+                            return { status: 'validation_error', errors };
                         }
-                        return [...new Set(found)];
-                    });
-                    if (errors.length > 0) {
-                        return { status: 'validation_error', errors };
                     }
-                    // No errors found in 5s, just wait quietly
-                    return new Promise(() => {}); // pending forever (other race will resolve)
+                    return new Promise(() => {}); // never resolve
+                })(),
+                
+                // Condition 3: Proactively handle Locality popup blocking navigation
+                (async () => {
+                    while (!isFinished) {
+                        await new Promise(r => setTimeout(r, 2000));
+                        if (isFinished) break;
+                        try {
+                            const warningEl = await page.$('text=Locality/Sub-Locality is not matching');
+                            if (warningEl) {
+                                const isVis = await warningEl.isVisible();
+                                if (isVis) {
+                                    sendUpdate('Handling Locality/Sub-Locality mismatch warning (automatically clicking YES)...');
+                                    const yesBtn = page.getByRole('button', { name: 'YES', exact: true }).first();
+                                    if (await yesBtn.isVisible({ timeout: 1000 })) {
+                                        await yesBtn.evaluate(b => b.click()).catch(() => yesBtn.click({ force: true }));
+                                    } else {
+                                        await page.click('button:has-text("YES")').catch(() => {});
+                                    }
+                                }
+                            }
+                        } catch(e) {}
+                    }
+                    return new Promise(() => {}); // never resolve
                 })()
             ]);
+            
+            isFinished = true; // Signal background conditions to stop
 
             if (result && result.status === 'validation_error') {
                 sendUpdate(`VALIDATION ERRORS on '${expectedTabName}' tab:`);

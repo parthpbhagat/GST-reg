@@ -1270,11 +1270,29 @@ async function run() {
                 }
             }
 
+            // Only count as "pure" auth sig if it's a genuinely DIFFERENT person from all promoters
             let hasPureAuthSigs = false;
+            const promoterEmails = new Set();
+            const promoterNames = new Set();
             for (let i = 1; i <= 10; i++) {
-                if (data[`a${i}`] && Object.keys(data[`a${i}`]).length > 0) {
-                    hasPureAuthSigs = true;
-                    break;
+                const p = data[`p${i}`];
+                if (p) {
+                    if (p.email) promoterEmails.add(p.email.toLowerCase().trim());
+                    const fullName = `${p.firstName||''} ${p.lastName||''}`.toLowerCase().trim();
+                    if (fullName) promoterNames.add(fullName);
+                }
+            }
+            for (let i = 1; i <= 10; i++) {
+                const a = data[`a${i}`];
+                if (a && Object.keys(a).length > 0) {
+                    const aEmail = (a.email || '').toLowerCase().trim();
+                    const aName = `${a.firstName||''} ${a.lastName||''}`.toLowerCase().trim();
+                    // Only pure if email and name don't match any promoter
+                    const isDuplicate = (aEmail && promoterEmails.has(aEmail)) || (aName && promoterNames.has(aName));
+                    if (!isDuplicate) {
+                        hasPureAuthSigs = true;
+                        break;
+                    }
                 }
             }
 

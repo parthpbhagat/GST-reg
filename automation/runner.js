@@ -2065,7 +2065,8 @@ async function run() {
         sendUpdate('COMPLETED');
 
     } catch (e) {
-        sendUpdate(`Error: ${e.message}`);
+        sendUpdate(`Error: ${e.stack || e.message}`);
+        console.error(`[Runner Error Stack]:\n${e.stack || e.message}`);
     } finally {
         try {
             if (browser && browser.isConnected()) {
@@ -2078,6 +2079,7 @@ async function run() {
 }
 
 run().catch(err => {
-    sendUpdate(`Error: ${err.message}`);
+    sendUpdate(`Error: ${err.stack || err.message}`);
+    console.error(`[Runner Fatal Error]:\n${err.stack || err.message}`);
     process.exit(1);
 });

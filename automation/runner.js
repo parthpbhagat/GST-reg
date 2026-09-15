@@ -655,7 +655,7 @@ async function run() {
 
         if (data.tradeName) {
             sendUpdate('Filling Trade Name...');
-            await page.fill('#tnm', data.tradeName);
+            await page.fill('#tnm', data.tradeName, { timeout: 3000 }).catch(() => sendUpdate('Trade Name is read-only or disabled.'));
         }
 
         if (data.businessConstitution) {
@@ -785,12 +785,12 @@ async function run() {
 
         if (data.dateOfCommencement) {
             sendUpdate('Filling Date of Commencement...');
-            await page.fill('#bd_cmbz', convertDateToDDMMYYYY(data.dateOfCommencement));
+            await page.fill('#bd_cmbz', convertDateToDDMMYYYY(data.dateOfCommencement), { timeout: 3000 }).catch(() => sendUpdate('Date of Commencement is read-only or disabled.'));
         }
 
         if (data.dateOfLiability) {
             sendUpdate('Filling Date of Liability...');
-            await page.fill('#lib', convertDateToDDMMYYYY(data.dateOfLiability));
+            await page.fill('#lib', convertDateToDDMMYYYY(data.dateOfLiability), { timeout: 3000 }).catch(() => sendUpdate('Date of Liability is read-only or disabled.'));
         }
 
         if ((data.reasonToObtainRegistration || data.reasonToObtain)) {

@@ -2866,7 +2866,7 @@ window.fetchAndSetDistricts = function (stateName, callback) {
         if (callback) callback();
         return;
     }
-    const stateCode = window.fetchedStatesMap[stateName];
+    const stateCode = window.fetchedStatesMap[stateName.toUpperCase()];
     if (!stateCode) {
         if (callback) callback();
         return;
@@ -2898,7 +2898,7 @@ window.fetchStateJurisdictions = function (callback) {
     }
     const stateName = window.form.ppob_state;
     const pincode = window.form.ppob_pincode;
-    const stateCode = stateName ? window.fetchedStatesMap[stateName] : null;
+    const stateCode = stateName ? window.fetchedStatesMap[stateName.toUpperCase()] : null;
 
     if (!stateCode || !pincode || pincode.length !== 6) {
         window.fetchedStateJurisdictions = [];
@@ -2933,7 +2933,7 @@ window.fetchCommissionerates = function (callback) {
     }
     const stateName = window.form.ppob_state;
     const pincode = window.form.ppob_pincode;
-    const stateCode = stateName ? window.fetchedStatesMap[stateName] : null;
+    const stateCode = stateName ? window.fetchedStatesMap[stateName.toUpperCase()] : null;
 
     if (!stateCode || !pincode || pincode.length !== 6) {
         window.fetchedCommissionerates = [];
@@ -2967,7 +2967,7 @@ window.fetchDivisions = function (callback) {
     const stateName = window.form.ppob_state;
     const pincode = window.form.ppob_pincode;
     const commCode = window.form.ppob_commissionerate;
-    const stateCode = stateName ? window.fetchedStatesMap[stateName] : null;
+    const stateCode = stateName ? window.fetchedStatesMap[stateName.toUpperCase()] : null;
 
     if (!stateCode || !pincode || pincode.length !== 6 || !commCode) {
         window.fetchedDivisions = [];
@@ -2995,7 +2995,7 @@ window.fetchRanges = function (callback) {
     const stateName = window.form.ppob_state;
     const pincode = window.form.ppob_pincode;
     const divCode = window.form.ppob_division;
-    const stateCode = stateName ? window.fetchedStatesMap[stateName] : null;
+    const stateCode = stateName ? window.fetchedStatesMap[stateName.toUpperCase()] : null;
 
     if (!stateCode || !pincode || pincode.length !== 6 || !divCode) {
         window.fetchedRanges = [];
@@ -3031,7 +3031,7 @@ fetch('https://reg.gst.gov.in/master/states')
         if (items.length > 0) {
             window.fetchedStates = items.map(item => {
                 const name = item.n || item.stateName || item.name || item.name_en || item;
-                if (item.c) window.fetchedStatesMap[name] = item.c;
+                if (item.c) window.fetchedStatesMap[name.toUpperCase()] = item.c;
                 return name;
             }).filter(Boolean);
             if (step === 0) renderContent();

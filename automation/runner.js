@@ -696,46 +696,43 @@ async function run() {
         async function robustFillPincode(page, selector, pincode) {
             if (!pincode) return;
             try {
-                await page.click(selector, { timeout: 2000 }).catch(() => {});
-                
+                // Focus and clear bypassing actionability checks
                 await page.evaluate((sel) => {
                     const el = document.querySelector(sel);
-                    if (el) el.value = '';
+                    if (el) { el.focus(); el.value = ''; }
                 }, selector);
                 
-                await page.type(selector, pincode, { delay: 30 });
+                // Use keyboard.type to bypass strict pointer-events checks of page.type()
+                await page.keyboard.type(pincode, { delay: 30 });
                 
                 // Wait for the dropdown list to appear
                 try {
-                    await page.waitForSelector(`ul li:has-text("${pincode}")`, { timeout: 5000 });
+                    await page.waitForSelector(`ul li:has-text("${pincode}")`, { timeout: 4000 });
                 } catch(e) {}
                 
                 const firstOptionLoc = page.locator(`ul li:has-text("${pincode}")`).first();
-                
                 let optionText = '';
-                try {
-                    optionText = await firstOptionLoc.textContent({ timeout: 3000 });
-                } catch (e) {}
+                try { optionText = await firstOptionLoc.textContent({ timeout: 2000 }); } catch (e) {}
                 
                 if (optionText && optionText.includes(pincode)) {
-                    await firstOptionLoc.click({ timeout: 5000 }).catch(() => { });
+                    await firstOptionLoc.evaluate(el => el.click()).catch(() => firstOptionLoc.click({ force: true }));
                     sendUpdate(`Pincode ${pincode} verified and selected.`);
                 } else {
                     sendUpdate(`Pincode glitch detected. Clearing and retrying once...`);
                     
                     await page.evaluate((sel) => {
                         const el = document.querySelector(sel);
-                        if (el) el.value = '';
+                        if (el) { el.focus(); el.value = ''; }
                     }, selector);
                     
-                    await page.waitForTimeout(1000);
-                    await page.type(selector, pincode, { delay: 50 });
+                    await page.waitForTimeout(500);
+                    await page.keyboard.type(pincode, { delay: 50 });
                     
                     try {
-                        await page.waitForSelector(`ul li:has-text("${pincode}")`, { timeout: 5000 });
+                        await page.waitForSelector(`ul li:has-text("${pincode}")`, { timeout: 4000 });
                     } catch(e) {}
                     
-                    await page.locator(`ul li:has-text("${pincode}")`).first().click({ timeout: 5000 }).catch(() => { });
+                    await page.locator(`ul li:has-text("${pincode}")`).first().evaluate(el => el.click()).catch(() => page.locator(`ul li:has-text("${pincode}")`).first().click({ force: true }));
                 }
                 await page.waitForTimeout(1000);
             } catch (e) {

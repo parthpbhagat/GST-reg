@@ -179,18 +179,20 @@ async function run() {
     sendUpdate('INITIALIZING: Starting headless browser...');
 
     // Fetch data from backend API
-    const data = await new Promise((resolve, reject) => {
+    const appData = await new Promise((resolve, reject) => {
         http.get('http://localhost:3002/api/applications', (res) => {
             let body = '';
             res.on('data', chunk => body += chunk);
             res.on('end', () => {
                 const apps = JSON.parse(body);
                 const app = apps.find(a => a.appId === appId);
-                if (app) resolve(app.data);
+                if (app) resolve(app);
                 else reject(new Error('App not found'));
             });
         }).on('error', reject);
     });
+    
+    const data = appData.data;
 
     sendUpdate('Navigating to official GST portal...');
 
@@ -202,10 +204,16 @@ async function run() {
     try {
         await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded' });
 
-        sendUpdate('Injecting form payload data...');
+        let trnText = '';
+        
+        if (appData.trn && appData.trn.trim().length > 5) {
+            trnText = appData.trn;
+            sendUpdate(`Application already has TRN: ${trnText}. Skipping Part A...`);
+        } else {
+            sendUpdate('Injecting form payload data...');
 
-        // Wait for first field to be ready
-        await page.waitForSelector('#applnType');
+            // Wait for first field to be ready
+            await page.waitForSelector('#applnType');
 
         // Full taxpayer type mapping for all GST portal dropdown options
         // Portal #applnType dropdown options from regindex1.0.js / preregtypes.json:
@@ -464,7 +472,7 @@ async function run() {
             return el && el.textContent.trim().length > 5;
         }, { timeout: 60000 });
 
-        const trnText = await trnLocator.textContent();
+        trnText = await trnLocator.textContent();
 
         sendUpdate(`TRN Generated: ${trnText}`);
 
@@ -481,6 +489,8 @@ async function run() {
             req.write(JSON.stringify({ trn: trnText }));
             req.end();
         });
+        
+        } // End of Part A else block
 
         // Go directly to TRN Login by reloading the registration page and clicking the TRN radio button
         sendUpdate('Navigating to TRN Login screen...');

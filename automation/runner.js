@@ -1500,21 +1500,31 @@ async function run() {
 
             if (data.ppob_city) {
                 sendUpdate('Filling City in Principal Place of Business...');
-                const cityInput = page.locator('#loc').first();
-                try {
-                    await cityInput.click({ timeout: 3000 });
-                    // Select all existing text and delete it
-                    await page.keyboard.press('Control+A');
-                    await page.keyboard.press('Backspace');
-                    await cityInput.fill('');
-                    await page.waitForTimeout(300);
-                    // Now type the new city name
-                    await cityInput.type(data.ppob_city, { delay: 30 });
-                    await page.waitForTimeout(2000);
-                    await page.locator(`ul li:has-text("${data.ppob_city}")`).first().click({ timeout: 5000 }).catch(() => { });
-                    await page.waitForTimeout(1000);
-                } catch (e) {
-                    sendUpdate('Warning: Could not fill city field');
+                // Try multiple possible selectors for city field
+                const citySelectors = ['#loc', '#bp_cty', '#city', 'input[placeholder*="City"]', 'input[placeholder*="Town"]', '#ppbzdtls_city'];
+                let cityFilled = false;
+                for (const sel of citySelectors) {
+                    try {
+                        const cityInput = page.locator(sel).first();
+                        if (await cityInput.count() > 0 && await cityInput.isVisible({ timeout: 2000 })) {
+                            await cityInput.click({ timeout: 2000 });
+                            await page.keyboard.press('Control+A');
+                            await page.keyboard.press('Backspace');
+                            await cityInput.fill('');
+                            await page.waitForTimeout(300);
+                            await cityInput.type(data.ppob_city, { delay: 30 });
+                            await page.waitForTimeout(2000);
+                            // Try clicking autocomplete option if it appears
+                            await page.locator(`ul li:has-text("${data.ppob_city}")`).first().click({ timeout: 3000 }).catch(() => {});
+                            await page.waitForTimeout(500);
+                            cityFilled = true;
+                            sendUpdate(`City '${data.ppob_city}' filled using selector '${sel}'.`);
+                            break;
+                        }
+                    } catch (e) { /* try next selector */ }
+                }
+                if (!cityFilled) {
+                    sendUpdate('Warning: Could not find city field. Continuing...');
                 }
             }
 

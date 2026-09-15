@@ -1529,39 +1529,86 @@ async function run() {
             }
 
             if (data.ppob_locality) {
-                await page.type('#ppbzdtls_locality', data.ppob_locality, { delay: 30 });
+                try {
+                    // Try multiple selectors for locality
+                    for (const sel of ['#ppbzdtls_locality', '#locality', '#loc_sbloc', 'input[placeholder*="Locality"]']) {
+                        if (await page.locator(sel).count() > 0) {
+                            await page.locator(sel).first().fill('');
+                            await page.locator(sel).first().type(data.ppob_locality, { delay: 30 });
+                            sendUpdate(`Locality filled.`);
+                            break;
+                        }
+                    }
+                } catch (e) { sendUpdate('Warning: Could not fill locality field'); }
             }
 
             if (data.ppob_street) {
-                await page.type('#st', data.ppob_street, { delay: 30 });
-                await page.waitForTimeout(2000);
-                const firstWord = data.ppob_street.split(' ')[0] || data.ppob_street;
-                await page.locator(`ul li:has-text("${firstWord}")`).first().click({ timeout: 5000 }).catch(() => { });
-                await page.waitForTimeout(1000);
+                try {
+                    for (const sel of ['#st', '#street', '#rd', 'input[placeholder*="Road"]', 'input[placeholder*="Street"]']) {
+                        if (await page.locator(sel).count() > 0) {
+                            await page.locator(sel).first().fill('');
+                            await page.locator(sel).first().type(data.ppob_street, { delay: 30 });
+                            await page.waitForTimeout(1500);
+                            await page.locator(`ul li`).first().click({ timeout: 3000 }).catch(() => {});
+                            sendUpdate(`Street filled.`);
+                            break;
+                        }
+                    }
+                } catch (e) { sendUpdate('Warning: Could not fill street field'); }
             }
 
             if (data.ppob_building) {
-                await page.type('#bp_bdname', data.ppob_building, { delay: 30 });
-                await page.waitForTimeout(2000);
-                const firstWord = data.ppob_building.split(' ')[0] || data.ppob_building;
-                await page.locator(`ul li:has-text("${firstWord}")`).first().click({ timeout: 5000 }).catch(() => { });
-                await page.waitForTimeout(1000);
+                try {
+                    for (const sel of ['#bp_bdname', '#bdname', '#building', 'input[placeholder*="Building"]', 'input[placeholder*="Premises"]']) {
+                        if (await page.locator(sel).count() > 0) {
+                            await page.locator(sel).first().fill('');
+                            await page.locator(sel).first().type(data.ppob_building, { delay: 30 });
+                            await page.waitForTimeout(1500);
+                            await page.locator(`ul li`).first().click({ timeout: 3000 }).catch(() => {});
+                            sendUpdate(`Building filled.`);
+                            break;
+                        }
+                    }
+                } catch (e) { sendUpdate('Warning: Could not fill building field'); }
             }
 
             if (data.ppob_flatNo) {
-                await page.type('#bno', data.ppob_flatNo, { delay: 30 });
-                await page.waitForTimeout(2000);
-                const firstWord = data.ppob_flatNo.split(' ')[0] || data.ppob_flatNo;
-                await page.locator(`ul li:has-text("${firstWord}")`).first().click({ timeout: 5000 }).catch(() => { });
-                await page.waitForTimeout(1000);
+                try {
+                    for (const sel of ['#bno', '#flatno', '#flat', 'input[placeholder*="Flat"]', 'input[placeholder*="Door"]']) {
+                        if (await page.locator(sel).count() > 0) {
+                            await page.locator(sel).first().fill('');
+                            await page.locator(sel).first().type(data.ppob_flatNo, { delay: 30 });
+                            await page.waitForTimeout(1000);
+                            await page.locator(`ul li`).first().click({ timeout: 2000 }).catch(() => {});
+                            sendUpdate(`Flat No filled.`);
+                            break;
+                        }
+                    }
+                } catch (e) { sendUpdate('Warning: Could not fill flat no field'); }
             }
 
             if (data.ppob_floor) {
-                await page.type('#bp_flrnum', data.ppob_floor, { delay: 30 });
+                try {
+                    for (const sel of ['#bp_flrnum', '#flrnum', '#floor', 'input[placeholder*="Floor"]']) {
+                        if (await page.locator(sel).count() > 0) {
+                            await page.locator(sel).first().fill(data.ppob_floor);
+                            sendUpdate(`Floor filled.`);
+                            break;
+                        }
+                    }
+                } catch (e) { sendUpdate('Warning: Could not fill floor field'); }
             }
 
             if (data.ppob_landmark) {
-                await page.type('#ppbzdtls_landmark', data.ppob_landmark, { delay: 30 });
+                try {
+                    for (const sel of ['#ppbzdtls_landmark', '#landmark', 'input[placeholder*="Landmark"]']) {
+                        if (await page.locator(sel).count() > 0) {
+                            await page.locator(sel).first().fill(data.ppob_landmark);
+                            sendUpdate(`Landmark filled.`);
+                            break;
+                        }
+                    }
+                } catch (e) { sendUpdate('Warning: Could not fill landmark field'); }
             }
 
             const selectDropdownRobust = async (selector, text) => {

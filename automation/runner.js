@@ -93,8 +93,10 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
                 // Condition 1: Next tab becomes active
                 page.waitForFunction((expectedName) => {
                     const activeTabs = Array.from(document.querySelectorAll('li.active a, li.active span, .nav-tabs li.active, .step-wizard .active, .wizard-step.active'));
+                    const possibleNames = expectedName.toLowerCase().split('|').map(s => s.trim());
                     for (let tab of activeTabs) {
-                        if (tab.innerText && tab.innerText.toLowerCase().includes(expectedName.toLowerCase())) {
+                        const tabText = tab.innerText ? tab.innerText.toLowerCase() : '';
+                        if (possibleNames.some(name => tabText.includes(name))) {
                             return true;
                         }
                     }
@@ -1957,9 +1959,9 @@ async function run() {
             // Save & Continue for State Specific section
             const stateSpecificSaveBtn = page.locator('#newRegForm > div.row.next-tab-nav > div > div > button');
             if (await stateSpecificSaveBtn.isVisible({ timeout: 5000 })) {
-                await saveAndContinueToTab(page, 'Verification', '#newRegForm > div.row.next-tab-nav > div > div > button');
+                await saveAndContinueToTab(page, 'Verification|Aadhaar Authentication', '#newRegForm > div.row.next-tab-nav > div > div > button');
             } else {
-                await saveAndContinueToTab(page, 'Verification', 'button[title="Save & Continue"]');
+                await saveAndContinueToTab(page, 'Verification|Aadhaar Authentication', 'button[title="Save & Continue"]');
             }
 
         } catch (e) {
@@ -1967,52 +1969,18 @@ async function run() {
         }
 
         // ============================================
-        // VERIFICATION DETAILS
+        // VERIFICATION DETAILS (or Aadhaar Auth)
         // ============================================
-        sendUpdate('Processing Verification Details...');
-        try {
-            await page.waitForTimeout(3000);
-            
-            sendUpdate('Checking declaration...');
-            // GST verification checkbox
-            const checkbox = page.locator('input[type="checkbox"]').first();
-            await checkbox.check().catch(() => checkbox.evaluate(el => el.click()).catch(() => checkbox.click({ force: true })));
-            
-            await page.waitForTimeout(1000);
-            sendUpdate('Selecting Authorized Signatory...');
-            // The select dropdown for Auth Sig
-            const authSigDropdown = page.locator('select').first();
-            const optionsCount = await authSigDropdown.locator('option').count();
-            if (optionsCount > 1) {
-                await authSigDropdown.selectOption({ index: 1 });
-            }
-            
-            await page.waitForTimeout(1000);
-            sendUpdate('Entering Place...');
-            const place = data.ppob_city || data.ppob_district || 'City';
-            await page.fill('#place', place).catch(async () => {
-                const inputs = page.locator('input[type="text"]');
-                const count = await inputs.count();
-                for (let i = 0; i < count; i++) {
-                    const placeholder = await inputs.nth(i).getAttribute('placeholder') || '';
-                    if (placeholder.toLowerCase().includes('place')) {
-                        await inputs.nth(i).fill(place);
-                        break;
-                    }
-                }
-            });
-            
-            sendUpdate('Verification details filled successfully.');
-            await page.waitForTimeout(2000);
-            sendUpdate('Please review and click SUBMIT WITH DSC or SUBMIT WITH EVC on the portal.');
-        } catch (e) {
-            sendUpdate(`Warning: Verification section failed: ${e.message}`);
-        }
-
         sendUpdate('Checking if Aadhaar Authentication page is reached...');
-        await page.waitForTimeout(5000); // Give it time to load
+        await page.waitForTimeout(2000);
 
         const isAadhaarPage = await page.evaluate(() => {
+            const activeTabs = Array.from(document.querySelectorAll('li.active a, li.active span, .nav-tabs li.active, .step-wizard .active, .wizard-step.active'));
+            for (let tab of activeTabs) {
+                if (tab.innerText && tab.innerText.toLowerCase().includes('aadhaar')) {
+                    return true;
+                }
+            }
             const text = document.body.innerText.toLowerCase();
             return text.includes('aadhaar authentication') || 
                    text.includes('aadhar authentication') || 
@@ -2020,10 +1988,46 @@ async function run() {
         });
 
         if (isAadhaarPage) {
-            sendUpdate('Aadhaar Authentication page reached. Closing browser...');
-            await browser.close();
+            sendUpdate('Aadhaar Authentication page reached. Leaving browser open for manual interaction...');
+            sendUpdate('Please complete Aadhaar Authentication and Verification manually.');
         } else {
-            sendUpdate('Aadhaar Authentication page NOT reached. Leaving browser open for manual interaction...');
+            sendUpdate('Processing Verification Details...');
+            try {
+                sendUpdate('Checking declaration...');
+                // GST verification checkbox
+                const checkbox = page.locator('input[type="checkbox"]').first();
+                await checkbox.check().catch(() => checkbox.evaluate(el => el.click()).catch(() => checkbox.click({ force: true })));
+                
+                await page.waitForTimeout(1000);
+                sendUpdate('Selecting Authorized Signatory...');
+                // The select dropdown for Auth Sig
+                const authSigDropdown = page.locator('select').first();
+                const optionsCount = await authSigDropdown.locator('option').count();
+                if (optionsCount > 1) {
+                    await authSigDropdown.selectOption({ index: 1 });
+                }
+                
+                await page.waitForTimeout(1000);
+                sendUpdate('Entering Place...');
+                const place = data.ppob_city || data.ppob_district || 'City';
+                await page.fill('#place', place).catch(async () => {
+                    const inputs = page.locator('input[type="text"]');
+                    const count = await inputs.count();
+                    for (let i = 0; i < count; i++) {
+                        const placeholder = await inputs.nth(i).getAttribute('placeholder') || '';
+                        if (placeholder.toLowerCase().includes('place')) {
+                            await inputs.nth(i).fill(place);
+                            break;
+                        }
+                    }
+                });
+                
+                sendUpdate('Verification details filled successfully.');
+                await page.waitForTimeout(2000);
+                sendUpdate('Please review and click SUBMIT WITH DSC or SUBMIT WITH EVC on the portal.');
+            } catch (e) {
+                sendUpdate(`Warning: Verification section failed: ${e.message}`);
+            }
         }
 
         // Clean up all temporary files created during this automation run

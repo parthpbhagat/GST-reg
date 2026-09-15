@@ -726,9 +726,15 @@ async function run() {
                     
                     try {
                         await page.waitForSelector(`ul li:has-text("${pincode}")`, { timeout: 4000 });
-                    } catch(e) {}
-                    
-                    await page.locator(`ul li:has-text("${pincode}")`).first().evaluate(el => el.click()).catch(() => page.locator(`ul li:has-text("${pincode}")`).first().click({ force: true }));
+                        const retryOption = page.locator(`ul li:has-text("${pincode}")`).first();
+                        if (await retryOption.count() > 0) {
+                            await retryOption.evaluate(el => el.click()).catch(() => retryOption.click({ force: true, timeout: 2000 }));
+                            sendUpdate(`Pincode ${pincode} verified and selected on retry.`);
+                        }
+                    } catch(e) {
+                        sendUpdate(`Pincode autocomplete did not load. Continuing with manual input.`);
+                        await page.keyboard.press('Tab');
+                    }
                 }
                 await page.waitForTimeout(1000);
             } catch (e) {

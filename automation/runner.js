@@ -89,22 +89,60 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
     }
 
     if (expectedTabName) {
-        sendUpdate(`Waiting for '${expectedTabName}' tab... If there is a validation error, please fix it manually on the GST portal.`);
+        sendUpdate(`Waiting for '${expectedTabName}' tab...`);
         try {
-            await page.waitForFunction((expectedName) => {
-                const activeTabs = Array.from(document.querySelectorAll('li.active a, li.active span, .nav-tabs li.active'));
-                for (let tab of activeTabs) {
-                    if (tab.innerText && tab.innerText.toLowerCase().includes(expectedName.toLowerCase())) {
-                        return true;
+            // Race: either the next tab becomes active, OR a validation error appears within 8 seconds
+            const result = await Promise.race([
+                // Condition 1: Next tab becomes active
+                page.waitForFunction((expectedName) => {
+                    const activeTabs = Array.from(document.querySelectorAll('li.active a, li.active span, .nav-tabs li.active, .step-wizard .active, .wizard-step.active'));
+                    for (let tab of activeTabs) {
+                        if (tab.innerText && tab.innerText.toLowerCase().includes(expectedName.toLowerCase())) {
+                            return true;
+                        }
                     }
-                }
-                return false;
-            }, expectedTabName, { timeout: 600000 }); // Wait up to 10 minutes
-            sendUpdate(`'${expectedTabName}' tab is now active! Proceeding...`);
+                    return false;
+                }, expectedTabName, { timeout: 600000 }).then(() => ({ status: 'success' })),
+
+                // Condition 2: Validation errors appear - detect and report them
+                (async () => {
+                    await new Promise(r => setTimeout(r, 5000)); // wait 5s for page to respond
+                    const errors = await page.evaluate(() => {
+                        const selectors = [
+                            '.text-danger', '.error-msg', '.has-error .help-block',
+                            'span[ng-message]', 'div.error-message', '.alert-danger',
+                            'p.text-danger', 'small.text-danger', 'label.error'
+                        ];
+                        const found = [];
+                        for (const sel of selectors) {
+                            document.querySelectorAll(sel).forEach(el => {
+                                const txt = el.innerText && el.innerText.trim();
+                                if (txt && txt.length > 2 && el.offsetParent !== null) {
+                                    found.push(txt);
+                                }
+                            });
+                        }
+                        return [...new Set(found)];
+                    });
+                    if (errors.length > 0) {
+                        return { status: 'validation_error', errors };
+                    }
+                    // No errors found in 5s, just wait quietly
+                    return new Promise(() => {}); // pending forever (other race will resolve)
+                })()
+            ]);
+
+            if (result && result.status === 'validation_error') {
+                sendUpdate(`VALIDATION ERRORS on '${expectedTabName}' tab:`);
+                result.errors.forEach(err => sendUpdate(`  ❌ ${err}`));
+                sendUpdate(`Please fix these errors and retry.`);
+            } else {
+                sendUpdate(`'${expectedTabName}' tab is now active! Proceeding...`);
+            }
         } catch (e) {
-            sendUpdate(`Error: Timed out waiting for '${expectedTabName}' tab after 10 minutes.`);
+            sendUpdate(`Error: Timed out waiting for '${expectedTabName}' tab.`);
         }
-        await page.waitForTimeout(2000); // Give it a moment to fully render
+        await page.waitForTimeout(2000);
     } else {
         await page.waitForTimeout(3000);
     }

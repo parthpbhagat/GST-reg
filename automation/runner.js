@@ -27,21 +27,17 @@ async function handleLocalityWarning(page) {
     try {
         const warningEl = await page.waitForSelector('text=Locality/Sub-Locality is not matching', { state: 'visible', timeout: 3000 }).catch(() => null);
         if (warningEl) {
-            console.log('WAITING_FOR_WARNING_RESPONSE');
-
-            const choice = await new Promise(resolve => {
-                process.stdin.once('data', (input) => {
-                    resolve(input.toString().trim().toLowerCase());
-                });
-            });
-
-            if (choice === 'yes') {
-                sendUpdate('User selected YES, proceeding with saved details...');
-                await page.click('#confirmDialogue_cancel_btn');
+            sendUpdate('Handling Locality/Sub-Locality mismatch warning (automatically clicking YES)...');
+            
+            // Try specific selector first, then text based fallback
+            const yesBtn = page.getByRole('button', { name: 'YES', exact: true }).first();
+            if (await yesBtn.isVisible({ timeout: 2000 })) {
+                await yesBtn.evaluate(b => b.click()).catch(() => yesBtn.click({ force: true }));
             } else {
-                sendUpdate('User selected NO, rejecting saved details...');
-                await page.click('#confirmDialogue_ok_btn');
+                // Fallbacks if getByRole fails
+                await page.click('button:has-text("YES")').catch(() => {});
             }
+            
             await page.waitForTimeout(2000);
         }
     } catch (e) {

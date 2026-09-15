@@ -675,6 +675,19 @@ async function run() {
             return dateStr;
         }
 
+        async function handleDocumentLegibilityModal(page) {
+            try {
+                // Wait briefly for modal to appear
+                await page.waitForTimeout(1500);
+                const continueBtn = page.locator('button').filter({ hasText: /^CONTINUE$/i }).first();
+                if (await continueBtn.isVisible({ timeout: 2000 })) {
+                    sendUpdate('Handling document legibility warning popup (clicking Continue)...');
+                    await continueBtn.click({ timeout: 2000 });
+                    await page.waitForTimeout(1000);
+                }
+            } catch(e) {}
+        }
+
         async function robustFillPincode(page, selector, pincode) {
             if (!pincode) return;
             try {
@@ -686,7 +699,11 @@ async function run() {
                 }, selector);
                 
                 await page.type(selector, pincode, { delay: 30 });
-                await page.waitForTimeout(2500);
+                
+                // Wait for the dropdown list to appear
+                try {
+                    await page.waitForSelector(`ul li:has-text("${pincode}")`, { timeout: 5000 });
+                } catch(e) {}
                 
                 const firstOptionLoc = page.locator(`ul li:has-text("${pincode}")`).first();
                 
@@ -708,7 +725,10 @@ async function run() {
                     
                     await page.waitForTimeout(1000);
                     await page.type(selector, pincode, { delay: 50 });
-                    await page.waitForTimeout(3000);
+                    
+                    try {
+                        await page.waitForSelector(`ul li:has-text("${pincode}")`, { timeout: 5000 });
+                    } catch(e) {}
                     
                     await page.locator(`ul li:has-text("${pincode}")`).first().click({ timeout: 5000 }).catch(() => { });
                 }
@@ -820,7 +840,7 @@ async function run() {
                     sendUpdate('Warning: Intercept failed for Constitution Proof, attempting direct input assignment...');
                     await page.setInputFiles('#bd_upload', filePathToUpload).catch(() => { });
                 }
-                await page.waitForTimeout(1000);
+                await handleDocumentLegibilityModal(page);
             }
         }
 
@@ -850,7 +870,7 @@ async function run() {
             } catch (e) {
                 sendUpdate('Warning: Could not upload Trade Name Document');
             }
-            await page.waitForTimeout(1000);
+            await handleDocumentLegibilityModal(page);
         }
 
         await page.waitForTimeout(2000);
@@ -973,8 +993,7 @@ async function run() {
                         sendUpdate(`Warning: Intercept failed for Promoter ${promoterIndex} photo, attempting direct input assignment...`);
                         await page.setInputFiles('#pd_upload', filePathToUpload).catch(() => { });
                     }
-
-                    await page.waitForTimeout(1000);
+                    await handleDocumentLegibilityModal(page);
                 }
 
                 // NOTE: The alsoAuthorizedSignatory click is handled ONLY by clickAlsoAuthorizedSignatoryIfNeeded()
@@ -1182,7 +1201,7 @@ async function run() {
                     sendUpdate('Warning: Intercept failed for Auth Sig Proof, attempting direct input assignment...');
                     await page.setInputFiles('#as_upload_sign', filePathToUpload).catch(() => { });
                 }
-                await page.waitForTimeout(2000);
+                await handleDocumentLegibilityModal(page);
             }
 
             if (authSig.authSigPhotoFile) {
@@ -1207,7 +1226,7 @@ async function run() {
                     sendUpdate('Warning: Intercept failed for Auth Sig Photo, attempting direct input assignment...');
                     await page.setInputFiles('#as_upload_photo', filePathToUpload).catch(() => { });
                 }
-                await page.waitForTimeout(4000);
+                await handleDocumentLegibilityModal(page);
             }
         }
 
@@ -1435,7 +1454,7 @@ async function run() {
                             sendUpdate('Warning: Intercept failed for Auth Sig Proof, attempting direct input assignment...');
                             await page.setInputFiles('#as_upload_sign', filePathToUpload).catch(() => { });
                         }
-                        await page.waitForTimeout(2000);
+                        await handleDocumentLegibilityModal(page);
                     }
 
                     sendUpdate('Clicking Save button...');
@@ -1676,7 +1695,7 @@ async function run() {
                     sendUpdate('Warning: Intercept failed for PPOB Document, attempting direct input assignment...');
                     await page.setInputFiles('#bp_upload', filePathToUpload).catch(() => { });
                 }
-                await page.waitForTimeout(1000);
+                await handleDocumentLegibilityModal(page);
             }
 
             if (data.ppob_natureOfBusiness) {

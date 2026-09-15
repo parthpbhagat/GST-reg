@@ -1931,6 +1931,49 @@ async function run() {
             sendUpdate(`Warning: State Specific section failed: ${e.message}`);
         }
 
+        // ============================================
+        // VERIFICATION DETAILS
+        // ============================================
+        sendUpdate('Processing Verification Details...');
+        try {
+            await page.waitForTimeout(3000);
+            
+            sendUpdate('Checking declaration...');
+            // GST verification checkbox
+            const checkbox = page.locator('input[type="checkbox"]').first();
+            await checkbox.check().catch(() => checkbox.evaluate(el => el.click()).catch(() => checkbox.click({ force: true })));
+            
+            await page.waitForTimeout(1000);
+            sendUpdate('Selecting Authorized Signatory...');
+            // The select dropdown for Auth Sig
+            const authSigDropdown = page.locator('select').first();
+            const optionsCount = await authSigDropdown.locator('option').count();
+            if (optionsCount > 1) {
+                await authSigDropdown.selectOption({ index: 1 });
+            }
+            
+            await page.waitForTimeout(1000);
+            sendUpdate('Entering Place...');
+            const place = data.ppob_city || data.ppob_district || 'City';
+            await page.fill('#place', place).catch(async () => {
+                const inputs = page.locator('input[type="text"]');
+                const count = await inputs.count();
+                for (let i = 0; i < count; i++) {
+                    const placeholder = await inputs.nth(i).getAttribute('placeholder') || '';
+                    if (placeholder.toLowerCase().includes('place')) {
+                        await inputs.nth(i).fill(place);
+                        break;
+                    }
+                }
+            });
+            
+            sendUpdate('Verification details filled successfully.');
+            await page.waitForTimeout(2000);
+            sendUpdate('Please review and click SUBMIT WITH DSC or SUBMIT WITH EVC on the portal.');
+        } catch (e) {
+            sendUpdate(`Warning: Verification section failed: ${e.message}`);
+        }
+
         sendUpdate('Checking if Aadhaar Authentication page is reached...');
         await page.waitForTimeout(5000); // Give it time to load
 

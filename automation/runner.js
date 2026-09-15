@@ -677,13 +677,18 @@ async function run() {
 
         async function handleDocumentLegibilityModal(page) {
             try {
-                // Wait briefly for modal to appear
-                await page.waitForTimeout(1500);
-                const continueBtn = page.locator('button').filter({ hasText: /^CONTINUE$/i }).first();
-                if (await continueBtn.isVisible({ timeout: 2000 })) {
+                // The popup might take a few seconds to appear after upload
+                const continueBtn = page.getByRole('button', { name: 'CONTINUE', exact: true }).first();
+                // Wait up to 5 seconds for the popup
+                await continueBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+                
+                if (await continueBtn.isVisible()) {
                     sendUpdate('Handling document legibility warning popup (clicking Continue)...');
-                    await continueBtn.click({ timeout: 2000 });
-                    await page.waitForTimeout(1000);
+                    // Use evaluate to click it directly to bypass any pointer-events issues
+                    await continueBtn.evaluate(b => b.click()).catch(async () => {
+                        await continueBtn.click({ force: true });
+                    });
+                    await page.waitForTimeout(1500);
                 }
             } catch(e) {}
         }

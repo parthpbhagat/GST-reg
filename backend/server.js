@@ -238,6 +238,17 @@ app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     // First fetch the application to get the legalName and delete its folder
+    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).eq('user_id', req.user.id).single();
+
+    if (!fetchErr && row) {
+        try {
+            const appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            const legalName = appData.legalName || id;
+            const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            const fs = require('fs');
+            const path = require('path');
+            const dirPath = path.join(__dirname, 'data', safeLegalName);
+            
             if (fs.existsSync(dirPath)) {
                 fs.rmSync(dirPath, { recursive: true, force: true });
             }
@@ -247,14 +258,14 @@ app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
     }
 
     // Then delete from the database
-    const { error: deleteErr, count } = await db.from('applications').delete({ count: 'exact' }).eq('appId', id);
+    const { error: deleteErr, count } = await db.from('applications').delete({ count: 'exact' }).eq('appId', id).eq('user_id', req.user.id);
 
     if (deleteErr) {
         console.error('Error deleting application:', deleteErr.message);
         return res.status(500).json({ error: 'Failed to delete application' });
     }
     if (count === 0) {
-        return res.status(404).json({ error: 'Application not found' });
+        return res.status(404).json({ error: 'Application not found or unauthorized' });
     }
     res.json({ message: 'Application and associated files deleted successfully', appId: id });
 });

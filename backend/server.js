@@ -21,21 +21,9 @@ app.use(express.json({ limit: '50mb' }));
 
 // Auth Middleware using Supabase
 const authenticateToken = async (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-        return res.status(401).json({ error: 'Missing authorization token' });
-    }
-
-    const { data: { user }, error } = await db.auth.getUser(token);
-    
-    if (error || !user) {
-        return res.status(403).json({ error: 'Invalid or expired token' });
-    }
-    
-    req.user = user;
-    next();
+    // TEMP DISABLE LOGIN
+    req.user = { id: 'temp-admin-id', email: 'temp-admin@test.com' };
+    return next();
 };
 
 // Socket.io connection handling

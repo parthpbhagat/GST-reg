@@ -12,20 +12,12 @@ if (window.supabase) {
 let authToken = localStorage.getItem('sb_token');
 
 async function checkAuth() {
-    try {
-        const { data, error } = await supabaseClient.auth.getSession();
-        if (error || !data || !data.session) {
-            window.location.href = '/login.html';
-        } else {
-            authToken = data.session.access_token;
-            localStorage.setItem('sb_token', authToken);
-            const emailDisplay = document.getElementById('userEmailDisplay');
-            if (emailDisplay) emailDisplay.innerText = data.session.user.email;
-        }
-    } catch (e) {
-        console.error('Auth check failed:', e);
-        window.location.href = '/login.html';
-    }
+    // TEMP DISABLE LOGIN
+    authToken = 'temp-token';
+    localStorage.setItem('sb_token', authToken);
+    const emailDisplay = document.getElementById('userEmailDisplay');
+    if (emailDisplay) emailDisplay.innerText = 'temp-admin@test.com';
+    return;
 }
 
 document.addEventListener('DOMContentLoaded', () => {

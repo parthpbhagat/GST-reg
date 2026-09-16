@@ -12,14 +12,19 @@ if (window.supabase) {
 let authToken = localStorage.getItem('sb_token');
 
 async function checkAuth() {
-    const { data: { session } } = await supabaseClient.auth.getSession();
-    if (!session) {
+    try {
+        const { data, error } = await supabaseClient.auth.getSession();
+        if (error || !data || !data.session) {
+            window.location.href = '/login.html';
+        } else {
+            authToken = data.session.access_token;
+            localStorage.setItem('sb_token', authToken);
+            const emailDisplay = document.getElementById('userEmailDisplay');
+            if (emailDisplay) emailDisplay.innerText = data.session.user.email;
+        }
+    } catch (e) {
+        console.error('Auth check failed:', e);
         window.location.href = '/login.html';
-    } else {
-        authToken = session.access_token;
-        localStorage.setItem('sb_token', authToken);
-        const emailDisplay = document.getElementById('userEmailDisplay');
-        if (emailDisplay) emailDisplay.innerText = session.user.email;
     }
 }
 
@@ -3471,15 +3476,9 @@ window.handleRoute = function() {
     const header = document.querySelector('header.top');
     
     if (path === '/admin') {
-        if (!isAdmin) {
-            document.getElementById('user-wizard-container').classList.remove('hidden');
-            if (header) header.classList.remove('hidden');
-            window.openAdminLogin();
-        } else {
-            document.getElementById('admin-dashboard-container').classList.remove('hidden');
-            if (header) header.classList.add('hidden');
-            renderAdminDashboard();
-        }
+        document.getElementById('admin-dashboard-container').classList.remove('hidden');
+        if (header) header.classList.add('hidden');
+        renderAdminDashboard();
     } else if (path === '/automation') {
         document.getElementById('automation-platform-container').classList.remove('hidden');
         if (header) header.classList.add('hidden');

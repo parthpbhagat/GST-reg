@@ -1028,15 +1028,26 @@ async function run() {
                     }
 
                     try {
-                        const [fileChooser] = await Promise.all([
-                            page.waitForEvent('filechooser', { timeout: 10000 }),
-                            page.click('#pd_upload')
-                        ]);
-
-                        await fileChooser.setFiles(filePathToUpload);
+                        // First try: direct setInputFiles (most reliable)
+                        const uploadInput = page.locator('#pd_upload');
+                        const isVisible = await uploadInput.count() > 0;
+                        if (isVisible) {
+                            await page.evaluate(() => {
+                                const el = document.querySelector('#pd_upload');
+                                if (el) el.removeAttribute('style');
+                            });
+                            await uploadInput.setInputFiles(filePathToUpload).catch(async () => {
+                                // Second try: filechooser event
+                                sendUpdate(`Warning: Direct upload failed for Promoter ${promoterIndex} photo, trying filechooser...`);
+                                const [fileChooser] = await Promise.all([
+                                    page.waitForEvent('filechooser', { timeout: 8000 }),
+                                    page.click('#pd_upload')
+                                ]);
+                                await fileChooser.setFiles(filePathToUpload);
+                            });
+                        }
                     } catch (uploadErr) {
-                        sendUpdate(`Warning: Intercept failed for Promoter ${promoterIndex} photo, attempting direct input assignment...`);
-                        await page.setInputFiles('#pd_upload', filePathToUpload).catch(() => { });
+                        sendUpdate(`Warning: Could not upload Promoter ${promoterIndex} photo: ${uploadErr.message}`);
                     }
                     await handleDocumentLegibilityModal(page);
                 }
@@ -1105,15 +1116,18 @@ async function run() {
                     sendUpdate(`Promoter ${i + 1} found. Clicking Add New...`);
 
                     try {
-                        await page.waitForSelector('button[data-ng-click="addPromoter(\'savenew\')"]', {
-                            state: 'visible',
-                            timeout: 10000
-                        });
-
-                        await clickAndHandleMapError(page, 'button[data-ng-click="addPromoter(\'savenew\')"]');
+                        // Wait for button to appear and be stable
+                        const addNewBtnSelector = 'button[data-ng-click="addPromoter(\'savenew\')"]';
+                        await page.waitForSelector(addNewBtnSelector, { state: 'visible', timeout: 15000 });
+                        await page.waitForTimeout(1000);
+                        await clickAndHandleMapError(page, addNewBtnSelector);
                         await handleLocalityWarning(page);
+                        await page.waitForTimeout(2000);
                     } catch (e) {
                         sendUpdate(`Warning: Could not click Add New after Promoter ${i}: ${e.message}`);
+                        // Don't break - try to continue with Save & Continue instead
+                        sendUpdate('Attempting Save & Continue as fallback...');
+                        await saveAndContinueToTab(page, 'Authorized Signatory', 'button[title="Save & Continue"]').catch(() => {});
                         break;
                     }
                 } else {
@@ -1377,11 +1391,24 @@ async function run() {
                 if (pData.authSigProofType) {
                     sendUpdate('Selecting Authorized Signatory Proof Type...');
                     try {
-                        await page.waitForSelector('#as_up_type', { state: 'visible', timeout: 5000 });
-                        await page.selectOption('#as_up_type', { label: pData.authSigProofType });
+                        await page.waitForSelector('#as_up_type', { state: 'visible', timeout: 8000 });
+                        // Try by label first, fallback to value match
+                        const selectSuccess = await page.evaluate((label) => {
+                            const sel = document.querySelector('#as_up_type');
+                            if (!sel) return false;
+                            const opt = Array.from(sel.options).find(o =>
+                                o.text.toLowerCase().includes(label.toLowerCase()) ||
+                                o.value.toLowerCase().includes(label.toLowerCase())
+                            );
+                            if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true })); return true; }
+                            return false;
+                        }, pData.authSigProofType);
+                        if (!selectSuccess) {
+                            await page.selectOption('#as_up_type', { label: pData.authSigProofType });
+                        }
                         await page.waitForTimeout(500);
                     } catch (e) {
-                        sendUpdate('Warning: Could not select authSigProofType');
+                        sendUpdate(`Warning: Could not select authSigProofType: ${e.message}`);
                     }
                 }
 
@@ -1399,16 +1426,23 @@ async function run() {
                     }
 
                     try {
-                        await page.waitForSelector('#as_upload_sign', { state: 'attached', timeout: 5000 });
-                        await page.waitForTimeout(1000);
-                        const [fileChooser] = await Promise.all([
-                            page.waitForEvent('filechooser', { timeout: 10000 }),
-                            page.click('#as_upload_sign')
-                        ]);
-                        await fileChooser.setFiles(filePathToUpload);
+                        await page.waitForSelector('#as_upload_sign', { state: 'attached', timeout: 8000 });
+                        await page.waitForTimeout(500);
+                        // Direct setInputFiles is most reliable - removes event dependency
+                        await page.evaluate(() => {
+                            const el = document.querySelector('#as_upload_sign');
+                            if (el) el.removeAttribute('style');
+                        });
+                        await page.locator('#as_upload_sign').setInputFiles(filePathToUpload).catch(async () => {
+                            sendUpdate('Warning: Direct upload failed for Auth Sig Proof, trying filechooser...');
+                            const [fileChooser] = await Promise.all([
+                                page.waitForEvent('filechooser', { timeout: 8000 }),
+                                page.click('#as_upload_sign')
+                            ]);
+                            await fileChooser.setFiles(filePathToUpload);
+                        });
                     } catch (uploadErr) {
-                        sendUpdate('Warning: Intercept failed for Auth Sig Proof, attempting direct input assignment...');
-                        await page.setInputFiles('#as_upload_sign', filePathToUpload).catch(() => { });
+                        sendUpdate(`Warning: Could not upload Auth Sig Proof: ${uploadErr.message}`);
                     }
                     await page.waitForTimeout(2000);
                 }
@@ -1998,8 +2032,92 @@ async function run() {
         });
 
         if (isAadhaarPage) {
-            sendUpdate('Aadhaar Authentication page reached. Leaving browser open for manual interaction...');
-            sendUpdate('Please complete Aadhaar Authentication and Verification manually.');
+            sendUpdate('Aadhaar Authentication page reached. Automating...');
+            try {
+                // Click YES / Agree button on Aadhaar Auth page
+                const yesBtnSelectors = [
+                    'button:has-text("YES")',
+                    'button:has-text("Yes")',
+                    'input[value="YES"]',
+                    'input[value="Yes"]',
+                    'button.btn-primary:has-text("YES")',
+                    'a:has-text("YES")',
+                ];
+                let aadhaarYesClicked = false;
+                for (const sel of yesBtnSelectors) {
+                    try {
+                        const btn = page.locator(sel).first();
+                        if (await btn.count() > 0 && await btn.isVisible({ timeout: 2000 })) {
+                            await btn.click({ force: true });
+                            aadhaarYesClicked = true;
+                            sendUpdate('Clicked YES on Aadhaar Authentication page.');
+                            break;
+                        }
+                    } catch (e) {}
+                }
+                if (!aadhaarYesClicked) {
+                    sendUpdate('Could not auto-click YES on Aadhaar page. Please click manually.');
+                }
+
+                await page.waitForTimeout(3000);
+
+                // Check if OTP is required
+                const otpInputVisible = await page.locator('#otp, input[name="otp"], input[placeholder*="OTP" i]').first().isVisible({ timeout: 5000 }).catch(() => false);
+                if (otpInputVisible) {
+                    sendUpdate('WAITING_FOR_AADHAAR_OTP');
+                    const aadhaarOtp = await new Promise(resolve => {
+                        process.stdin.once('data', (input) => {
+                            resolve(input.toString().trim());
+                        });
+                    });
+                    sendUpdate('Submitting Aadhaar OTP...');
+                    await page.locator('#otp, input[name="otp"], input[placeholder*="OTP" i]').first().fill(aadhaarOtp);
+                    await page.locator('button[type="submit"], button:has-text("Validate"), button:has-text("Verify"), button:has-text("Proceed")').last().click().catch(() => {});
+                    await page.waitForTimeout(3000);
+                    sendUpdate('Aadhaar OTP submitted. Proceeding to Verification...');
+                } else {
+                    sendUpdate('No OTP required for Aadhaar. Proceeding...');
+                }
+
+                // After Aadhaar Auth, check if Verification tab is now active
+                await page.waitForTimeout(2000);
+                const isVerificationPage = await page.evaluate(() => {
+                    const activeTabs = Array.from(document.querySelectorAll('li.active a, li.active span, .nav-tabs li.active'));
+                    for (let tab of activeTabs) {
+                        if (tab.innerText && tab.innerText.toLowerCase().includes('verification')) return true;
+                    }
+                    return document.body.innerText.toLowerCase().includes('declaration') &&
+                           document.body.innerText.toLowerCase().includes('authorized signatory');
+                });
+
+                if (isVerificationPage) {
+                    sendUpdate('Verification tab reached. Filling verification details...');
+                    try {
+                        const checkbox = page.locator('input[type="checkbox"]').first();
+                        await checkbox.check().catch(() => checkbox.evaluate(el => el.click()).catch(() => checkbox.click({ force: true })));
+                        await page.waitForTimeout(1000);
+
+                        const authSigDropdown = page.locator('select').first();
+                        const optionsCount = await authSigDropdown.locator('option').count();
+                        if (optionsCount > 1) {
+                            await authSigDropdown.selectOption({ index: 1 });
+                        }
+                        await page.waitForTimeout(1000);
+
+                        const place = data.ppob_city || data.ppob_district || 'City';
+                        await page.fill('#place', place).catch(() => {});
+
+                        sendUpdate('Verification details filled. Please review and click SUBMIT WITH DSC or SUBMIT WITH EVC.');
+                    } catch (e) {
+                        sendUpdate(`Warning: Verification auto-fill failed: ${e.message}`);
+                    }
+                } else {
+                    sendUpdate('Please complete remaining steps (Verification) manually in the browser.');
+                }
+
+            } catch (e) {
+                sendUpdate(`Warning: Aadhaar Authentication automation failed: ${e.message}. Please complete manually.`);
+            }
         } else {
             sendUpdate('Processing Verification Details...');
             try {

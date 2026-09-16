@@ -611,6 +611,33 @@ function select(key, val, options, placeholder = '') {
 
 window.updatePanFormatBoxes = function (val) {
     val = val || '';
+    
+    // Auto-set Constitution based on PAN 4th letter
+    if (val.length >= 4) {
+        const panChar = val[3].toUpperCase();
+        let newConst = window.form.businessConstitution;
+        if (panChar === 'P') newConst = 'Proprietorship';
+        else if (panChar === 'F') newConst = 'Partnership';
+        else if (panChar === 'C') newConst = 'Private Limited Company';
+        else if (panChar === 'H') newConst = 'Hindu Undivided Family';
+        else if (['A', 'T', 'B'].includes(panChar)) newConst = 'Society/ Club/ Trust/ AOP';
+        else if (panChar === 'L') newConst = 'Local Authority';
+        else if (panChar === 'J') newConst = 'Artificial Juridical Person';
+        else if (panChar === 'G') newConst = 'Government Department';
+        
+        if (newConst && newConst !== window.form.businessConstitution) {
+            window.form.businessConstitution = newConst;
+            
+            // Try to update the DOM select if it exists to avoid re-rendering entire page
+            const constSelect = document.getElementById('businessConstitution');
+            if (constSelect) {
+                constSelect.value = newConst;
+            } else if (typeof renderContent === 'function' && document.activeElement && document.activeElement.id !== 'pan') {
+                renderContent();
+            }
+        }
+    }
+
     for (let i = 0; i < 10; i++) {
         const el = document.getElementById('pan_box_' + i);
         if (!el) continue;

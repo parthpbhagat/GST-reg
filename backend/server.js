@@ -19,6 +19,25 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// Auth Middleware using Supabase
+const authenticateToken = async (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ error: 'Missing authorization token' });
+    }
+
+    const { data: { user }, error } = await db.auth.getUser(token);
+    
+    if (error || !user) {
+        return res.status(403).json({ error: 'Invalid or expired token' });
+    }
+    
+    req.user = user;
+    next();
+};
+
 // Socket.io connection handling
 io.on('connection', (socket) => {
     socket.on('join_application', (appId) => {
@@ -73,21 +92,23 @@ app.get('/api/hsn/:code', (req, res) => {
 });
 
 // POST /api/applications - Submit a new application
-app.post('/api/applications', async (req, res) => {
+app.post('/api/applications', authenticateToken, async (req, res) => {
     const { appId, data } = req.body;
     
     if (!appId || !data) {
         return res.status(400).json({ error: 'appId and data are required' });
     }
 
-    const userEmail = req.body.userEmail || data.userEmail || null;
+    const userEmail = req.user.email || req.body.userEmail || data.userEmail || null;
+    const userId = req.user.id;
     const status = 'Pending'; // Default status
 
     const { error } = await db.from('applications').upsert({
         appId: appId,
         data: data,
         status: status,
-        userEmail: userEmail
+        userEmail: userEmail,
+        user_id: userId // MUST ADD THIS COLUMN IN SUPABASE!
     }, { onConflict: 'appId' });
 
     if (error) {
@@ -97,9 +118,12 @@ app.post('/api/applications', async (req, res) => {
     res.status(201).json({ message: 'Application submitted successfully', appId });
 });
 
-// GET /api/applications - Get all applications
-app.get('/api/applications', async (req, res) => {
-    const { data: rows, error } = await db.from('applications').select('*').order('createdAt', { ascending: false });
+// GET /api/applications - Get all applications for logged-in user
+app.get('/api/applications', authenticateToken, async (req, res) => {
+    const { data: rows, error } = await db.from('applications')
+        .select('*')
+        .eq('user_id', req.user.id)
+        .order('createdAt', { ascending: false });
 
     if (error) {
         console.error('Error fetching applications:', error.message);
@@ -118,7 +142,7 @@ app.get('/api/applications', async (req, res) => {
 });
 
 // PUT /api/applications/:id/status - Update application status (Admin Approve/Reject)
-app.put('/api/applications/:id/status', async (req, res) => {
+app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
@@ -126,7 +150,7 @@ app.put('/api/applications/:id/status', async (req, res) => {
         return res.status(400).json({ error: 'status is required' });
     }
 
-    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).single();
+    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).eq('user_id', req.user.id).single();
 
     if (fetchErr || !row) {
         return res.status(404).json({ error: 'Application not found' });
@@ -210,21 +234,10 @@ app.put('/api/applications/:id/status', async (req, res) => {
 });
 
 // DELETE /api/applications/:id - Delete an application
-app.delete('/api/applications/:id', async (req, res) => {
+app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     // First fetch the application to get the legalName and delete its folder
-    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).single();
-
-    if (!fetchErr && row) {
-        try {
-            const appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-            const legalName = appData.legalName || id;
-            const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const fs = require('fs');
-            const path = require('path');
-            const dirPath = path.join(__dirname, 'data', safeLegalName);
-            
             if (fs.existsSync(dirPath)) {
                 fs.rmSync(dirPath, { recursive: true, force: true });
             }
@@ -247,11 +260,15 @@ app.delete('/api/applications/:id', async (req, res) => {
 });
 
 // PUT /api/applications/:id/trn - Save TRN
-app.put('/api/applications/:id/trn', async (req, res) => {
+app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { trn } = req.body;
 
     if (!trn) return res.status(400).json({ error: 'trn is required' });
+
+    // Ensure they own it first
+    const { data: row, error: fetchErr } = await db.from('applications').select('appId').eq('appId', id).eq('user_id', req.user.id).single();
+    if (fetchErr || !row) return res.status(404).json({ error: 'Application not found or unauthorized' });
 
     const { error } = await db.from('applications').update({ trn }).eq('appId', id);
     

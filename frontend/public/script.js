@@ -1,5 +1,53 @@
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3002' : 'https://YOUR_BACKEND_URL.onrender.com';
 
+// ---------------- AUTHENTICATION SETUP ----------------
+const supabaseUrl = 'https://mgxsxpbrzmcmzlzgzfde.supabase.co';
+const supabaseKey = 'sb_publishable_159AAeN0gJjlQK7IgozhRQ_5yWUUKmm'; // From backend/.env
+let supabase;
+if (window.supabase) {
+    supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+    checkAuth();
+}
+
+let authToken = localStorage.getItem('sb_token');
+
+async function checkAuth() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        window.location.href = '/login.html';
+    } else {
+        authToken = session.access_token;
+        localStorage.setItem('sb_token', authToken);
+        const emailDisplay = document.getElementById('userEmailDisplay');
+        if (emailDisplay) emailDisplay.innerText = session.user.email;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+            await supabase.auth.signOut();
+            localStorage.removeItem('sb_token');
+            window.location.href = '/login.html';
+        });
+    }
+});
+
+// Patch fetch to automatically include the Authorization header for API calls
+const originalFetch = window.fetch;
+window.fetch = async (...args) => {
+    let [resource, config] = args;
+    if (typeof resource === 'string' && resource.startsWith(API_BASE_URL)) {
+        config = config || {};
+        config.headers = config.headers || {};
+        if (authToken) {
+            config.headers['Authorization'] = `Bearer ${authToken}`;
+        }
+    }
+    return originalFetch(resource, config);
+};
+// ------------------------------------------------------
 const mapplsService = {
     parseAddressComponents(data) {
         return {

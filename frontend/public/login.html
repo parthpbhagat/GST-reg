@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - GST Automation</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { background-color: #f1f5f9; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+        .login-card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); width: 100%; max-width: 400px; }
+        h1 { margin-top: 0; font-size: 24px; color: #1e293b; text-align: center; margin-bottom: 24px; }
+        .input-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 500; color: #475569; }
+        input { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        button { width: 100%; background: #2563eb; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: 600; cursor: pointer; margin-top: 8px; transition: background 0.2s; }
+        button:hover { background: #1d4ed8; }
+        .error { color: #dc2626; font-size: 13px; margin-top: 8px; text-align: center; }
+        .toggle { text-align: center; margin-top: 16px; font-size: 14px; color: #64748b; }
+        .toggle a { color: #2563eb; text-decoration: none; font-weight: 500; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h1 id="title">Sign In</h1>
+        <form id="authForm">
+            <div class="input-group">
+                <label>Email</label>
+                <input type="email" id="email" required>
+            </div>
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" id="password" required>
+            </div>
+            <button type="submit" id="submitBtn">Sign In</button>
+            <div id="errorMsg" class="error"></div>
+        </form>
+        <div class="toggle">
+            <span id="toggleText">Don't have an account? </span><a id="toggleLink">Sign Up</a>
+        </div>
+    </div>
+
+    <script>
+        const supabaseUrl = 'https://mgxsxpbrzmcmzlzgzfde.supabase.co';
+        const supabaseKey = 'sb_publishable_159AAeN0gJjlQK7IgozhRQ_5yWUUKmm'; // From backend/.env
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+        let isLogin = true;
+        
+        document.getElementById('toggleLink').addEventListener('click', () => {
+            isLogin = !isLogin;
+            document.getElementById('title').innerText = isLogin ? 'Sign In' : 'Create Account';
+            document.getElementById('submitBtn').innerText = isLogin ? 'Sign In' : 'Sign Up';
+            document.getElementById('toggleText').innerText = isLogin ? "Don't have an account? " : "Already have an account? ";
+            document.getElementById('toggleLink').innerText = isLogin ? 'Sign Up' : 'Sign In';
+            document.getElementById('errorMsg').innerText = '';
+        });
+
+        document.getElementById('authForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorMsg = document.getElementById('errorMsg');
+            const submitBtn = document.getElementById('submitBtn');
+            
+            submitBtn.disabled = true;
+            submitBtn.innerText = 'Please wait...';
+            errorMsg.innerText = '';
+
+            try {
+                if (isLogin) {
+                    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                    if (error) throw error;
+                    localStorage.setItem('sb_token', data.session.access_token);
+                    window.location.href = '/';
+                } else {
+                    const { data, error } = await supabase.auth.signUp({ email, password });
+                    if (error) throw error;
+                    if (data.session) {
+                        localStorage.setItem('sb_token', data.session.access_token);
+                        window.location.href = '/';
+                    } else {
+                        errorMsg.innerText = 'Registration successful! Please check your email to verify your account.';
+                        errorMsg.style.color = '#16a34a';
+                    }
+                }
+            } catch (err) {
+                errorMsg.innerText = err.message;
+                errorMsg.style.color = '#dc2626';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerText = isLogin ? 'Sign In' : 'Sign Up';
+            }
+        });
+
+        // Check if already logged in
+        async function checkAuth() {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                window.location.href = '/';
+            }
+        }
+        checkAuth();
+    </script>
+</body>
+</html>

@@ -95,8 +95,8 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
         appId: appId,
         data: data,
         status: status,
-        userEmail: userEmail,
-        user_id: userId // MUST ADD THIS COLUMN IN SUPABASE!
+        userEmail: userEmail
+        // user_id: userId - TEMPORARILY DISABLED
     }, { onConflict: 'appId' });
 
     if (error) {
@@ -110,7 +110,7 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
 app.get('/api/applications', authenticateToken, async (req, res) => {
     const { data: rows, error } = await db.from('applications')
         .select('*')
-        .eq('user_id', req.user.id)
+        //  - TEMPORARILY DISABLED
         .order('createdAt', { ascending: false });
 
     if (error) {
@@ -138,7 +138,7 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
         return res.status(400).json({ error: 'status is required' });
     }
 
-    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).eq('user_id', req.user.id).single();
+    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).single();
 
     if (fetchErr || !row) {
         return res.status(404).json({ error: 'Application not found' });
@@ -226,7 +226,7 @@ app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     // First fetch the application to get the legalName and delete its folder
-    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).eq('user_id', req.user.id).single();
+    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).single();
 
     if (!fetchErr && row) {
         try {
@@ -246,7 +246,7 @@ app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
     }
 
     // Then delete from the database
-    const { error: deleteErr, count } = await db.from('applications').delete({ count: 'exact' }).eq('appId', id).eq('user_id', req.user.id);
+    const { error: deleteErr, count } = await db.from('applications').delete({ count: 'exact' }).eq('appId', id);
 
     if (deleteErr) {
         console.error('Error deleting application:', deleteErr.message);
@@ -266,7 +266,7 @@ app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
     if (!trn) return res.status(400).json({ error: 'trn is required' });
 
     // Ensure they own it first
-    const { data: row, error: fetchErr } = await db.from('applications').select('appId').eq('appId', id).eq('user_id', req.user.id).single();
+    const { data: row, error: fetchErr } = await db.from('applications').select('appId').eq('appId', id).single();
     if (fetchErr || !row) return res.status(404).json({ error: 'Application not found or unauthorized' });
 
     const { error } = await db.from('applications').update({ trn }).eq('appId', id);

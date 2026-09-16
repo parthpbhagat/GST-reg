@@ -43,7 +43,7 @@
     <script>
         const supabaseUrl = 'https://mgxsxpbrzmcmzlzgzfde.supabase.co';
         const supabaseKey = 'sb_publishable_159AAeN0gJjlQK7IgozhRQ_5yWUUKmm'; // From backend/.env
-        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+        const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
 
         let isLogin = true;
         
@@ -69,12 +69,12 @@
 
             try {
                 if (isLogin) {
-                    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
                     if (error) throw error;
                     localStorage.setItem('sb_token', data.session.access_token);
                     window.location.href = '/';
                 } else {
-                    const { data, error } = await supabase.auth.signUp({ email, password });
+                    const { data, error } = await supabaseClient.auth.signUp({ email, password });
                     if (error) throw error;
                     if (data.session) {
                         localStorage.setItem('sb_token', data.session.access_token);
@@ -95,7 +95,7 @@
 
         // Check if already logged in
         async function checkAuth() {
-            const { data: { session } } = await supabase.auth.getSession();
+            const { data: { session } } = await supabaseClient.auth.getSession();
             if (session) {
                 window.location.href = '/';
             }

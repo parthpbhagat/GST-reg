@@ -3,16 +3,16 @@ const API_BASE_URL = window.location.hostname === 'localhost' || window.location
 // ---------------- AUTHENTICATION SETUP ----------------
 const supabaseUrl = 'https://mgxsxpbrzmcmzlzgzfde.supabase.co';
 const supabaseKey = 'sb_publishable_159AAeN0gJjlQK7IgozhRQ_5yWUUKmm'; // From backend/.env
-let supabase;
+let supabaseClient;
 if (window.supabase) {
-    supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+    supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
     checkAuth();
 }
 
 let authToken = localStorage.getItem('sb_token');
 
 async function checkAuth() {
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session } } = await supabaseClient.auth.getSession();
     if (!session) {
         window.location.href = '/login.html';
     } else {
@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
         logoutBtn.addEventListener('click', async () => {
-            await supabase.auth.signOut();
+            await supabaseClient.auth.signOut();
             localStorage.removeItem('sb_token');
             window.location.href = '/login.html';
         });

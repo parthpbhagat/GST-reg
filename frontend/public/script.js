@@ -18,15 +18,19 @@ async function checkAuth() {
     }
 
     if (authToken && !window.location.href.includes('login.html')) {
-        const { data: { user }, error } = await supabaseClient.auth.getUser();
-        if (error || !user) {
+        const { data: { session }, error } = await supabaseClient.auth.getSession();
+        if (error || !session) {
             localStorage.removeItem('sb_token');
             window.location.href = '/login.html';
             return;
         }
 
+        // Sync token in case it was stuck on 'temp-token'
+        localStorage.setItem('sb_token', session.access_token);
+        authToken = session.access_token;
+
         const emailDisplay = document.getElementById('userEmailDisplay');
-        if (emailDisplay) emailDisplay.innerText = user.email;
+        if (emailDisplay) emailDisplay.innerText = session.user.email;
     }
 }
 
@@ -1473,11 +1477,16 @@ window.startAutomationPipeline = async function (id) {
 
     setTimeout(async () => {
         try {
-            await fetch(`${API_BASE_URL}/api/automation/start`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ appId: id })
-            });
+            try {
+                await fetch(`${API_BASE_URL}/api/automation/start`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('sb_token')}`
+                    },
+                    body: JSON.stringify({ appId: id })
+                });
+            } catch (e) {}
         } catch (e) {
             addTerminalLog('Failed to start automation due to connection error.');
         }

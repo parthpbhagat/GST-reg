@@ -3568,16 +3568,17 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
     inputs.forEach((input) => {
         const span = doc.createElement('span');
         span.innerText = input.value;
-        // Avoid inline-block at all costs to prevent html2canvas space collapsing bug
-        // Use inline with padding to simulate the blank underline
         span.style.cssText = `
-            display: inline;
+            display: inline-block;
             border-bottom: 1px solid #000;
-            padding: 0 25px;
+            min-width: ${input.style.width || (input.classList.contains('large') ? '250px' : input.classList.contains('small') ? '80px' : '150px')};
+            text-align: center;
             font-weight: bold;
             font-family: Arial, Helvetica, sans-serif;
             font-size: 15px;
+            margin: 0 5px;
             color: #000;
+            vertical-align: bottom;
         `;
         input.parentNode.replaceChild(span, input);
         replacements.push({ parent: span.parentNode, span: span, input: input });
@@ -3587,15 +3588,27 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
     btn.innerText = 'Generating...';
     btn.disabled = true;
 
+    // Get the CSS styles from the iframe
+    const styleContent = doc.querySelector('style') ? doc.querySelector('style').innerHTML : '';
+    
+    // Construct a pure HTML string that is completely disconnected from any live DOM quirks
+    // This bypasses all html2canvas bugs with iframes, display scaling, and inherited styles
+    const htmlString = `
+        <div style="background: white; padding: 20mm; width: 210mm; box-sizing: border-box; font-family: Arial, Helvetica, sans-serif;">
+            <style>${styleContent}</style>
+            ${pageElement.innerHTML}
+        </div>
+    `;
+
     var opt = {
       margin:       0,
       filename:     'Declaration.pdf',
       image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true, logging: false },
+      html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
-    html2pdf().set(opt).from(pageElement).outputPdf('datauristring').then(function (pdfAsString) {
+    html2pdf().set(opt).from(htmlString).outputPdf('datauristring').then(function (pdfAsString) {
         window.form[currentPdfAuthKey].authSigProofFile = pdfAsString;
         window.form[currentPdfAuthKey].authSigProofFileName = 'Declaration_Form.pdf';
         

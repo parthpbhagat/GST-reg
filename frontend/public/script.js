@@ -2513,138 +2513,154 @@ function renderContent() {
         </div>` : ''}
         </section>`;
     } else if (step === 4) {
-        html = `<section class="card">
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; align-items: start;">
+        html = `<section class="card" style="padding: 0; overflow: hidden;">
+        
+        <div style="background: #fef9c3; padding: 16px; border-bottom: 1px solid #fef08a; font-size: 13px; color: #854d0e; font-style: italic;">
+            <p style="margin: 0 0 8px 0;">i. Please be aware that the GST system incorporates mandatory address validations for accuracy and uniformity. These include front-end validations upon entry and back-end cross-checks with GST system geocoding engine.</p>
+            <p style="margin: 0;">ii. Users must ensure that addresses entered align with these validations and any corresponding address proof. Your adherence helps maintain system integrity. Thank you for your cooperation.</p>
+        </div>
 
-        <!-- Column 1 -->
-        <div style="padding-right: 24px;">
-            <h2 style="font-size: 20px; font-weight: 700; border-bottom: 2px solid var(--border-color); padding-bottom: 16px; margin-bottom: 16px; color: #1e3a8a; text-transform: uppercase;"><span style="color: #1e3a8a; font-weight: 900;">|</span> Address</h2>
+        <div style="padding: 24px;">
+            <h2 style="font-size: 18px; font-weight: 600; color: #1e3a8a; margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+                Address
+            </h2>
+
+            <div id="leaflet-map" style="width: 100%; height: 350px; border: 1px solid #cbd5e1; border-radius: var(--radius-md); margin-bottom: 24px; background: #f8fafc; display: flex; align-items: center; justify-content: center; color: #64748b;">Loading Map...</div>
             
-            <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 12px;">
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">PIN CODE <span style="color: #ef4444">*</span></span>', `<div style="position:relative"><input id="ppob_pincode" type="text" placeholder="PIN Code" value="${form.ppob_pincode || ''}" oninput="searchPincode(this.value, 'ppob_pincode')" onfocus="searchPincode(this.value, 'ppob_pincode')" onblur="setTimeout(() => { const el = document.getElementById('pincode_suggestions'); if(el) el.style.display='none'; }, 200); if(window.fetchStateJurisdictions && this.value.length === 6) window.fetchStateJurisdictions(renderContent);" maxlength="6" pattern="[0-9]{6}" autocomplete="off" style="" /><ul id="pincode_suggestions" style="position:absolute; display:none; background:#fff; border:1px solid var(--border-color); width:100%; max-height:200px; overflow-y:auto; list-style:none; margin:0; padding:0; z-index:10; border-radius:var(--radius-sm); box-shadow:var(--shadow-md);"></ul></div>`)}
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">STATE</span>', `<select id="ppob_state" onchange="window.form.ppob_state=this.value; window.form.ppob_district=''; if(window.fetchAndSetDistricts) window.fetchAndSetDistricts(this.value, () => { if(window.fetchStateJurisdictions) window.fetchStateJurisdictions(renderContent); else renderContent(); }); else { if(window.fetchStateJurisdictions) window.fetchStateJurisdictions(renderContent); else renderContent(); }" style=""><option value="">State</option>${(window.fetchedStates || []).map(s => `<option value="${s}" ${form.ppob_state === s ? 'selected' : ''}>${s}</option>`).join('')}${form.ppob_state && !(window.fetchedStates || []).includes(form.ppob_state) ? `<option value="${form.ppob_state}" selected>${form.ppob_state}</option>` : ''}</select>`)}
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">DISTRICT <span style="color: #ef4444">*</span></span>', `<select id="ppob_district" onchange="window.updateForm('ppob_district', this.value)" style=""><option value="">District</option>${getDistricts(form.ppob_state || '').map(d => `<option value="${d}" ${form.ppob_district === d ? 'selected' : ''}>${d}</option>`).join('')}${form.ppob_district && !getDistricts(form.ppob_state || '').includes(form.ppob_district) ? `<option value="${form.ppob_district}" selected>${form.ppob_district}</option>` : ''}</select>`)}
-            </div>
-
-            <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 12px;">
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">CITY / TOWN <span style="color: #ef4444">*</span></span>', `<input id="ppob_city" type="text" placeholder="City" value="${form.ppob_city || ''}" onchange="window.updateForm('ppob_city', this.value)" style="" />`)}
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">LOCALITY</span>', `<input id="ppob_locality" type="text" placeholder="Locality" value="${form.ppob_locality || ''}" onchange="window.updateForm('ppob_locality', this.value)" style="" />`)}
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">STREET <span style="color: #ef4444">*</span></span>', `<input id="ppob_street" type="text" placeholder="Street" value="${form.ppob_street || ''}" onchange="window.updateForm('ppob_street', this.value)" style="" />`)}
-            </div>
-
-            <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 12px;">
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">BUILDING</span>', `<input type="text" placeholder="Building" value="${form.ppob_building || ''}" onchange="window.updateForm('ppob_building', this.value)" style="" />`)}
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">FLAT NO. <span style="color: #ef4444">*</span></span>', `<input type="text" placeholder="No." value="${form.ppob_flatNo || ''}" onchange="window.updateForm('ppob_flatNo', this.value)" style="" />`)}
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">FLOOR</span>', `<input type="text" placeholder="Floor" value="${form.ppob_floor || ''}" onchange="window.updateForm('ppob_floor', this.value)" style="" />`)}
+            <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                ${field('PIN Code <span style="color: #ef4444">*</span> <span style="color:#3b82f6; font-size:12px; cursor:pointer;" title="Info">ℹ</span>', `<div style="position:relative"><input id="ppob_pincode" type="text" placeholder="PIN Code" value="${form.ppob_pincode || ''}" oninput="searchPincode(this.value, 'ppob_pincode')" onfocus="searchPincode(this.value, 'ppob_pincode')" onblur="setTimeout(() => { const el = document.getElementById('pincode_suggestions'); if(el) el.style.display='none'; }, 200); if(window.fetchStateJurisdictions && this.value.length === 6) window.fetchStateJurisdictions(renderContent);" maxlength="6" pattern="[0-9]{6}" autocomplete="off" style="" /><ul id="pincode_suggestions" style="position:absolute; display:none; background:#fff; border:1px solid var(--border-color); width:100%; max-height:200px; overflow-y:auto; list-style:none; margin:0; padding:0; z-index:10; border-radius:var(--radius-sm); box-shadow:var(--shadow-md);"></ul></div>`)}
+                ${field('State <span style="color: #ef4444">*</span> <span style="color:#3b82f6; font-size:12px; cursor:pointer;" title="Info">ℹ</span>', `<select id="ppob_state" onchange="window.form.ppob_state=this.value; window.form.ppob_district=''; if(window.fetchAndSetDistricts) window.fetchAndSetDistricts(this.value, () => { if(window.fetchStateJurisdictions) window.fetchStateJurisdictions(renderContent); else renderContent(); }); else { if(window.fetchStateJurisdictions) window.fetchStateJurisdictions(renderContent); else renderContent(); }" style=""><option value="">State</option>${(window.fetchedStates || []).map(s => `<option value="${s}" ${form.ppob_state === s ? 'selected' : ''}>${s}</option>`).join('')}${form.ppob_state && !(window.fetchedStates || []).includes(form.ppob_state) ? `<option value="${form.ppob_state}" selected>${form.ppob_state}</option>` : ''}</select>`)}
+                ${field('District <span style="color: #ef4444">*</span> <span style="color:#3b82f6; font-size:12px; cursor:pointer;" title="Info">ℹ</span>', `<select id="ppob_district" onchange="window.updateForm('ppob_district', this.value)" style=""><option value="">District</option>${getDistricts(form.ppob_state || '').map(d => `<option value="${d}" ${form.ppob_district === d ? 'selected' : ''}>${d}</option>`).join('')}${form.ppob_district && !getDistricts(form.ppob_state || '').includes(form.ppob_district) ? `<option value="${form.ppob_district}" selected>${form.ppob_district}</option>` : ''}</select>`)}
             </div>
 
             <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">LANDMARK</span>', `<input type="text" placeholder="Landmark" value="${form.ppob_landmark || ''}" onchange="window.updateForm('ppob_landmark', this.value)" style="" />`)}
+                ${field('City / Town / Village <span style="color: #ef4444">*</span> <span style="color:#3b82f6; font-size:12px; cursor:pointer;" title="Info">ℹ</span>', `<input id="ppob_city" type="text" placeholder="City" value="${form.ppob_city || ''}" onchange="window.updateForm('ppob_city', this.value)" style="" />`)}
+                ${field('Locality/Sub Locality <span style="color:#3b82f6; font-size:12px; cursor:pointer;" title="Info">ℹ</span>', `<input id="ppob_locality" type="text" placeholder="Locality" value="${form.ppob_locality || ''}" onchange="window.updateForm('ppob_locality', this.value)" style="" />`)}
+                ${field('Road / Street <span style="color: #ef4444">*</span> <span style="color:#3b82f6; font-size:12px; cursor:pointer;" title="Info">ℹ</span>', `<input id="ppob_street" type="text" placeholder="Street" value="${form.ppob_street || ''}" onchange="window.updateForm('ppob_street', this.value)" style="" />`)}
             </div>
 
-            <h2 style="font-size: 20px; font-weight: 700; border-bottom: 2px solid var(--border-color); padding-bottom: 16px; margin-bottom: 16px; color: #1e3a8a; text-transform: uppercase;"><span style="color: #1e3a8a; font-weight: 900;">|</span> Contact Information</h2>
-            
-            <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 12px;">
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">OFFICE EMAIL <span style="color: #ef4444">*</span></span>', `<input type="text" placeholder="Email" value="${form.ppob_email || ''}" onchange="window.updateForm('ppob_email', this.value)" style="" />`)}
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">MOBILE <span style="color: #ef4444">*</span></span>', `<div style="display: flex; "><input type="text" value="+91" readonly style="width: 56px; background-color: #f1f5f9; border-radius: var(--radius-md) 0 0 var(--radius-md); border-right: none; text-align: center; font-size:14px; padding:12px; height: 100%; box-sizing: border-box; margin: 0;" /><input type="text" placeholder="Mobile" pattern="[0-9]{10}" style="border-radius: 0 var(--radius-md) var(--radius-md) 0; flex: 1; height: 100%; box-sizing: border-box; margin: 0;" value="${form.ppob_mobile || ''}" onchange="window.updateForm('ppob_mobile', this.value)" /></div>`)}
-            </div>
-
-            <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 12px;">
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">OFFICE FAX</span>', `<div style="display: flex; "><input type="text" placeholder="STD" style="width: 64px; border-radius: var(--radius-md) 0 0 var(--radius-md); border-right: none; font-size:16px; padding:12px; height: 100%; box-sizing: border-box; margin: 0;" value="${form.ppob_faxStdCode || ''}" onchange="window.updateForm('ppob_faxStdCode', this.value)" /><input type="text" placeholder="Fax" style="border-radius: 0 var(--radius-md) var(--radius-md) 0; flex: 1; height: 100%; box-sizing: border-box; margin: 0;" value="${form.ppob_fax || ''}" onchange="window.updateForm('ppob_fax', this.value)" /></div>`)}
-            </div>
-        </div>
-
-        <!-- Column 2 -->
-        <div style="border-left: 1px solid var(--border-color); border-right: 1px solid var(--border-color); padding: 0 24px;">
-            <div style="font-size: 16px; font-weight: 700; color: var(--text-main); margin-bottom: 12px;">State Jurisdiction</div>
-            <div style="margin-bottom: 16px;">
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">SECTOR / WARD <span style="color: #ef4444">*</span></span>', `<select onchange="window.updateForm('ppob_stateJurisdiction', this.value)" style=""><option value="">Select</option>${(window.fetchedStateJurisdictions || []).map(j => `<option value="${j}" ${form.ppob_stateJurisdiction === j ? 'selected' : ''}>${j}</option>`).join('')}</select>`)}
-            </div>
-
-            <div style="font-size: 16px; font-weight: 700; color: var(--text-main); margin-bottom: 12px;">Center Jurisdiction</div>
             <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">COMMISSIONERATE <span style="color: #ef4444">*</span></span>', `<select onchange="window.form.ppob_commissionerate=this.value; if(window.fetchDivisions) window.fetchDivisions(renderContent)" style=""><option value="">Select</option>${(window.fetchedCommissionerates || []).map(j => `<option value="${j.c}" ${form.ppob_commissionerate === j.c ? 'selected' : ''}>${j.n}</option>`).join('')}</select>`)}
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">DIVISION <span style="color: #ef4444">*</span></span>', `<select onchange="window.form.ppob_division=this.value; if(window.fetchRanges) window.fetchRanges(renderContent)" style=""><option value="">Select</option>${(window.fetchedDivisions || []).map(j => `<option value="${j.c}" ${form.ppob_division === j.c ? 'selected' : ''}>${j.n}</option>`).join('')}</select>`)}
-                ${field('<span style="text-transform:uppercase; font-size:14px; font-weight:700;">RANGE <span style="color: #ef4444">*</span></span>', `<select onchange="window.updateForm('ppob_range', this.value)" style=""><option value="">Select</option>${(window.fetchedRanges || []).map(j => `<option value="${j.c}" ${form.ppob_range === j.c ? 'selected' : ''}>${j.n}</option>`).join('')}</select>`)}
+                ${field('Name of the Premises / Building <span style="color:#3b82f6; font-size:12px; cursor:pointer;" title="Info">ℹ</span>', `<input type="text" placeholder="Building" value="${form.ppob_building || ''}" onchange="window.updateForm('ppob_building', this.value)" style="" />`)}
+                ${field('Building No. / Flat No. <span style="color: #ef4444">*</span> <span style="color:#3b82f6; font-size:12px; cursor:pointer;" title="Info">ℹ</span>', `<input type="text" placeholder="No." value="${form.ppob_flatNo || ''}" onchange="window.updateForm('ppob_flatNo', this.value)" style="" />`)}
+                ${field('Floor No. <span style="color:#3b82f6; font-size:12px; cursor:pointer;" title="Info">ℹ</span>', `<input type="text" placeholder="Floor" value="${form.ppob_floor || ''}" onchange="window.updateForm('ppob_floor', this.value)" style="" />`)}
             </div>
 
-            <div style="margin-bottom: 16px;">
-                ${field('<span style="font-size:14px; font-weight:700; color: #1e3a8a; text-transform:uppercase;">NATURE OF POSSESSION OF PREMISES <span style="color: #ef4444">*</span></span>', `<select style="width: 100%; padding: 12px 16px;  border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 16px; outline: none;" onchange="window.form.ppob_natureOfPossession=this.value; renderContent();">
-                    <option value="">Select</option>
-                    <option value="Consent" ${form.ppob_natureOfPossession === 'Consent' ? 'selected' : ''}>Consent</option>
-                    <option value="Leased" ${form.ppob_natureOfPossession === 'Leased' ? 'selected' : ''}>Leased</option>
-                    <option value="Others" ${form.ppob_natureOfPossession === 'Others' ? 'selected' : ''}>Others</option>
-                    <option value="Own" ${form.ppob_natureOfPossession === 'Own' ? 'selected' : ''}>Own</option>
-                    <option value="Rented" ${form.ppob_natureOfPossession === 'Rented' ? 'selected' : ''}>Rented</option>
-                    <option value="Shared" ${form.ppob_natureOfPossession === 'Shared' ? 'selected' : ''}>Shared</option>
-                </select>`)}
+            <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+                ${field('Nearby Landmark', `<input type="text" placeholder="Landmark" value="${form.ppob_landmark || ''}" onchange="window.updateForm('ppob_landmark', this.value)" style="" />`)}
             </div>
 
-            <div style="margin-bottom: 16px;">
-                <div style="font-size: 14px; font-weight: 700; color: #1e3a8a; margin-bottom: 8px; text-transform:uppercase;">DOCUMENT UPLOAD <span style="color: #ef4444">*</span></div>
-                <div style="font-size: 14px; color: var(--text-main); margin-bottom: 8px;">Proof of Principal Place of Business</div>
-                <select style="width: 100%; padding: 12px 16px;  border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 16px; margin-bottom: 16px; outline: none;" onchange="window.form.ppob_doc = this.value; renderContent();">
-                    <option value="">Select</option>
-                    ${(form.ppob_natureOfPossession === 'Consent' || form.ppob_natureOfPossession === 'Shared') ? `
-                    <option value="Consent Letter" ${form.ppob_doc === 'Consent Letter' ? 'selected' : ''}>Consent Letter</option>
-                    <option value="Electricity Bill" ${form.ppob_doc === 'Electricity Bill' ? 'selected' : ''}>Electricity Bill</option>
-                    <option value="Legal ownership document" ${form.ppob_doc === 'Legal ownership document' ? 'selected' : ''}>Legal ownership document</option>
-                    <option value="Municipal Khata Copy" ${form.ppob_doc === 'Municipal Khata Copy' ? 'selected' : ''}>Municipal Khata Copy</option>
-                    <option value="Property Tax Receipt" ${form.ppob_doc === 'Property Tax Receipt' ? 'selected' : ''}>Property Tax Receipt</option>
-                    ` : (form.ppob_natureOfPossession === 'Leased' || form.ppob_natureOfPossession === 'Rented') ? `
-                    <option value="Electricity Bill" ${form.ppob_doc === 'Electricity Bill' ? 'selected' : ''}>Electricity Bill</option>
-                    <option value="Legal ownership document" ${form.ppob_doc === 'Legal ownership document' ? 'selected' : ''}>Legal ownership document</option>
-                    <option value="Municipal Khata Copy" ${form.ppob_doc === 'Municipal Khata Copy' ? 'selected' : ''}>Municipal Khata Copy</option>
-                    <option value="Property Tax Receipt" ${form.ppob_doc === 'Property Tax Receipt' ? 'selected' : ''}>Property Tax Receipt</option>
-                    <option value="Rent / Lease agreement" ${form.ppob_doc === 'Rent / Lease agreement' ? 'selected' : ''}>Rent / Lease agreement</option>
-                    <option value="Rent receipt with NOC (In case of no/expired agreement)" ${form.ppob_doc === 'Rent receipt with NOC (In case of no/expired agreement)' ? 'selected' : ''}>Rent receipt with NOC (In case of no/expired agreement)</option>
-                    ` : form.ppob_natureOfPossession === 'Others' ? `
-                    <option value="Legal ownership document" ${form.ppob_doc === 'Legal ownership document' ? 'selected' : ''}>Legal ownership document</option>
-                    ` : form.ppob_natureOfPossession === 'Own' ? `
-                    <option value="Electricity Bill" ${form.ppob_doc === 'Electricity Bill' ? 'selected' : ''}>Electricity Bill</option>
-                    <option value="Legal ownership document" ${form.ppob_doc === 'Legal ownership document' ? 'selected' : ''}>Legal ownership document</option>
-                    <option value="Municipal Khata Copy" ${form.ppob_doc === 'Municipal Khata Copy' ? 'selected' : ''}>Municipal Khata Copy</option>
-                    <option value="Property Tax Receipt" ${form.ppob_doc === 'Property Tax Receipt' ? 'selected' : ''}>Property Tax Receipt</option>
-                    ` : ''}
-                </select>
-                <div style="display:flex; align-items:center; gap: 16px;">
-                    <button style="background: #e2e8f0; border: 1px solid var(--border-color); padding: 10px 24px; font-size: 15px; border-radius: var(--radius-md); cursor: pointer;" onclick="this.nextElementSibling.click(); return false;">Choose File</button>
-                    <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form.ppob_docFile = data; window.form.ppob_docFileName = filename; renderContent(); })" style="display: none;" />
-                    <span style="font-size: 15px; color: var(--text-main);">${form.ppob_docFile ? `<div style="display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 8px;"><span style="color: #166534; font-weight: 500; word-break: break-all;">📄 ${form.ppob_docFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form.ppob_docFile, () => { window.form.ppob_docFile = ''; window.form.ppob_docFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form.ppob_docFile); return false;" class="btn-doc-view">View</button></div></div>` : 'No file chosen'}</span>
-                </div>
-            </div>
-        </div>
+            <hr style="border: 0; border-top: 1px solid var(--border-color); margin-bottom: 24px;" />
 
-        <!-- Column 3 -->
-        <div style="padding-left: 48px;">
-            <h2 style="font-size: 20px; font-weight: 700; border-bottom: 2px solid var(--border-color); padding-bottom: 16px; margin-bottom: 16px; color: #1e3a8a;"><span style="color: #1e3a8a; font-weight: 900;">|</span> Nature of Business Activity <span style="color: #ef4444">*</span></h2>
+            <!-- Contact Information -->
+            <h2 style="font-size: 18px; font-weight: 600; color: #1e3a8a; margin: 0 0 16px 0;">Contact Information</h2>
             
-            <div style="display: flex; flex-direction: column; gap: 20px;">
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.bondedWarehouse ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.bondedWarehouse=this.checked" style="width: 20px; height: 20px; margin: 0;" /> Bonded Warehouse</label>
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.factoryManufacturing ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.factoryManufacturing=this.checked" style="width: 20px; height: 20px; margin: 0;" /> Factory / Manufacturing</label>
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.leasingBusiness ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.leasingBusiness=this.checked" style="width: 20px; height: 20px; margin: 0;" /> Leasing Business</label>
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.retailBusiness ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.retailBusiness=this.checked" style="width: 20px; height: 20px; margin: 0;" /> Retail Business</label>
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.worksContract ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.worksContract=this.checked" style="width: 20px; height: 20px; margin: 0;" /> Works Contract</label>
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.eouStpEhtp ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.eouStpEhtp=this.checked" style="width: 20px; height: 20px; margin: 0;" /> EOU / STP / EHTP</label>
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.import ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.import=this.checked" style="width: 20px; height: 20px; margin: 0;" /> Import</label>
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.officeSaleOffice ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.officeSaleOffice=this.checked" style="width: 20px; height: 20px; margin: 0;" /> Office / Sale Office</label>
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.warehouseDepot ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.warehouseDepot=this.checked" style="width: 20px; height: 20px; margin: 0;" /> Warehouse / Depot</label>
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.export ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.export=this.checked" style="width: 20px; height: 20px; margin: 0;" /> Export</label>
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.supplierOfServices ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.supplierOfServices=this.checked" style="width: 20px; height: 20px; margin: 0;" /> Supplier of Services</label>
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.recipientOfGoodsOrServices ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.recipientOfGoodsOrServices=this.checked" style="width: 20px; height: 20px; margin: 0;" /> Recipient of Goods/Services</label>
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.wholesaleBusiness ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.wholesaleBusiness=this.checked" style="width: 20px; height: 20px; margin: 0;" /> Wholesale Business</label>
-                <label style="display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.others ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.others=this.checked; renderContent();" style="width: 20px; height: 20px; margin: 0;" /> Others</label>
-                ${form.ppob_natureOfBusiness?.others ? `
-                <div style="padding-left: 32px; margin-top: -10px;">
-                    <input type="text" placeholder="Please specify others" value="${form.ppob_natureOfBusiness?.othersText || ''}" onchange="window.form.ppob_natureOfBusiness.othersText=this.value" style="width: 100%; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 15px; outline: none; background: #fff;" />
-                </div>
-                ` : ''}
+            <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                ${field('OFFICE EMAIL <span style="color: #ef4444">*</span>', `<input type="text" placeholder="Email" value="${form.ppob_email || ''}" onchange="window.updateForm('ppob_email', this.value)" style="" />`)}
+                ${field('MOBILE <span style="color: #ef4444">*</span>', `<div style="display: flex; "><input type="text" value="+91" readonly style="width: 56px; background-color: #f1f5f9; border-radius: var(--radius-md) 0 0 var(--radius-md); border-right: none; text-align: center; font-size:14px; padding:12px; height: 100%; box-sizing: border-box; margin: 0;" /><input type="text" placeholder="Mobile" pattern="[0-9]{10}" style="border-radius: 0 var(--radius-md) var(--radius-md) 0; flex: 1; height: 100%; box-sizing: border-box; margin: 0;" value="${form.ppob_mobile || ''}" onchange="window.updateForm('ppob_mobile', this.value)" /></div>`)}
             </div>
-        </div>
 
+            <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+                ${field('OFFICE FAX', `<div style="display: flex; "><input type="text" placeholder="STD" style="width: 64px; border-radius: var(--radius-md) 0 0 var(--radius-md); border-right: none; font-size:16px; padding:12px; height: 100%; box-sizing: border-box; margin: 0;" value="${form.ppob_faxStdCode || ''}" onchange="window.updateForm('ppob_faxStdCode', this.value)" /><input type="text" placeholder="Fax" style="border-radius: 0 var(--radius-md) var(--radius-md) 0; flex: 1; height: 100%; box-sizing: border-box; margin: 0;" value="${form.ppob_fax || ''}" onchange="window.updateForm('ppob_fax', this.value)" /></div>`)}
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid var(--border-color); margin-bottom: 24px;" />
+
+            <!-- Jurisdiction -->
+            <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 24px;">
+                <div>
+                    <h3 style="font-size: 15px; font-weight: 600; color: var(--text-main); margin-bottom: 12px;">State Jurisdiction</h3>
+                    ${field('SECTOR / WARD <span style="color: #ef4444">*</span>', `<select onchange="window.updateForm('ppob_stateJurisdiction', this.value)" style=""><option value="">Select</option>${(window.fetchedStateJurisdictions || []).map(j => `<option value="${j}" ${form.ppob_stateJurisdiction === j ? 'selected' : ''}>${j}</option>`).join('')}</select>`)}
+                </div>
+                <div>
+                    <h3 style="font-size: 15px; font-weight: 600; color: var(--text-main); margin-bottom: 12px;">Center Jurisdiction</h3>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        ${field('COMMISSIONERATE <span style="color: #ef4444">*</span>', `<select onchange="window.form.ppob_commissionerate=this.value; if(window.fetchDivisions) window.fetchDivisions(renderContent)" style=""><option value="">Select</option>${(window.fetchedCommissionerates || []).map(j => `<option value="${j.c}" ${form.ppob_commissionerate === j.c ? 'selected' : ''}>${j.n}</option>`).join('')}</select>`)}
+                        ${field('DIVISION <span style="color: #ef4444">*</span>', `<select onchange="window.form.ppob_division=this.value; if(window.fetchRanges) window.fetchRanges(renderContent)" style=""><option value="">Select</option>${(window.fetchedDivisions || []).map(j => `<option value="${j.c}" ${form.ppob_division === j.c ? 'selected' : ''}>${j.n}</option>`).join('')}</select>`)}
+                        ${field('RANGE <span style="color: #ef4444">*</span>', `<select onchange="window.updateForm('ppob_range', this.value)" style=""><option value="">Select</option>${(window.fetchedRanges || []).map(j => `<option value="${j.c}" ${form.ppob_range === j.c ? 'selected' : ''}>${j.n}</option>`).join('')}</select>`)}
+                    </div>
+                </div>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid var(--border-color); margin-bottom: 24px;" />
+
+            <!-- Document Upload -->
+            <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 24px;">
+                <div>
+                    ${field('NATURE OF POSSESSION OF PREMISES <span style="color: #ef4444">*</span>', `<select style="width: 100%; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 16px; outline: none;" onchange="window.form.ppob_natureOfPossession=this.value; renderContent();">
+                        <option value="">Select</option>
+                        <option value="Consent" ${form.ppob_natureOfPossession === 'Consent' ? 'selected' : ''}>Consent</option>
+                        <option value="Leased" ${form.ppob_natureOfPossession === 'Leased' ? 'selected' : ''}>Leased</option>
+                        <option value="Others" ${form.ppob_natureOfPossession === 'Others' ? 'selected' : ''}>Others</option>
+                        <option value="Own" ${form.ppob_natureOfPossession === 'Own' ? 'selected' : ''}>Own</option>
+                        <option value="Rented" ${form.ppob_natureOfPossession === 'Rented' ? 'selected' : ''}>Rented</option>
+                        <option value="Shared" ${form.ppob_natureOfPossession === 'Shared' ? 'selected' : ''}>Shared</option>
+                    </select>`)}
+                </div>
+                <div>
+                    <div style="font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 8px;">Proof of Principal Place of Business <span style="color: #ef4444">*</span></div>
+                    <select style="width: 100%; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 16px; margin-bottom: 16px; outline: none;" onchange="window.form.ppob_doc = this.value; renderContent();">
+                        <option value="">Select Document</option>
+                        ${(form.ppob_natureOfPossession === 'Consent' || form.ppob_natureOfPossession === 'Shared') ? `
+                        <option value="Consent Letter" ${form.ppob_doc === 'Consent Letter' ? 'selected' : ''}>Consent Letter</option>
+                        <option value="Electricity Bill" ${form.ppob_doc === 'Electricity Bill' ? 'selected' : ''}>Electricity Bill</option>
+                        <option value="Legal ownership document" ${form.ppob_doc === 'Legal ownership document' ? 'selected' : ''}>Legal ownership document</option>
+                        <option value="Municipal Khata Copy" ${form.ppob_doc === 'Municipal Khata Copy' ? 'selected' : ''}>Municipal Khata Copy</option>
+                        <option value="Property Tax Receipt" ${form.ppob_doc === 'Property Tax Receipt' ? 'selected' : ''}>Property Tax Receipt</option>
+                        ` : (form.ppob_natureOfPossession === 'Leased' || form.ppob_natureOfPossession === 'Rented') ? `
+                        <option value="Electricity Bill" ${form.ppob_doc === 'Electricity Bill' ? 'selected' : ''}>Electricity Bill</option>
+                        <option value="Legal ownership document" ${form.ppob_doc === 'Legal ownership document' ? 'selected' : ''}>Legal ownership document</option>
+                        <option value="Municipal Khata Copy" ${form.ppob_doc === 'Municipal Khata Copy' ? 'selected' : ''}>Municipal Khata Copy</option>
+                        <option value="Property Tax Receipt" ${form.ppob_doc === 'Property Tax Receipt' ? 'selected' : ''}>Property Tax Receipt</option>
+                        <option value="Rent / Lease agreement" ${form.ppob_doc === 'Rent / Lease agreement' ? 'selected' : ''}>Rent / Lease agreement</option>
+                        <option value="Rent receipt with NOC (In case of no/expired agreement)" ${form.ppob_doc === 'Rent receipt with NOC (In case of no/expired agreement)' ? 'selected' : ''}>Rent receipt with NOC (In case of no/expired agreement)</option>
+                        ` : form.ppob_natureOfPossession === 'Others' ? `
+                        <option value="Legal ownership document" ${form.ppob_doc === 'Legal ownership document' ? 'selected' : ''}>Legal ownership document</option>
+                        ` : form.ppob_natureOfPossession === 'Own' ? `
+                        <option value="Electricity Bill" ${form.ppob_doc === 'Electricity Bill' ? 'selected' : ''}>Electricity Bill</option>
+                        <option value="Legal ownership document" ${form.ppob_doc === 'Legal ownership document' ? 'selected' : ''}>Legal ownership document</option>
+                        <option value="Municipal Khata Copy" ${form.ppob_doc === 'Municipal Khata Copy' ? 'selected' : ''}>Municipal Khata Copy</option>
+                        <option value="Property Tax Receipt" ${form.ppob_doc === 'Property Tax Receipt' ? 'selected' : ''}>Property Tax Receipt</option>
+                        ` : ''}
+                    </select>
+                    <div style="display:flex; align-items:center; gap: 16px;">
+                        <button style="background: #e2e8f0; border: 1px solid var(--border-color); padding: 10px 24px; font-size: 15px; border-radius: var(--radius-md); cursor: pointer;" onclick="this.nextElementSibling.click(); return false;">Choose File</button>
+                        <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form.ppob_docFile = data; window.form.ppob_docFileName = filename; renderContent(); })" style="display: none;" />
+                        <span style="font-size: 15px; color: var(--text-main);">${form.ppob_docFile ? `<div style="display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 8px;"><span style="color: #166534; font-weight: 500; word-break: break-all;">📄 ${form.ppob_docFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form.ppob_docFile, () => { window.form.ppob_docFile = ''; window.form.ppob_docFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form.ppob_docFile); return false;" class="btn-doc-view">View</button></div></div>` : 'No file chosen'}</span>
+                    </div>
+                </div>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid var(--border-color); margin-bottom: 24px;" />
+
+            <!-- Nature of Business Activity -->
+            <h2 style="font-size: 18px; font-weight: 600; color: #1e3a8a; margin: 0 0 16px 0;">Nature of Business Activity <span style="color: #ef4444">*</span></h2>
+            
+            <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.bondedWarehouse ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.bondedWarehouse=this.checked" style="width: 18px; height: 18px; margin: 0;" /> Bonded Warehouse</label>
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.factoryManufacturing ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.factoryManufacturing=this.checked" style="width: 18px; height: 18px; margin: 0;" /> Factory / Manufacturing</label>
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.leasingBusiness ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.leasingBusiness=this.checked" style="width: 18px; height: 18px; margin: 0;" /> Leasing Business</label>
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.retailBusiness ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.retailBusiness=this.checked" style="width: 18px; height: 18px; margin: 0;" /> Retail Business</label>
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.worksContract ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.worksContract=this.checked" style="width: 18px; height: 18px; margin: 0;" /> Works Contract</label>
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.eouStpEhtp ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.eouStpEhtp=this.checked" style="width: 18px; height: 18px; margin: 0;" /> EOU / STP / EHTP</label>
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.import ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.import=this.checked" style="width: 18px; height: 18px; margin: 0;" /> Import</label>
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.officeSaleOffice ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.officeSaleOffice=this.checked" style="width: 18px; height: 18px; margin: 0;" /> Office / Sale Office</label>
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.warehouseDepot ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.warehouseDepot=this.checked" style="width: 18px; height: 18px; margin: 0;" /> Warehouse / Depot</label>
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.export ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.export=this.checked" style="width: 18px; height: 18px; margin: 0;" /> Export</label>
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.supplierOfServices ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.supplierOfServices=this.checked" style="width: 18px; height: 18px; margin: 0;" /> Supplier of Services</label>
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.recipientOfGoodsOrServices ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.recipientOfGoodsOrServices=this.checked" style="width: 18px; height: 18px; margin: 0;" /> Recipient of Goods/Services</label>
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.wholesaleBusiness ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.wholesaleBusiness=this.checked" style="width: 18px; height: 18px; margin: 0;" /> Wholesale Business</label>
+                <label style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--text-main); cursor: pointer;"><input type="checkbox" ${form.ppob_natureOfBusiness?.others ? 'checked' : ''} onchange="window.form.ppob_natureOfBusiness.others=this.checked; renderContent();" style="width: 18px; height: 18px; margin: 0;" /> Others</label>
+            </div>
+            ${form.ppob_natureOfBusiness?.others ? `
+            <div style="margin-top: 8px;">
+                <input type="text" placeholder="Please specify others" value="${form.ppob_natureOfBusiness?.othersText || ''}" onchange="window.form.ppob_natureOfBusiness.othersText=this.value" style="width: 100%; max-width: 400px; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 15px; outline: none; background: #fff;" />
+            </div>
+            ` : ''}
+            
         </div>
         </section>`;
-        } else if (step === 5) {
+} else if (step === 5) {
         html = `<section class="card">
         <h2 style="font-size: 18px; margin: 0 0 16px 0; color: #1e3a8a; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Additional Places of Business</h2>
         <div style="margin-bottom: 16px;">

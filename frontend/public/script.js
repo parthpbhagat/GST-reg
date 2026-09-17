@@ -3569,16 +3569,13 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
         const span = doc.createElement('span');
         span.innerText = input.value;
         span.style.cssText = `
-            display: inline-block;
+            display: inline;
             border-bottom: 1px solid #000;
-            min-width: ${input.style.width || (input.classList.contains('large') ? '250px' : input.classList.contains('small') ? '80px' : '150px')};
-            text-align: center;
+            padding: 0 15px;
             font-weight: bold;
             font-family: Arial, Helvetica, sans-serif;
             font-size: 15px;
-            margin: 0 5px;
             color: #000;
-            vertical-align: bottom;
         `;
         input.parentNode.replaceChild(span, input);
         replacements.push({ parent: span.parentNode, span: span, input: input });
@@ -3604,7 +3601,7 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
       margin:       0,
       filename:     'Declaration.pdf',
       image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
+      html2canvas:  { scale: 2, useCORS: true, letterRendering: false },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 

@@ -955,7 +955,6 @@ window.submitApplication = async function () {
         alert('Error submitting: ' + e.message);
     }
 }
-};
 
 window.generateSummary = function (obj) {
     if (typeof obj !== 'object' || obj === null) {

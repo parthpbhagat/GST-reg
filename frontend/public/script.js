@@ -3568,40 +3568,20 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
     inputs.forEach((input) => {
         const span = doc.createElement('span');
         span.innerText = input.value;
+        // Avoid inline-block at all costs to prevent html2canvas space collapsing bug
+        // Use inline with padding to simulate the blank underline
         span.style.cssText = `
-            display: inline-block;
+            display: inline;
             border-bottom: 1px solid #000;
-            min-width: ${input.style.width || (input.classList.contains('large') ? '250px' : input.classList.contains('small') ? '80px' : '150px')};
-            text-align: center;
+            padding: 0 25px;
             font-weight: bold;
             font-family: Arial, Helvetica, sans-serif;
             font-size: 15px;
-            margin: 0 5px;
             color: #000;
-            line-height: 1.2;
-            vertical-align: bottom;
         `;
         input.parentNode.replaceChild(span, input);
         replacements.push({ parent: span.parentNode, span: span, input: input });
     });
-
-    // Create a container in the main document to render the PDF
-    // html2canvas has severe bugs calculating font metrics across iframe boundaries
-    const tempContainer = document.createElement('div');
-    tempContainer.style.position = 'absolute';
-    tempContainer.style.top = '0';
-    tempContainer.style.left = '0';
-    tempContainer.style.zIndex = '-9999';
-    tempContainer.style.background = '#fff';
-    
-    // Copy styles from iframe
-    const styleNode = doc.querySelector('style').cloneNode(true);
-    tempContainer.appendChild(styleNode);
-    
-    // Copy the modified page
-    const clonedPage = pageElement.cloneNode(true);
-    tempContainer.appendChild(clonedPage);
-    document.body.appendChild(tempContainer);
 
     const btn = document.getElementById('btn-generate-pdf');
     btn.innerText = 'Generating...';
@@ -3612,10 +3592,10 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
       filename:     'Declaration.pdf',
       image:        { type: 'jpeg', quality: 0.98 },
       html2canvas:  { scale: 2, useCORS: true, logging: false },
-      jsPDF:        { unit: 'px', format: [794, 1123], orientation: 'portrait' }
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
-    html2pdf().set(opt).from(clonedPage).outputPdf('datauristring').then(function (pdfAsString) {
+    html2pdf().set(opt).from(pageElement).outputPdf('datauristring').then(function (pdfAsString) {
         window.form[currentPdfAuthKey].authSigProofFile = pdfAsString;
         window.form[currentPdfAuthKey].authSigProofFileName = 'Declaration_Form.pdf';
         
@@ -3628,11 +3608,6 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
     }).finally(() => {
         btn.innerText = 'Generate & Upload PDF';
         btn.disabled = false;
-        
-        // Remove temporary container from main DOM
-        if (tempContainer && tempContainer.parentNode) {
-            tempContainer.parentNode.removeChild(tempContainer);
-        }
         
         // Restore original inputs in iframe DOM
         replacements.forEach(rep => {

@@ -889,65 +889,72 @@ window.removeServicesItem = function (index) {
 };
 
 window.submitApplication = async function () {
-    const appId = form._appId || 'APP-' + Math.floor(100000 + Math.random() * 900000);
-    form._appId = appId;
-
-    // Auto-add existing registration if left in the form fields without clicking '+ ADD'
-    if (form.existingRegistrationType && form.existingRegistrationNo && form.existingRegistrationDate) {
-        if (!form.existingRegistrations) form.existingRegistrations = [];
-        form.existingRegistrations.push({
-            type: form.existingRegistrationType,
-            no: form.existingRegistrationNo,
-            date: form.existingRegistrationDate
-        });
-    }
-
-    // Clean up temporary fields so they don't get sent to the database
-    const payload = JSON.parse(JSON.stringify(form));
-    delete payload.existingRegistrationType;
-    delete payload.existingRegistrationNo;
-    delete payload.existingRegistrationDate;
-
-    // Reorder promoters based on 'alsoAuthorizedSignatory' timestamp
-    let promoters = [];
-    for (let i = 1; i <= 10; i++) {
-        if (payload[`p${i}`] && Object.keys(payload[`p${i}`]).length > 0) {
-            promoters.push(payload[`p${i}`]);
-        }
-        delete payload[`p${i}`];
-    }
-
-    promoters.sort((a, b) => {
-        if (a.alsoAuthorizedSignatory && !b.alsoAuthorizedSignatory) return -1;
-        if (!a.alsoAuthorizedSignatory && b.alsoAuthorizedSignatory) return 1;
-        if (a.alsoAuthorizedSignatory && b.alsoAuthorizedSignatory) {
-            const timeA = a.authSigTimestamp || 0;
-            const timeB = b.authSigTimestamp || 0;
-            return timeA - timeB;
-        }
-        return 0;
-    });
-
-    promoters.forEach((p, idx) => {
-        payload[`p${idx + 1}`] = p;
-    });
-
     try {
+        console.log("Submitting application...");
+        const appId = form._appId || 'APP-' + Math.floor(100000 + Math.random() * 900000);
+        form._appId = appId;
+
+        // Auto-add existing registration if left in the form fields without clicking '+ ADD'
+        if (form.existingRegistrationType && form.existingRegistrationNo && form.existingRegistrationDate) {
+            if (!form.existingRegistrations) form.existingRegistrations = [];
+            form.existingRegistrations.push({
+                type: form.existingRegistrationType,
+                no: form.existingRegistrationNo,
+                date: form.existingRegistrationDate
+            });
+        }
+
+        // Clean up temporary fields so they don't get sent to the database
+        const payload = JSON.parse(JSON.stringify(form));
+        delete payload.existingRegistrationType;
+        delete payload.existingRegistrationNo;
+        delete payload.existingRegistrationDate;
+
+        // Reorder promoters based on 'alsoAuthorizedSignatory' timestamp
+        let promoters = [];
+        for (let i = 1; i <= 10; i++) {
+            if (payload[`p${i}`] && Object.keys(payload[`p${i}`]).length > 0) {
+                promoters.push(payload[`p${i}`]);
+            }
+            delete payload[`p${i}`];
+        }
+
+        promoters.sort((a, b) => {
+            if (a.alsoAuthorizedSignatory && !b.alsoAuthorizedSignatory) return -1;
+            if (!a.alsoAuthorizedSignatory && b.alsoAuthorizedSignatory) return 1;
+            if (a.alsoAuthorizedSignatory && b.alsoAuthorizedSignatory) {
+                const timeA = a.authSigTimestamp || 0;
+                const timeB = b.authSigTimestamp || 0;
+                return timeA - timeB;
+            }
+            return 0;
+        });
+
+        promoters.forEach((p, idx) => {
+            payload[`p${idx + 1}`] = p;
+        });
+
         const res = await fetch(`${API_BASE_URL}/api/applications`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + localStorage.getItem('token')
+            },
             body: JSON.stringify({ appId, data: payload })
         });
+        
         if (res.ok) {
             alert('Application Submitted Successfully! It is now pending admin review.');
             window.location.reload();
         } else {
-            alert('Failed to submit application.');
+            const errData = await res.json().catch(() => ({}));
+            alert('Failed to submit application: ' + (errData.error || res.statusText));
         }
     } catch (e) {
-        console.error(e);
-        alert('Backend connection error.');
+        console.error("Submit error:", e);
+        alert('Error submitting: ' + e.message);
     }
+}
 };
 
 window.generateSummary = function (obj) {

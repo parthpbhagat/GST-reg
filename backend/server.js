@@ -273,7 +273,7 @@ const path = require('path');
 const activeAutomations = new Map();
 
 // POST /api/automation/start
-app.post('/api/automation/start', (req, res) => {
+app.post('/api/automation/start', authenticateToken, (req, res) => {
     const { appId } = req.body;
     console.log(`[Automation] Starting automation for App ID: ${appId}`);
     
@@ -282,7 +282,11 @@ app.post('/api/automation/start', (req, res) => {
     // Spawn the Playwright runner
     const runnerDir = path.join(__dirname, '..', 'automation');
     const runnerPath = path.join(runnerDir, 'runner.js');
-    const child = spawn('node', [runnerPath, appId], { cwd: runnerDir });
+    
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    const child = spawn('node', [runnerPath, appId, token], { cwd: runnerDir });
     activeAutomations.set(appId, child);
 
     child.stdout.on('data', (data) => {
@@ -380,6 +384,6 @@ app.post('/api/automation/otp', (req, res) => {
     res.json({ message: 'OTPs received successfully' });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Backend server is running on http://localhost:${PORT}`);
 });

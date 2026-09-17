@@ -3574,7 +3574,7 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
             min-width: ${input.style.width || (input.classList.contains('large') ? '250px' : input.classList.contains('small') ? '80px' : '150px')};
             text-align: center;
             font-weight: bold;
-            font-family: 'Times New Roman', Times, serif;
+            font-family: Arial, Helvetica, sans-serif;
             font-size: 15px;
             margin: 0 5px;
             color: #000;
@@ -3593,7 +3593,7 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
       margin:       0,
       filename:     'Declaration.pdf',
       image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true, logging: false },
+      html2canvas:  { scale: 2, useCORS: true, logging: false, letterRendering: true },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 

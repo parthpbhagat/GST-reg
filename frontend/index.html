@@ -22,7 +22,21 @@
         .modal h2 { margin-top: 0; font-size: 18px; margin-bottom: 16px; color: #1e293b; }
         .modal input { width: 100%; margin-bottom: 12px; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 4px; }
         .modal .btn-group { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+        /* PDF Generation Modal */
+        #pdf-gen-modal .modal {
+            max-width: 900px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        #pdf-gen-content {
+            background: white;
+            color: black;
+            padding: 20px;
+        }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 <body>
     <header class="top">
@@ -274,6 +288,21 @@
             <div class="btn-group">
                 <button class="btn ghost" onclick="document.getElementById('missing-fields-modal').classList.add('hidden')">Cancel</button>
                 <button class="btn accent" onclick="saveMissingFields()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="pdf-gen-modal" class="modal-overlay hidden">
+        <div class="modal" style="display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin:0;">Review Declaration Form</h2>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn ghost" onclick="document.getElementById('pdf-gen-modal').classList.add('hidden')">Cancel</button>
+                    <button class="btn primary" id="btn-generate-pdf">Generate & Upload PDF</button>
+                </div>
+            </div>
+            <div id="pdf-gen-content-container" style="flex: 1; border: 1px solid #e2e8f0; background: #f1f5f9; position: relative;">
+                <iframe id="pdf-preview-frame" style="width: 100%; height: 60vh; border: none; background: white;"></iframe>
             </div>
         </div>
     </div>

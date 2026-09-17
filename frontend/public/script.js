@@ -2186,7 +2186,10 @@ function renderContent() {
                 <div style="margin-bottom: 12px;">
                     ${field('Proof of details of authorized signatory <span style="color: #ef4444">*</span>', `<select style="width: 100%; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 14px; margin-bottom: 8px; outline: none;" onchange="window.form['${currentPromoterKey}'].authSigProofType = this.value; renderContent();"><option value="">Select</option><option value="Letter of Authorisation" ${pForm.authSigProofType === 'Letter of Authorisation' ? 'selected' : ''}>Letter of Authorisation</option><option value="Copy of resolution passed by BoD / Managing Committee" ${pForm.authSigProofType === 'Copy of resolution passed by BoD / Managing Committee' ? 'selected' : ''}>Copy of resolution passed by BoD / Managing Committee</option></select>`)}
                     <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ File with PDF or JPEG format is only allowed. Max size 1 MB.</p>
-                    <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form['${currentPromoterKey}'].authSigProofFile = data; window.form['${currentPromoterKey}'].authSigProofFileName = filename; renderContent(); })" style="font-size: 14px; margin-top: 4px; ${pForm.authSigProofFile ? 'display: none;' : ''}" />
+                    <div style="display: flex; gap: 10px; align-items: center; margin-top: 4px;">
+                        <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form['${currentPromoterKey}'].authSigProofFile = data; window.form['${currentPromoterKey}'].authSigProofFileName = filename; renderContent(); })" style="font-size: 14px; ${pForm.authSigProofFile ? 'display: none;' : ''}" />
+                        ${!pForm.authSigProofFile ? `<button class="btn accent" style="padding: 6px 12px; font-size: 13px;" onclick="window.openDeclarationModal('${currentPromoterKey}')">Auto-Generate Declaration</button>` : ''}
+                    </div>
                     ${pForm.authSigProofFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${pForm.authSigProofFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentPromoterKey}'].authSigProofFile, () => { window.form['${currentPromoterKey}'].authSigProofFile = ''; window.form['${currentPromoterKey}'].authSigProofFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentPromoterKey}'].authSigProofFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
                 </div>
                 ` : ''}
@@ -2409,7 +2412,10 @@ function renderContent() {
             <div style="margin-bottom: 12px;">
                 ${field('Proof of details of authorized signatory <span style="color: #ef4444">*</span>', `<select style="width: 100%; padding: 8px 12px;  border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 14px; margin-bottom: 8px; outline: none;" onchange="window.form['${currentAuthSigKey}'].authSigProofType = this.value; renderContent();"><option value="">Select</option><option value="Letter of Authorisation" ${aForm.authSigProofType === 'Letter of Authorisation' ? 'selected' : ''}>Letter of Authorisation</option><option value="Copy of resolution passed by BoD / Managing Committee" ${aForm.authSigProofType === 'Copy of resolution passed by BoD / Managing Committee' ? 'selected' : ''}>Copy of resolution passed by BoD / Managing Committee</option></select>`)}
                 <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ File with PDF or JPEG format is only allowed. Max size 1 MB.</p>
-                <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form['${currentAuthSigKey}'].authSigProofFile = data; window.form['${currentAuthSigKey}'].authSigProofFileName = filename; renderContent(); })" style="font-size: 14px; margin-top: 4px; ${aForm.authSigProofFile ? 'display: none;' : ''}" />
+                <div style="display: flex; gap: 10px; align-items: center; margin-top: 4px;">
+                    <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form['${currentAuthSigKey}'].authSigProofFile = data; window.form['${currentAuthSigKey}'].authSigProofFileName = filename; renderContent(); })" style="font-size: 14px; ${aForm.authSigProofFile ? 'display: none;' : ''}" />
+                    ${!aForm.authSigProofFile ? `<button class="btn accent" style="padding: 6px 12px; font-size: 13px;" onclick="window.openDeclarationModal('${currentAuthSigKey}')">Auto-Generate Declaration</button>` : ''}
+                </div>
                 ${aForm.authSigProofFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${aForm.authSigProofFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentAuthSigKey}'].authSigProofFile, () => { window.form['${currentAuthSigKey}'].authSigProofFile = ''; window.form['${currentAuthSigKey}'].authSigProofFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentAuthSigKey}'].authSigProofFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
             </div>
             <hr style="border-top: 1px solid #e2e8f0; margin-bottom: 12px;" />
@@ -3489,6 +3495,104 @@ window.handleRoute = function() {
         if (typeof renderContent === 'function') renderContent();
     }
 };
+
+let currentPdfAuthKey = null;
+
+window.openDeclarationModal = function(key) {
+    currentPdfAuthKey = key;
+    const modal = document.getElementById('pdf-gen-modal');
+    const iframe = document.getElementById('pdf-preview-frame');
+    
+    fetch('/declaration_template.html')
+        .then(res => res.text())
+        .then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            const data = window.form;
+            let companyName = data.legalName || data.tradeName || '';
+            companyName = companyName.replace(/PVT\s+LTD\.?/i, '').replace(/PRIVATE\s+LIMITED/i, '').trim();
+            
+            const setVal = (id, val) => {
+                const el = doc.getElementById(id);
+                if(el && val) el.setAttribute('value', val);
+            };
+
+            setVal('company_name', companyName);
+            setVal('company_name_2', companyName);
+            setVal('company_name_3', companyName);
+            setVal('company_name_4', companyName);
+            setVal('company_name_5', companyName);
+            
+            setVal('cin', data.cin || '');
+            setVal('address', data.principalAddress || '');
+            setVal('contact', data.mobile || '');
+            setVal('email', data.email || '');
+
+            if (data.p1) {
+                setVal('dir1_name', `${data.p1.firstName || ''} ${data.p1.lastName || ''}`);
+                setVal('dir1_din', data.p1.din || '');
+            }
+            if (data.p2) {
+                setVal('dir2_name', `${data.p2.firstName || ''} ${data.p2.lastName || ''}`);
+                setVal('dir2_din', data.p2.din || '');
+            }
+
+            const auth = data[key];
+            if (auth) {
+                const authName = `${auth.firstName || ''} ${auth.lastName || ''}`;
+                setVal('auth_signatory_name', authName);
+                setVal('auth_signatory_name_2', authName);
+                setVal('auth_signatory_name_3', authName);
+                setVal('auth_signatory_din', auth.din || '');
+            }
+            
+            setVal('date', new Date().toLocaleDateString('en-IN'));
+            
+            const printBtn = doc.querySelector('.print-btn');
+            if (printBtn) printBtn.remove();
+            
+            iframe.srcdoc = doc.documentElement.outerHTML;
+            modal.classList.remove('hidden');
+        });
+};
+
+document.getElementById('btn-generate-pdf').addEventListener('click', () => {
+    const iframe = document.getElementById('pdf-preview-frame');
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    const pageElement = doc.querySelector('.page');
+    
+    const inputs = pageElement.querySelectorAll('input');
+    inputs.forEach(input => input.setAttribute('value', input.value));
+
+    const btn = document.getElementById('btn-generate-pdf');
+    btn.innerText = 'Generating...';
+    btn.disabled = true;
+
+    var opt = {
+      margin:       0,
+      filename:     'Declaration.pdf',
+      image:        { type: 'jpeg', quality: 0.95 },
+      html2canvas:  { scale: 2, useCORS: true },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    html2pdf().set(opt).from(pageElement).outputPdf('datauristring').then(function (pdfAsString) {
+        window.form[currentPdfAuthKey].authSigProofFile = pdfAsString;
+        window.form[currentPdfAuthKey].authSigProofFileName = 'Declaration_Form.pdf';
+        
+        document.getElementById('pdf-gen-modal').classList.add('hidden');
+        btn.innerText = 'Generate & Upload PDF';
+        btn.disabled = false;
+        
+        renderContent();
+    }).catch(err => {
+        console.error("PDF generation failed", err);
+        alert("Failed to generate PDF. Please try again.");
+        btn.innerText = 'Generate & Upload PDF';
+        btn.disabled = false;
+    });
+});
 
 window.addEventListener('popstate', handleRoute);
 document.addEventListener('DOMContentLoaded', () => {

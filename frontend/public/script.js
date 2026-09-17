@@ -3585,6 +3585,24 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
         replacements.push({ parent: span.parentNode, span: span, input: input });
     });
 
+    // Create a container in the main document to render the PDF
+    // html2canvas has severe bugs calculating font metrics across iframe boundaries
+    const tempContainer = document.createElement('div');
+    tempContainer.style.position = 'absolute';
+    tempContainer.style.top = '0';
+    tempContainer.style.left = '0';
+    tempContainer.style.zIndex = '-9999';
+    tempContainer.style.background = '#fff';
+    
+    // Copy styles from iframe
+    const styleNode = doc.querySelector('style').cloneNode(true);
+    tempContainer.appendChild(styleNode);
+    
+    // Copy the modified page
+    const clonedPage = pageElement.cloneNode(true);
+    tempContainer.appendChild(clonedPage);
+    document.body.appendChild(tempContainer);
+
     const btn = document.getElementById('btn-generate-pdf');
     btn.innerText = 'Generating...';
     btn.disabled = true;
@@ -3593,11 +3611,11 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
       margin:       0,
       filename:     'Declaration.pdf',
       image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true, logging: false, letterRendering: true },
-      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      html2canvas:  { scale: 2, useCORS: true, logging: false },
+      jsPDF:        { unit: 'px', format: [794, 1123], orientation: 'portrait' }
     };
 
-    html2pdf().set(opt).from(pageElement).outputPdf('datauristring').then(function (pdfAsString) {
+    html2pdf().set(opt).from(clonedPage).outputPdf('datauristring').then(function (pdfAsString) {
         window.form[currentPdfAuthKey].authSigProofFile = pdfAsString;
         window.form[currentPdfAuthKey].authSigProofFileName = 'Declaration_Form.pdf';
         
@@ -3611,7 +3629,12 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
         btn.innerText = 'Generate & Upload PDF';
         btn.disabled = false;
         
-        // Restore original inputs
+        // Remove temporary container from main DOM
+        if (tempContainer && tempContainer.parentNode) {
+            tempContainer.parentNode.removeChild(tempContainer);
+        }
+        
+        // Restore original inputs in iframe DOM
         replacements.forEach(rep => {
             if (rep.parent && rep.span.parentNode === rep.parent) {
                 rep.parent.replaceChild(rep.input, rep.span);

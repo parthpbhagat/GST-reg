@@ -706,6 +706,39 @@ async function run() {
                 sendUpdate(`Warning: Could not select Business District: ${data.businessDistrict}`);
             }
         }
+
+        const selectDropdownRobust = async (selector, text) => {
+            if (!text) return;
+            try {
+                // Wait up to 10s for the dropdown to actually fetch and populate its options
+                await page.waitForFunction(`document.querySelector('${selector}') && document.querySelector('${selector}').options.length > 1`, null, { timeout: 10000 }).catch(() => { });
+
+                // Try exact label match (fast timeout)
+                await page.selectOption(selector, { label: text }, { timeout: 2000 });
+            } catch (e1) {
+                try {
+                    // Try exact value match (fast timeout)
+                    await page.selectOption(selector, text, { timeout: 2000 });
+                } catch (e2) {
+                    try {
+                        // Fallback: Partial text match (e.g., if option is "GANDHINAGAR (12)")
+                        const options = await page.$$eval(`${selector} option`, opts => opts.map(o => ({ value: o.value, text: o.innerText })));
+                        const match = options.find(o => o.text && o.text.toUpperCase().includes(text.toUpperCase()));
+                        if (match && match.value) {
+                            await page.selectOption(selector, match.value, { timeout: 2000 });
+                        }
+                    } catch (e3) { }
+                }
+            }
+            // Wait for the next dependent dropdown to start fetching
+            await page.waitForTimeout(1500);
+        };
+
+        if (data.ppob_stateJurisdiction) await selectDropdownRobust('#stj', data.ppob_stateJurisdiction);
+        if (data.ppob_commissionerate) await selectDropdownRobust('#comcd', data.ppob_commissionerate);
+        if (data.ppob_division) await selectDropdownRobust('#divcd', data.ppob_division);
+        if (data.ppob_range) await selectDropdownRobust('#rgcd', data.ppob_range);
+
         if (data.rule14A) {
             sendUpdate('Selecting Rule 14A option...');
             const isYes = (typeof data.rule14A === 'string' && data.rule14A.toLowerCase() === 'yes') || data.rule14A === true || data.rule14A === 'Y';
@@ -1749,38 +1782,6 @@ async function run() {
                     }
                 } catch (e) { sendUpdate('Warning: Could not fill landmark field'); }
             }
-
-            const selectDropdownRobust = async (selector, text) => {
-                if (!text) return;
-                try {
-                    // Wait up to 10s for the dropdown to actually fetch and populate its options
-                    await page.waitForFunction(`document.querySelector('${selector}') && document.querySelector('${selector}').options.length > 1`, null, { timeout: 10000 }).catch(() => { });
-
-                    // Try exact label match (fast timeout)
-                    await page.selectOption(selector, { label: text }, { timeout: 2000 });
-                } catch (e1) {
-                    try {
-                        // Try exact value match (fast timeout)
-                        await page.selectOption(selector, text, { timeout: 2000 });
-                    } catch (e2) {
-                        try {
-                            // Fallback: Partial text match (e.g., if option is "GANDHINAGAR (12)")
-                            const options = await page.$$eval(`${selector} option`, opts => opts.map(o => ({ value: o.value, text: o.innerText })));
-                            const match = options.find(o => o.text && o.text.toUpperCase().includes(text.toUpperCase()));
-                            if (match && match.value) {
-                                await page.selectOption(selector, match.value, { timeout: 2000 });
-                            }
-                        } catch (e3) { }
-                    }
-                }
-                // Wait for the next dependent dropdown to start fetching
-                await page.waitForTimeout(1500);
-            };
-
-            if (data.ppob_stateJurisdiction) await selectDropdownRobust('#stj', data.ppob_stateJurisdiction);
-            if (data.ppob_commissionerate) await selectDropdownRobust('#comcd', data.ppob_commissionerate);
-            if (data.ppob_division) await selectDropdownRobust('#divcd', data.ppob_division);
-            if (data.ppob_range) await selectDropdownRobust('#rgcd', data.ppob_range);
 
             if (data.ppob_natureOfPossession) {
                 await page.selectOption('#bp_buss_poss', { label: data.ppob_natureOfPossession }).catch(() => page.selectOption('#bp_buss_poss', data.ppob_natureOfPossession).catch(() => { }));

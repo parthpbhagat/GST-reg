@@ -59,10 +59,17 @@
         }
         .blank {
             display: inline-block;
+            border: none;
             border-bottom: 1px solid #000;
             min-width: 150px;
             text-align: center;
             font-weight: bold;
+            font-family: inherit;
+            font-size: inherit;
+            background: transparent;
+            outline: none;
+            padding: 0;
+            margin: 0 5px;
         }
         .blank.small { min-width: 80px; }
         .blank.large { min-width: 250px; }
@@ -116,66 +123,66 @@
     <div class="page">
         <div class="header">
             <div class="company-name">
-                <span class="blank large" id="company_name"></span> PRIVATE LIMITED
+                <input type="text" class="blank large" id="company_name"> PRIVATE LIMITED
             </div>
             <div class="header-details">
-                <div>CIN: <span class="blank" id="cin"></span></div>
+                <div>CIN: <input type="text" class="blank" id="cin"></div>
             </div>
             <div style="margin-top: 10px; font-size: 14px;">
-                Address: <span class="blank large" style="width: 80%;" id="address"></span>
+                Address: <input type="text" class="blank large" style="width: 80%;" id="address">
             </div>
             <div class="header-contact">
-                <div>Contact No. <span class="blank small" id="contact"></span></div>
-                <div>Email : <span class="blank" id="email"></span></div>
+                <div>Contact No. <input type="text" class="blank small" id="contact"></div>
+                <div>Email : <input type="text" class="blank" id="email"></div>
             </div>
         </div>
 
         <div class="title">DECLARATION FOR AUTHORIZED SIGNATORY</div>
 
         <div class="content-body">
-            We, Mr. <span class="blank" id="dir1_name"></span> and Mr. <span class="blank" id="dir2_name"></span> 
-            (Director of <span class="blank" id="company_name_2"></span> PVT LTD) hereby solemnly authorize 
-            Mr. <span class="blank" id="auth_signatory_name"></span> to act as primary authorized signatory of 
-            Private Limited Company "<span class="blank" id="company_name_3"></span> PVT LTD" for GST Registration.
+            We, Mr. <input type="text" class="blank" id="dir1_name"> and Mr. <input type="text" class="blank" id="dir2_name"> 
+            (Director of <input type="text" class="blank" id="company_name_2"> PVT LTD) hereby solemnly authorize 
+            Mr. <input type="text" class="blank" id="auth_signatory_name"> to act as primary authorized signatory of 
+            Private Limited Company "<input type="text" class="blank" id="company_name_3"> PVT LTD" for GST Registration.
             <br><br>
-            Mr. <span class="blank" id="auth_signatory_name_2"></span> of "<span class="blank" id="company_name_4"></span> PVT LTD" 
+            Mr. <input type="text" class="blank" id="auth_signatory_name_2"> of "<input type="text" class="blank" id="company_name_4"> PVT LTD" 
             are authorized to sign all the necessary applications, undertakings and such other documents as may be 
             necessary for GST registration application & all other compliances on behalf of Company
             <br><br>
             All his actions in relation to this business will be binding on us.
             <br><br>
-            For <span class="blank" id="company_name_5"></span> PVT LTD
+            For <input type="text" class="blank" id="company_name_5"> PVT LTD
         </div>
 
         <div class="signatures">
             <div class="signature-block">
                 <div class="signature-line"></div>
                 <div>Director</div>
-                <div>DIN: <span class="blank small" id="dir1_din"></span></div>
+                <div>DIN: <input type="text" class="blank small" id="dir1_din"></div>
             </div>
             <div class="signature-block">
                 <div class="signature-line"></div>
                 <div>Director</div>
-                <div>DIN: <span class="blank small" id="dir2_din"></span></div>
+                <div>DIN: <input type="text" class="blank small" id="dir2_din"></div>
             </div>
         </div>
 
         <div class="acceptance-section">
             <div class="title">Acceptance as an authorized signatory</div>
             <div class="content-body">
-                I, <span class="blank large" id="auth_signatory_name_3"></span>, hereby solemnly accord my acceptance 
+                I, <input type="text" class="blank large" id="auth_signatory_name_3">, hereby solemnly accord my acceptance 
                 to act as authorized signatory for the above referred business and all acts shall be binding on the business.
             </div>
             
             <div class="signature-block">
                 <div class="signature-line"></div>
                 <div>Director</div>
-                <div>DIN: <span class="blank small" id="auth_signatory_din"></span></div>
+                <div>DIN: <input type="text" class="blank small" id="auth_signatory_din"></div>
             </div>
 
             <div class="footer-details">
-                <div>Date: <span class="blank small" id="date"></span></div>
-                <div>Place: <span class="blank small" id="place"></span></div>
+                <div>Date: <input type="text" class="blank small" id="date"></div>
+                <div>Place: <input type="text" class="blank small" id="place"></div>
             </div>
         </div>
     </div>
@@ -211,7 +218,7 @@
                     
                     const setVal = (id, val) => {
                         const el = document.getElementById(id);
-                        if(el && val) el.innerText = val;
+                        if(el && val) el.value = val;
                     };
 
                     setVal('company_name', companyName);

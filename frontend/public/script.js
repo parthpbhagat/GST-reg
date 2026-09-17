@@ -3560,24 +3560,14 @@ window.openDeclarationModal = function(key) {
 document.getElementById('btn-generate-pdf').addEventListener('click', () => {
     const iframe = document.getElementById('pdf-preview-frame');
     const doc = iframe.contentDocument || iframe.contentWindow.document;
-    const originalPage = doc.querySelector('.page');
-    
-    // Create a clone to avoid destroying the live form
-    const pageElement = originalPage.cloneNode(true);
-    
-    // Append clone temporarily off-screen so html2canvas can render it properly
-    pageElement.style.position = 'absolute';
-    pageElement.style.top = '-9999px';
-    pageElement.style.left = '-9999px';
-    doc.body.appendChild(pageElement);
+    const pageElement = doc.querySelector('.page');
     
     const inputs = pageElement.querySelectorAll('input');
-    const originalInputs = originalPage.querySelectorAll('input');
+    const replacements = [];
     
-    inputs.forEach((input, index) => {
+    inputs.forEach((input) => {
         const span = doc.createElement('span');
-        span.innerText = originalInputs[index].value;
-        // Force explicit styles to prevent any browser default borders
+        span.innerText = input.value;
         span.style.cssText = `
             display: inline-block;
             border-bottom: 1px solid #000;
@@ -3592,6 +3582,7 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
             vertical-align: bottom;
         `;
         input.parentNode.replaceChild(span, input);
+        replacements.push({ parent: span.parentNode, span: span, input: input });
     });
 
     const btn = document.getElementById('btn-generate-pdf');
@@ -3611,19 +3602,21 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
         window.form[currentPdfAuthKey].authSigProofFileName = 'Declaration_Form.pdf';
         
         document.getElementById('pdf-gen-modal').classList.add('hidden');
-        btn.innerText = 'Generate & Upload PDF';
-        btn.disabled = false;
-        
-        // Remove clone
-        doc.body.removeChild(pageElement);
         
         renderContent();
     }).catch(err => {
         console.error("PDF generation failed", err);
         alert("Failed to generate PDF. Please try again.");
+    }).finally(() => {
         btn.innerText = 'Generate & Upload PDF';
         btn.disabled = false;
-        doc.body.removeChild(pageElement);
+        
+        // Restore original inputs
+        replacements.forEach(rep => {
+            if (rep.parent && rep.span.parentNode === rep.parent) {
+                rep.parent.replaceChild(rep.input, rep.span);
+            }
+        });
     });
 });
 

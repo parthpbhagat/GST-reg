@@ -1,4 +1,4 @@
-const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3002' : 'https://YOUR_BACKEND_URL.onrender.com';
+const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3002' : 'https://gst-reg.onrender.com';
 
 // ---------------- AUTHENTICATION SETUP ----------------
 const supabaseUrl = 'https://mgxsxpbrzmcmzlzgzfde.supabase.co';

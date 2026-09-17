@@ -181,10 +181,11 @@ async function run() {
 
     // Fetch data from backend API
     const appData = await new Promise((resolve, reject) => {
-        http.get('http://localhost:3002/api/applications', { headers: { 'Authorization': `Bearer ${token}` } }, (res) => {
+        http.get('http://127.0.0.1:3002/api/applications', { headers: { 'Authorization': `Bearer ${token}` } }, (res) => {
             let body = '';
             res.on('data', chunk => body += chunk);
             res.on('end', () => {
+                console.log(`[Runner Log]: /api/applications response body: ${body}`);
                 const apps = JSON.parse(body);
                 const app = apps.find(a => a.appId === appId);
                 if (app) resolve(app);
@@ -198,7 +199,10 @@ async function run() {
     sendUpdate('Navigating to official GST portal...');
 
     // Launch headless browser
-    const browser = await chromium.launch({ headless: false });
+    const browser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
     const context = await browser.newContext();
     const page = await context.newPage();
 
@@ -479,7 +483,7 @@ async function run() {
 
         // Save TRN via API
         await new Promise((resolve, reject) => {
-            const req = http.request(`http://localhost:3002/api/applications/${appId}/trn`, {
+            const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/trn`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
             }, (res) => {

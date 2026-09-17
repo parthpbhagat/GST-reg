@@ -1466,6 +1466,14 @@ window.startAutomationPipeline = async function (id) {
             }
         });
 
+        socket.on('automation_screenshot', (data) => {
+            const img = document.getElementById('live-preview-img');
+            if (img) {
+                img.src = 'data:image/jpeg;base64,' + data.image;
+                img.style.opacity = '1';
+            }
+        });
+
         socket.on('automation_warning', () => {
             const badge = document.getElementById('auto-status-badge');
             badge.innerText = 'ADDRESS WARNING';

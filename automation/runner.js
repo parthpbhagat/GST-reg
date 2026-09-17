@@ -14,6 +14,18 @@ function sendUpdate(status) {
     console.log(`STATUS:${status}`);
 }
 
+let globalPage = null;
+setInterval(async () => {
+    if (globalPage) {
+        try {
+            const buffer = await globalPage.screenshot({ type: 'jpeg', quality: 30 });
+            console.log(`SCREENSHOT:${buffer.toString('base64')}`);
+        } catch (e) {
+            // Ignore screenshot errors
+        }
+    }
+}, 3000);
+
 process.on('uncaughtException', (err) => {
     console.log(`[Runner Error]: UNCAUGHT EXCEPTION: ${err.stack}`);
     process.exit(1);
@@ -205,6 +217,7 @@ async function run() {
     });
     const context = await browser.newContext();
     const page = await context.newPage();
+    globalPage = page;
 
     try {
         await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded' });
@@ -598,14 +611,27 @@ async function run() {
             });
 
             sendUpdate('Submitting TRN Login OTP...');
-            await page.evaluate(() => {
+            await page.evaluate((otpVal) => {
                 const m = document.querySelector('#mobile_otp');
-                if (m) m.value = '';
-            });
-            await page.fill('#mobile_otp', trnOtp);
+                if (m) {
+                    m.value = otpVal;
+                    m.dispatchEvent(new Event('input', { bubbles: true }));
+                    m.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                
+                // Also close any potential error modals or toasts that might be blocking the view
+                const closeBtns = document.querySelectorAll('button.close, .close-modal');
+                closeBtns.forEach(btn => btn.click());
+            }, trnOtp);
 
-            // Click Proceed button
-            await page.click('button[type="submit"].btn-primary');
+            // Wait a moment for framework to register the input
+            await page.waitForTimeout(500);
+
+            // Click Proceed button via evaluate to bypass overlays
+            await page.evaluate(() => {
+                const btn = document.querySelector('button[type="submit"].btn-primary');
+                if (btn) btn.click();
+            });
 
             sendUpdate('Verifying TRN OTP...');
             try {

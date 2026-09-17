@@ -299,6 +299,9 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
             } else if (line.startsWith('CAPTCHA_IMAGE:')) {
                 const imageSrc = line.replace('CAPTCHA_IMAGE:', '');
                 io.to(appId).emit('automation_captcha_image', imageSrc);
+            } else if (line.startsWith('SCREENSHOT:')) {
+                const base64 = line.replace('SCREENSHOT:', '');
+                io.to(appId).emit('automation_screenshot', { appId, image: base64 });
             } else if (line.startsWith('WAITING_FOR_WARNING_RESPONSE')) {
                 io.to(appId).emit('automation_warning');
             } else if (line) {

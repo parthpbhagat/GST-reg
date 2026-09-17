@@ -3563,7 +3563,12 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
     const pageElement = doc.querySelector('.page');
     
     const inputs = pageElement.querySelectorAll('input');
-    inputs.forEach(input => input.setAttribute('value', input.value));
+    inputs.forEach(input => {
+        const span = doc.createElement('span');
+        span.className = input.className;
+        span.innerText = input.value;
+        input.parentNode.replaceChild(span, input);
+    });
 
     const btn = document.getElementById('btn-generate-pdf');
     btn.innerText = 'Generating...';

@@ -3589,9 +3589,10 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
     const styleContent = doc.querySelector('style') ? doc.querySelector('style').innerHTML : '';
     
     // Construct a pure HTML string that is completely disconnected from any live DOM quirks
-    // This bypasses all html2canvas bugs with iframes, display scaling, and inherited styles
+    // Use EXACT pixel dimensions (794px is A4 width at 96dpi) to prevent Windows Display Scaling 
+    // from causing html2canvas text overlapping/squishing bugs when mapped to jsPDF's A4 format.
     const htmlString = `
-        <div style="background: white; padding: 20mm; width: 210mm; box-sizing: border-box; font-family: Arial, Helvetica, sans-serif;">
+        <div style="background: white; padding: 75px; width: 794px; box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; font-size: 15px;">
             <style>${styleContent}</style>
             ${pageElement.innerHTML}
         </div>

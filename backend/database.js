@@ -13,7 +13,8 @@ if (!supabaseUrl || !supabaseKey) {
 
 const WebSocket = require('ws');
 const supabase = createClient(supabaseUrl, supabaseKey, {
-    global: { WebSocket }
+    global: { WebSocket },
+    realtime: { transport: WebSocket }
 });
 
 console.log('Connected to Supabase client successfully.');

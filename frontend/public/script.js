@@ -12,12 +12,22 @@ if (window.supabase) {
 let authToken = localStorage.getItem('sb_token');
 
 async function checkAuth() {
-    // TEMP DISABLE LOGIN
-    authToken = 'temp-token';
-    localStorage.setItem('sb_token', authToken);
-    const emailDisplay = document.getElementById('userEmailDisplay');
-    if (emailDisplay) emailDisplay.innerText = 'temp-admin@test.com';
-    return;
+    if (!authToken && !window.location.href.includes('login.html')) {
+        window.location.href = '/login.html';
+        return;
+    }
+
+    if (authToken && !window.location.href.includes('login.html')) {
+        const { data: { user }, error } = await supabaseClient.auth.getUser();
+        if (error || !user) {
+            localStorage.removeItem('sb_token');
+            window.location.href = '/login.html';
+            return;
+        }
+
+        const emailDisplay = document.getElementById('userEmailDisplay');
+        if (emailDisplay) emailDisplay.innerText = user.email;
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

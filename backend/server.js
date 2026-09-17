@@ -21,9 +21,21 @@ app.use(express.json({ limit: '50mb' }));
 
 // Auth Middleware using Supabase
 const authenticateToken = async (req, res, next) => {
-    // TEMP DISABLE LOGIN
-    req.user = { id: 'temp-admin-id', email: 'temp-admin@test.com' };
-    return next();
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ error: 'Missing authorization token' });
+    }
+
+    const { data: { user }, error } = await db.auth.getUser(token);
+    
+    if (error || !user) {
+        return res.status(403).json({ error: 'Invalid or expired token' });
+    }
+    
+    req.user = user;
+    next();
 };
 
 // Socket.io connection handling
@@ -46,19 +58,13 @@ app.delete('/api/file', (req, res) => {
         const dataDir = path.normalize(path.join(__dirname, 'data'));
         
         if (normalizedFilePath.toLowerCase().startsWith(dataDir.toLowerCase())) {
-            try {
-                if (fs.existsSync(normalizedFilePath)) {
-                    fs.unlinkSync(normalizedFilePath);
-                    console.log(`[DELETE] Successfully deleted file from data folder: ${normalizedFilePath}`);
-                }
-            } catch (e) {
-                console.error('Error deleting file:', e);
+            if (fs.existsSync(normalizedFilePath)) {
+                fs.unlinkSync(normalizedFilePath);
+                return res.json({ message: 'File deleted successfully' });
             }
-        } else {
-            console.warn(`[DELETE] Security block: Path ${normalizedFilePath} is outside data folder.`);
         }
     }
-    res.json({ success: true });
+    res.status(400).json({ error: 'Invalid file path' });
 });
 
 // GET /api/hsn/:code - Proxy for GST HSN API
@@ -95,8 +101,8 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
         appId: appId,
         data: data,
         status: status,
-        userEmail: userEmail
-        // user_id: userId - TEMPORARILY DISABLED
+        userEmail: userEmail,
+        user_id: userId
     }, { onConflict: 'appId' });
 
     if (error) {
@@ -110,7 +116,7 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
 app.get('/api/applications', authenticateToken, async (req, res) => {
     const { data: rows, error } = await db.from('applications')
         .select('*')
-        //  - TEMPORARILY DISABLED
+        .eq('user_id', req.user.id)
         .order('createdAt', { ascending: false });
 
     if (error) {
@@ -138,10 +144,10 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
         return res.status(400).json({ error: 'status is required' });
     }
 
-    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).single();
+    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).eq('user_id', req.user.id).single();
 
     if (fetchErr || !row) {
-        return res.status(404).json({ error: 'Application not found' });
+        return res.status(404).json({ error: 'Application not found or unauthorized' });
     }
 
     let appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
@@ -157,65 +163,49 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
             if (!fs.existsSync(dirPath)) {
                 fs.mkdirSync(dirPath, { recursive: true });
             }
-
-            function processFiles(obj, parentKey = '') {
-                let updated = false;
-                for (let key in obj) {
-                    if (typeof obj[key] === 'string' && obj[key].startsWith('data:')) {
-                        const matches = obj[key].match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-                        if (matches && matches.length === 3) {
-                            const mimeType = matches[1];
-                            const base64Data = matches[2];
-                            let ext = mimeType.split('/')[1] || 'bin';
-                            if (ext === 'jpeg') ext = 'jpg';
-                            if (ext === 'vnd.openxmlformats-officedocument.wordprocessingml.document') ext = 'docx';
-                            
-                            let prefix = parentKey ? `${parentKey}_` : '';
-                            let fileName;
-                            if (key === 'promoterPhotoFile' && obj.firstName) {
-                                const safeFirstName = obj.firstName.replace(/[^a-zA-Z0-9]/g, '_');
-                                fileName = `promoterPhoto_${safeFirstName}.${ext}`;
-                            } else {
-                                fileName = `${prefix}${key}.${ext}`;
-                            }
-                            console.log(`[DEBUG processFiles] key: ${key}, parentKey: '${parentKey}', obj.firstName: '${obj.firstName}', prefix: '${prefix}', fileName: ${fileName}`);
-                            let filePath = path.join(dirPath, fileName);
-                            
-                            if (fs.existsSync(filePath)) {
-                                if (key === 'promoterPhotoFile' && obj.firstName) {
-                                    const safeFirstName = obj.firstName.replace(/[^a-zA-Z0-9]/g, '_');
-                                    fileName = `promoterPhoto_${safeFirstName}_${Date.now()}.${ext}`;
-                                } else {
-                                    fileName = `${prefix}${key}_${Date.now()}.${ext}`;
-                                }
-                                filePath = path.join(dirPath, fileName);
-                            }
-                            
-                            fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-                            
-                            // Save the full absolute file path in the database
-                            obj[key] = filePath;
-                            updated = true;
-                        }
-                    } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-                        if (processFiles(obj[key], Array.isArray(obj) ? parentKey : key)) {
-                            updated = true;
-                        }
+            
+            // Move photos
+            if (appData.promoters) {
+                appData.promoters.forEach((p, idx) => {
+                    if (p.promoterPhotoFile && p.promoterPhotoFile.startsWith('data:image')) {
+                        const base64Data = p.promoterPhotoFile.replace(/^data:image\/\w+;base64,/, "");
+                        const ext = p.promoterPhotoFile.substring("data:image/".length, p.promoterPhotoFile.indexOf(";base64"));
+                        const fileName = `promoterPhoto_${p.firstName || idx}_${Date.now()}.${ext}`;
+                        const filePath = path.join(dirPath, fileName);
+                        fs.writeFileSync(filePath, base64Data, 'base64');
+                        p.promoterPhotoFile = filePath;
                     }
-                }
-                return updated;
+                });
+            }
+            
+            if (appData.ppob_docFile && (appData.ppob_docFile.startsWith('data:image') || appData.ppob_docFile.startsWith('data:application/pdf'))) {
+                 const base64Data = appData.ppob_docFile.replace(/^data:(image|application)\/\w+;base64,/, "");
+                 const ext = appData.ppob_docFile.includes('application/pdf') ? 'pdf' : 'jpg';
+                 const fileName = `ppob_docFile_${Date.now()}.${ext}`;
+                 const filePath = path.join(dirPath, fileName);
+                 fs.writeFileSync(filePath, base64Data, 'base64');
+                 appData.ppob_docFile = filePath;
             }
 
-            processFiles(appData);
-        } catch (e) {
-            console.error('Error processing application documents:', e);
+            // Move PDF Declaration (Added missing logic to prevent enormous base64 payload overhead in DB)
+            if (appData.authSig && appData.authSig.authSigProofFile && (appData.authSig.authSigProofFile.startsWith('data:image') || appData.authSig.authSigProofFile.startsWith('data:application/pdf'))) {
+                const base64Data = appData.authSig.authSigProofFile.replace(/^data:.*?;base64,/, "");
+                const ext = appData.authSig.authSigProofFile.includes('application/pdf') ? 'pdf' : 'jpg';
+                const fileName = `authSigProofFile_${Date.now()}.${ext}`;
+                const filePath = path.join(dirPath, fileName);
+                fs.writeFileSync(filePath, base64Data, 'base64');
+                appData.authSig.authSigProofFile = filePath;
+            }
+
+        } catch (err) {
+            console.error('Error saving files during approval:', err);
         }
     }
 
-    const { error: updateErr } = await db.from('applications').update({ status, data: appData }).eq('appId', id);
+    const { error } = await db.from('applications').update({ status, data: appData }).eq('appId', id).eq('user_id', req.user.id);
 
-    if (updateErr) {
-        console.error('Error updating status:', updateErr.message);
+    if (error) {
+        console.error('Error updating status:', error.message);
         return res.status(500).json({ error: 'Failed to update status' });
     }
     res.json({ message: 'Status updated successfully', appId: id, status });
@@ -226,7 +216,7 @@ app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     // First fetch the application to get the legalName and delete its folder
-    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).single();
+    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).eq('user_id', req.user.id).single();
 
     if (!fetchErr && row) {
         try {
@@ -246,7 +236,7 @@ app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
     }
 
     // Then delete from the database
-    const { error: deleteErr, count } = await db.from('applications').delete({ count: 'exact' }).eq('appId', id);
+    const { error: deleteErr, count } = await db.from('applications').delete({ count: 'exact' }).eq('appId', id).eq('user_id', req.user.id);
 
     if (deleteErr) {
         console.error('Error deleting application:', deleteErr.message);
@@ -266,10 +256,10 @@ app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
     if (!trn) return res.status(400).json({ error: 'trn is required' });
 
     // Ensure they own it first
-    const { data: row, error: fetchErr } = await db.from('applications').select('appId').eq('appId', id).single();
+    const { data: row, error: fetchErr } = await db.from('applications').select('appId').eq('appId', id).eq('user_id', req.user.id).single();
     if (fetchErr || !row) return res.status(404).json({ error: 'Application not found or unauthorized' });
 
-    const { error } = await db.from('applications').update({ trn }).eq('appId', id);
+    const { error } = await db.from('applications').update({ trn }).eq('appId', id).eq('user_id', req.user.id);
     
     if (error) {
         console.error('Error updating TRN:', error.message);

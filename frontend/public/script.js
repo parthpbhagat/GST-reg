@@ -641,7 +641,16 @@ function validateStep(currentStep) {
             return false;
         }
     } else if (currentStep === 1) {
-        if (!form.promoters || form.promoters.length === 0 || !form.promoters[0].firstName || !form.promoters[0].mobile || !form.promoters[0].pan) {
+        let promoterKeys = Object.keys(window.form).filter(k => k.match(/^p\d+$/));
+        let hasValidPromoter = false;
+        for (let key of promoterKeys) {
+            let p = window.form[key];
+            if (p && p.firstName && p.mobile && p.pan) {
+                hasValidPromoter = true;
+                break;
+            }
+        }
+        if (!hasValidPromoter) {
             alert('Please add at least one Promoter with mandatory fields (First Name, PAN, Mobile) before proceeding.');
             return false;
         }

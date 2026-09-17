@@ -1054,7 +1054,8 @@ window.renderAdminDashboard = async function () {
                      <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white;" onclick="updateAppStatus('${app.appId}', 'Rejected')">Reject</button>`;
         } else if (app.status === 'Accepted' || app.status === 'Registered') {
             actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6;" onclick="registerApplication('${app.appId}')">Register Automatically</button>
-                     <button class="btn accent" onclick="editApplication('${app.appId}')">Edit Application</button>`;
+                     <button class="btn accent" onclick="editApplication('${app.appId}')">Edit Application</button>
+                     <button class="btn accent" style="background: #6366f1; border-color: #6366f1;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>`;
         } else if (app.status === 'Rejected') {
             actionButtons = `<button class="btn accent" onclick="editApplication('${app.appId}')">Edit Application</button>`;
         }
@@ -1116,6 +1117,7 @@ window.renderAdminDashboard = async function () {
                         <td style="padding: 10px;"><span style="padding: 2px 6px; border-radius: 4px; font-size: 12px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span></td>
                         <td style="padding: 10px;">
                             <button class="btn" style="padding: 4px 10px; font-size: 13px;" onclick="previewApplication('${app.appId}')">Preview</button>
+                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #6366f1; border: none; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Declaration Form</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #ef4444; border: none; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">Delete</button>
                         </td>
                     </tr>

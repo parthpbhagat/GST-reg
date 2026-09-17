@@ -3560,73 +3560,144 @@ window.openDeclarationModal = function(key) {
 document.getElementById('btn-generate-pdf').addEventListener('click', () => {
     const iframe = document.getElementById('pdf-preview-frame');
     const doc = iframe.contentDocument || iframe.contentWindow.document;
-    const pageElement = doc.querySelector('.page');
     
-    const inputs = pageElement.querySelectorAll('input');
-    const replacements = [];
+    // Get all values from the form
+    const v = (id) => {
+        const el = doc.getElementById(id);
+        return el ? el.value.trim() : '';
+    };
     
-    inputs.forEach((input) => {
-        const span = doc.createElement('span');
-        span.innerText = input.value;
-        span.style.cssText = `
-            display: inline;
-            border-bottom: 1px solid #000;
-            padding: 0 15px;
-            font-weight: bold;
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 15px;
-            color: #000;
-        `;
-        input.parentNode.replaceChild(span, input);
-        replacements.push({ parent: span.parentNode, span: span, input: input });
-    });
+    const company_name = v('company_name');
+    const cin = v('cin');
+    const address = v('address');
+    const contact = v('contact');
+    const email = v('email');
+    
+    const dir1_name = v('dir1_name');
+    const dir2_name = v('dir2_name');
+    const auth_signatory_name = v('auth_signatory_name');
+    const dir1_din = v('dir1_din');
+    const dir2_din = v('dir2_din');
+    const auth_signatory_din = v('auth_signatory_din');
+    
+    const date = v('date');
+    const place = v('place');
 
     const btn = document.getElementById('btn-generate-pdf');
     btn.innerText = 'Generating...';
     btn.disabled = true;
 
-    // Get the CSS styles from the iframe
-    const styleContent = doc.querySelector('style') ? doc.querySelector('style').innerHTML : '';
-    
-    // Construct a pure HTML string that is completely disconnected from any live DOM quirks
-    // Use EXACT pixel dimensions (794px is A4 width at 96dpi) to prevent Windows Display Scaling 
-    // from causing html2canvas text overlapping/squishing bugs when mapped to jsPDF's A4 format.
-    const htmlString = `
-        <div style="background: white; padding: 75px; width: 794px; box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; font-size: 15px;">
-            <style>${styleContent}</style>
-            ${pageElement.innerHTML}
-        </div>
-    `;
+    try {
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+        
+        // Define margins and line spacing
+        const margin = 20;
+        let y = 30;
+        const width = 210; // A4 width in mm
+        
+        // Fonts
+        const fNormal = "helvetica";
+        const fBold = "helvetica";
+        
+        // Header
+        pdf.setFontSize(16);
+        pdf.setFont(fBold, "bold");
+        pdf.text(`${company_name} PRIVATE LIMITED`, width/2, y, { align: "center" });
+        y += 7;
+        
+        pdf.setFontSize(11);
+        pdf.setFont(fNormal, "normal");
+        pdf.text(`CIN: ${cin}`, width/2, y, { align: "center" });
+        y += 10;
+        
+        pdf.text(`Address: ${address}`, margin, y);
+        y += 7;
+        pdf.text(`Contact No. ${contact}`, margin, y);
+        pdf.text(`Email : ${email}`, width/2 + 10, y);
+        y += 15;
+        
+        // Title
+        pdf.setFontSize(14);
+        pdf.setFont(fBold, "bold");
+        pdf.text("DECLARATION FOR AUTHORIZED SIGNATORY", width/2, y, { align: "center" });
+        y += 15;
+        
+        // Body 1
+        pdf.setFontSize(11);
+        pdf.setFont(fNormal, "normal");
+        const p1 = `We, Mr. ${dir1_name} and Mr. ${dir2_name} (Director of ${company_name} PVT LTD) hereby solemnly authorize Mr. ${auth_signatory_name} to act as primary authorized signatory of Private Limited Company "${company_name} PVT LTD" for GST Registration.`;
+        const lines1 = pdf.splitTextToSize(p1, width - margin * 2);
+        pdf.text(lines1, margin, y);
+        y += lines1.length * 6 + 5;
+        
+        // Body 2
+        const p2 = `Mr. ${auth_signatory_name} of "${company_name} PVT LTD" are authorized to sign all the necessary applications, undertakings and such other documents as may be necessary for GST registration application & all other compliances on behalf of Company`;
+        const lines2 = pdf.splitTextToSize(p2, width - margin * 2);
+        pdf.text(lines2, margin, y);
+        y += lines2.length * 6 + 5;
+        
+        // Body 3
+        pdf.text(`All his actions in relation to this business will be binding on us.`, margin, y);
+        y += 10;
+        
+        pdf.text(`For ${company_name} PVT LTD`, margin, y);
+        y += 25;
+        
+        // Signatures 1
+        // Draw lines
+        pdf.line(margin, y - 5, margin + 40, y - 5);
+        pdf.line(width - margin - 40, y - 5, width - margin, y - 5);
+        
+        pdf.text(`Director`, margin, y);
+        pdf.text(`DIN: ${dir1_din}`, margin, y + 6);
+        
+        pdf.text(`Director`, width - margin - 40, y);
+        pdf.text(`DIN: ${dir2_din}`, width - margin - 40, y + 6);
+        
+        y += 20;
+        
+        // Acceptance
+        pdf.setFontSize(14);
+        pdf.setFont(fBold, "bold");
+        pdf.text("Acceptance as an authorized signatory", width/2, y, { align: "center" });
+        y += 15;
+        
+        pdf.setFontSize(11);
+        pdf.setFont(fNormal, "normal");
+        const p3 = `I, ${auth_signatory_name}, hereby solemnly accord my acceptance to act as authorized signatory for the above referred business and all acts shall be binding on the business.`;
+        const lines3 = pdf.splitTextToSize(p3, width - margin * 2);
+        pdf.text(lines3, margin, y);
+        y += lines3.length * 6 + 20;
+        
+        // Signature 2
+        pdf.line(margin, y - 5, margin + 40, y - 5);
+        pdf.text(`Director`, margin, y);
+        pdf.text(`DIN: ${auth_signatory_din}`, margin, y + 6);
+        
+        y += 15;
+        
+        // Footer
+        pdf.text(`Date: ${date}`, margin, y);
+        y += 6;
+        pdf.text(`Place: ${place}`, margin, y);
 
-    var opt = {
-      margin:       0,
-      filename:     'Declaration.pdf',
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true, letterRendering: false },
-      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-
-    html2pdf().set(opt).from(htmlString).outputPdf('datauristring').then(function (pdfAsString) {
+        // Output and upload
+        const pdfAsString = pdf.output('datauristring');
+        
         window.form[currentPdfAuthKey].authSigProofFile = pdfAsString;
         window.form[currentPdfAuthKey].authSigProofFileName = 'Declaration_Form.pdf';
         
         document.getElementById('pdf-gen-modal').classList.add('hidden');
-        
         renderContent();
-    }).catch(err => {
+
+    } catch(err) {
         console.error("PDF generation failed", err);
         alert("Failed to generate PDF. Please try again.");
-    }).finally(() => {
+    } finally {
         btn.innerText = 'Generate & Upload PDF';
         btn.disabled = false;
-        
-        // Restore original inputs in iframe DOM
-        replacements.forEach(rep => {
-            if (rep.parent && rep.span.parentNode === rep.parent) {
-                rep.parent.replaceChild(rep.input, rep.span);
-            }
-        });
-    });
+    }
 });
 
 window.addEventListener('popstate', handleRoute);

@@ -1309,7 +1309,12 @@ async function run() {
                 if (data[`a${i + 1}`]) {
                     sendUpdate(`More Authorized Signatories exist. Clicking Add New after a${i}...`);
                     try {
-                        await page.click('#newRegForm > div:nth-child(5) > div:nth-child(9) > div > button:nth-child(3)');
+                        const addBtn = page.locator('button').filter({ hasText: /ADD NEW/i }).first();
+                        if (await addBtn.isVisible({ timeout: 2000 })) {
+                            await addBtn.click();
+                        } else {
+                            await page.click('#newRegForm > div:nth-child(5) > div:nth-child(9) > div > button:nth-child(3)');
+                        }
                         await page.waitForTimeout(2000);
                         await handleLocalityWarning(page);
                     } catch (e) {
@@ -1450,7 +1455,12 @@ async function run() {
                 if (hasPureAuthSigs) {
                     sendUpdate('Additional pure Authorized Signatories exist. Clicking ADD NEW on form...');
                     try {
-                        await page.click('#newRegForm > div:nth-child(5) > div:nth-child(9) > div > button:nth-child(3)');
+                        const addBtn = page.locator('button').filter({ hasText: /ADD NEW/i }).first();
+                        if (await addBtn.isVisible({ timeout: 2000 })) {
+                            await addBtn.click();
+                        } else {
+                            await page.click('#newRegForm > div:nth-child(5) > div:nth-child(9) > div > button:nth-child(3)');
+                        }
                         await page.waitForTimeout(2000);
                         await handleLocalityWarning(page);
                     } catch (e) {
@@ -1960,7 +1970,12 @@ async function run() {
             if (data.stateSpecific_electricityBoard) {
                 sendUpdate(`Selecting Electricity Board: ${data.stateSpecific_electricityBoard}`);
                 try {
-                    await page.selectOption('#ebcd', { label: data.stateSpecific_electricityBoard });
+                    const ebcdLocator = page.locator('#ebcd');
+                    if (await ebcdLocator.count() > 0 && await ebcdLocator.isVisible({ timeout: 2000 })) {
+                        await page.selectOption('#ebcd', { label: data.stateSpecific_electricityBoard });
+                    } else {
+                        sendUpdate('Electricity Board field not visible. Skipping.');
+                    }
                 } catch (e) {
                     sendUpdate(`Warning: Could not select Electricity Board: ${data.stateSpecific_electricityBoard}`);
                 }
@@ -1969,13 +1984,31 @@ async function run() {
             // Electricity Consumer Number
             if (data.stateSpecific_electricityConsumerNo) {
                 sendUpdate(`Filling Electricity Consumer No: ${data.stateSpecific_electricityConsumerNo}`);
-                await page.fill('#canum', data.stateSpecific_electricityConsumerNo);
+                try {
+                    const canumLocator = page.locator('#canum');
+                    if (await canumLocator.count() > 0 && await canumLocator.isVisible({ timeout: 2000 })) {
+                        await canumLocator.fill(data.stateSpecific_electricityConsumerNo);
+                    } else {
+                        sendUpdate('Electricity Consumer No field not visible. Skipping.');
+                    }
+                } catch (e) {
+                    sendUpdate(`Warning: Could not fill Electricity Consumer No: ${e.message}`);
+                }
             }
 
             // PT EC Number
             if (data.stateSpecific_ptEcNo) {
                 sendUpdate(`Filling PT EC No: ${data.stateSpecific_ptEcNo}`);
-                await page.fill('#ec_tax', data.stateSpecific_ptEcNo);
+                try {
+                    const ecTaxLocator = page.locator('#ec_tax');
+                    if (await ecTaxLocator.count() > 0 && await ecTaxLocator.isVisible({ timeout: 2000 })) {
+                        await ecTaxLocator.fill(data.stateSpecific_ptEcNo);
+                    } else {
+                        sendUpdate('PT EC No field not visible. Skipping.');
+                    }
+                } catch (e) {
+                    sendUpdate(`Warning: Could not fill PT EC No: ${e.message}`);
+                }
             }
 
             // PT RC Number
@@ -2036,12 +2069,13 @@ async function run() {
             try {
                 // Click YES / Agree button on Aadhaar Auth page
                 const yesBtnSelectors = [
-                    'button:has-text("YES")',
-                    'button:has-text("Yes")',
+                    'label:has-text("Yes")',
+                    'label:has-text("YES")',
+                    'input[value="Y"]',
                     'input[value="YES"]',
                     'input[value="Yes"]',
-                    'button.btn-primary:has-text("YES")',
-                    'a:has-text("YES")',
+                    'button:has-text("YES")',
+                    'button:has-text("Yes")'
                 ];
                 let aadhaarYesClicked = false;
                 for (const sel of yesBtnSelectors) {

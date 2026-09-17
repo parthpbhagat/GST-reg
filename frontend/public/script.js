@@ -567,8 +567,8 @@ const STEPS = [
     "Principal Place of Business", 
     "Additional Places of Business", 
     "Goods and Services",
-    "Bank Accounts", 
     "State Specific Information", 
+    "Aadhaar Authentication", 
     "Verification"
 ];
 
@@ -664,7 +664,7 @@ function validateStep(currentStep) {
 }
 
 function setStep(newStep) {
-    if (newStep > step) {
+    if (newStep === step + 1) { // Only block on Next button
         if (!validateStep(step)) return;
     }
 
@@ -2716,26 +2716,20 @@ function renderContent() {
         </section>`;
         } else if (step === 7) {
         html = `<section class="card">
-        <h2 style="font-size: 18px; margin: 0 0 16px 0; color: #1e3a8a; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Details of Bank Accounts</h2>
-        <div style="margin-bottom: 16px;">
-            <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">Bank account details are optional at the time of registration. You can provide them later.</p>
-            ${field('DO YOU WANT TO ADD BANK DETAILS NOW?', select('hasBankAccount', form.hasBankAccount || 'No', ['Yes', 'No'], 'Select'))}
-        </div>
-        ${form.hasBankAccount === 'Yes' ? `
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-            ${field('ACCOUNT NUMBER', textInput('bankAccountNumber', form.bankAccountNumber || ''))}
-            ${field('TYPE OF ACCOUNT', select('bankAccountType', form.bankAccountType || '', ['Current', 'Saving', 'Cash Credit', 'Others'], 'Select Type'))}
-            ${field('IFSC', textInput('bankIFSC', form.bankIFSC || ''))}
-        </div>` : ''}
-        </section>`;
-    } else if (step === 8) {
-        html = `<section class="card">
         <h2 style="font-size: 18px; margin: 0 0 16px 0; color: #1e3a8a; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">State Specific Information</h2>
         <div style="margin-bottom: 16px;">
             <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">No specific state information required for now.</p>
         </div>
         </section>`;
-    } else if (step === 9) {
+    } else if (step === 8) {
+        html = `<section class="card">
+        <h2 style="font-size: 18px; margin: 0 0 16px 0; color: #1e3a8a; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Aadhaar Authentication</h2>
+        <div style="margin-bottom: 16px;">
+            <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">Would you like to opt for Aadhaar authentication of Promoters/Primary Authorized Signatories?</p>
+            ${field('AADHAAR AUTHENTICATION OPT-IN', select('aadhaarAuth', form.aadhaarAuth || 'Yes', ['Yes', 'No'], 'Select'))}
+        </div>
+        </section>`;
+} else if (step === 9) {
         html = `<section class="card"><h2>Review</h2>
         <button class="btn accent" onclick="showPreview();">Complete Application</button>
         </section>`;

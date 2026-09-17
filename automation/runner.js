@@ -865,7 +865,7 @@ async function run() {
                 let filePathToUpload = data.proofOfConstitutionFile;
 
                 if (data.proofOfConstitutionFile.startsWith('data:image') || data.proofOfConstitutionFile.startsWith('data:application/pdf')) {
-                    const base64Data = data.proofOfConstitutionFile.replace(/^data:(image|application)\/\w+;base64,/, "");
+                    const base64Data = data.proofOfConstitutionFile.replace(/^data:.*?;base64,/, "");
                     const fs = require('fs');
                     const path = require('path');
                     const ext = data.proofOfConstitutionFile.includes('application/pdf') ? 'pdf' : 'jpg';
@@ -894,7 +894,7 @@ async function run() {
             let filePathToUpload = data.documentForTradeNameFile;
             
             if (data.documentForTradeNameFile.startsWith('data:image') || data.documentForTradeNameFile.startsWith('data:application/pdf')) {
-                const base64Data = data.documentForTradeNameFile.replace(/^data:(image|application)\/\w+;base64,/, "");
+                const base64Data = data.documentForTradeNameFile.replace(/^data:.*?;base64,/, "");
                 const fs = require('fs');
                 const path = require('path');
                 const ext = data.documentForTradeNameFile.includes('application/pdf') ? 'pdf' : 'jpg';
@@ -1014,7 +1014,7 @@ async function run() {
                     let filePathToUpload = promoter.promoterPhotoFile;
 
                     if (promoter.promoterPhotoFile.startsWith('data:image')) {
-                        const base64Data = promoter.promoterPhotoFile.replace(/^data:image\/\w+;base64,/, "");
+                        const base64Data = promoter.promoterPhotoFile.replace(/^data:.*?;base64,/, "");
                         const fs = require('fs');
                         const path = require('path');
 
@@ -1239,7 +1239,7 @@ async function run() {
                 sendUpdate('Uploading Authorized Signatory Proof...');
                 let filePathToUpload = authSig.authSigProofFile;
                 if (authSig.authSigProofFile.startsWith('data:image') || authSig.authSigProofFile.startsWith('data:application/pdf')) {
-                    const base64Data = authSig.authSigProofFile.replace(/^data:(image|application)\/\w+;base64,/, "");
+                    const base64Data = authSig.authSigProofFile.replace(/^data:.*?;base64,/, "");
                     const fs = require('fs');
                     const path = require('path');
                     const ext = authSig.authSigProofFile.includes('application/pdf') ? 'pdf' : 'jpg';
@@ -1267,7 +1267,7 @@ async function run() {
                 sendUpdate('Uploading Authorized Signatory Photo...');
                 let filePathToUpload = authSig.authSigPhotoFile;
                 if (authSig.authSigPhotoFile.startsWith('data:image')) {
-                    const base64Data = authSig.authSigPhotoFile.replace(/^data:image\/\w+;base64,/, "");
+                    const base64Data = authSig.authSigPhotoFile.replace(/^data:.*?;base64,/, "");
                     const fs = require('fs');
                     const path = require('path');
                     const tempFilePath = path.join(__dirname, 'temp_auth_sig_photo.jpg');
@@ -1416,7 +1416,7 @@ async function run() {
                     sendUpdate('Uploading Authorized Signatory Proof...');
                     let filePathToUpload = pData.authSigProofFile;
                     if (pData.authSigProofFile.startsWith('data:image') || pData.authSigProofFile.startsWith('data:application/pdf')) {
-                        const base64Data = pData.authSigProofFile.replace(/^data:(image|application)\/\w+;base64,/, "");
+                        const base64Data = pData.authSigProofFile.replace(/^data:.*?;base64,/, "");
                         const fs = require('fs');
                         const path = require('path');
                         const ext = pData.authSigProofFile.includes('application/pdf') ? 'pdf' : 'jpg';
@@ -1512,7 +1512,7 @@ async function run() {
                         sendUpdate('Uploading Authorized Signatory Proof...');
                         let filePathToUpload = pData.authSigProofFile;
                         if (pData.authSigProofFile.startsWith('data:image') || pData.authSigProofFile.startsWith('data:application/pdf')) {
-                            const base64Data = pData.authSigProofFile.replace(/^data:(image|application)\/\w+;base64,/, "");
+                            const base64Data = pData.authSigProofFile.replace(/^data:.*?;base64,/, "");
                             const fs = require('fs');
                             const path = require('path');
                             const ext = pData.authSigProofFile.includes('application/pdf') ? 'pdf' : 'jpg';
@@ -1755,7 +1755,7 @@ async function run() {
                 sendUpdate('Uploading PPOB Document...');
                 let filePathToUpload = data.ppob_docFile;
                 if (data.ppob_docFile.startsWith('data:image') || data.ppob_docFile.startsWith('data:application/pdf')) {
-                    const base64Data = data.ppob_docFile.replace(/^data:(image|application)\/\w+;base64,/, "");
+                    const base64Data = data.ppob_docFile.replace(/^data:.*?;base64,/, "");
                     const fs = require('fs');
                     const path = require('path');
                     const ext = data.ppob_docFile.includes('application/pdf') ? 'pdf' : 'jpg';

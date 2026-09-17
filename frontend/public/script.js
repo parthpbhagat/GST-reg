@@ -3560,13 +3560,37 @@ window.openDeclarationModal = function(key) {
 document.getElementById('btn-generate-pdf').addEventListener('click', () => {
     const iframe = document.getElementById('pdf-preview-frame');
     const doc = iframe.contentDocument || iframe.contentWindow.document;
-    const pageElement = doc.querySelector('.page');
+    const originalPage = doc.querySelector('.page');
+    
+    // Create a clone to avoid destroying the live form
+    const pageElement = originalPage.cloneNode(true);
+    
+    // Append clone temporarily off-screen so html2canvas can render it properly
+    pageElement.style.position = 'absolute';
+    pageElement.style.top = '-9999px';
+    pageElement.style.left = '-9999px';
+    doc.body.appendChild(pageElement);
     
     const inputs = pageElement.querySelectorAll('input');
-    inputs.forEach(input => {
+    const originalInputs = originalPage.querySelectorAll('input');
+    
+    inputs.forEach((input, index) => {
         const span = doc.createElement('span');
-        span.className = input.className;
-        span.innerText = input.value;
+        span.innerText = originalInputs[index].value;
+        // Force explicit styles to prevent any browser default borders
+        span.style.cssText = `
+            display: inline-block;
+            border-bottom: 1px solid #000;
+            min-width: ${input.style.width || (input.classList.contains('large') ? '250px' : input.classList.contains('small') ? '80px' : '150px')};
+            text-align: center;
+            font-weight: bold;
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 15px;
+            margin: 0 5px;
+            color: #000;
+            line-height: 1.2;
+            vertical-align: bottom;
+        `;
         input.parentNode.replaceChild(span, input);
     });
 
@@ -3577,8 +3601,8 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
     var opt = {
       margin:       0,
       filename:     'Declaration.pdf',
-      image:        { type: 'jpeg', quality: 0.95 },
-      html2canvas:  { scale: 2, useCORS: true },
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, logging: false },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
@@ -3590,12 +3614,16 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
         btn.innerText = 'Generate & Upload PDF';
         btn.disabled = false;
         
+        // Remove clone
+        doc.body.removeChild(pageElement);
+        
         renderContent();
     }).catch(err => {
         console.error("PDF generation failed", err);
         alert("Failed to generate PDF. Please try again.");
         btn.innerText = 'Generate & Upload PDF';
         btn.disabled = false;
+        doc.body.removeChild(pageElement);
     });
 });
 

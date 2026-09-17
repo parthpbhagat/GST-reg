@@ -1314,7 +1314,8 @@ window.registerApplication = async function (id) {
             { key: 'state', label: 'State' },
             { key: 'district', label: 'District' },
             { key: 'businessConstitution', label: 'Constitution of Business' },
-            { key: 'ppob_pincode', label: 'Principal Place Pincode' }
+            { key: 'ppob_pincode', label: 'Principal Place Pincode' },
+            { key: 'reasonToObtainRegistration', label: 'Reason to Obtain Registration' }
         ];
 
         let missingFields = [];
@@ -1943,7 +1944,7 @@ function renderContent() {
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 12px;">
                     ${field('DATE OF COMMENCEMENT', `<input type="date" value="${form.dateOfCommencement}" onchange="updateForm('dateOfCommencement', this.value)" />`)}
                     ${field('DATE ON WHICH LIABILITY TO REGISTER ARISES <span style="color: #ef4444">*</span>', `<input type="date" value="${form.dateOfLiability}" onchange="updateForm('dateOfLiability', this.value)" />`)}
-                    ${field('REASON TO OBTAIN REGISTRATION', select('reasonToObtainRegistration', form.reasonToObtainRegistration, REGISTRATION_REASONS, 'Select'))}
+                    ${field('REASON TO OBTAIN REGISTRATION <span style="color: #ef4444">*</span>', select('reasonToObtainRegistration', form.reasonToObtainRegistration, REGISTRATION_REASONS, 'Select'))}
                 </div>
                 ${!['Public Sector Undertaking', 'Statutory Body', 'Government Department', 'Local Authority'].includes(form.businessConstitution) ? `
                 <div style="margin-top: 12px;">

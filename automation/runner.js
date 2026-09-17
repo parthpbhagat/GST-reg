@@ -2112,6 +2112,9 @@ async function run() {
                 } else {
                     sendUpdate('No OTP required for Aadhaar. Proceeding...');
                 }
+                
+                // Crucial step: MUST click Save & Continue to go to Verification tab
+                await saveAndContinueToTab(page, 'Verification', 'button[title="Save & Continue"]');
 
                 // After Aadhaar Auth, check if Verification tab is now active
                 await page.waitForTimeout(2000);

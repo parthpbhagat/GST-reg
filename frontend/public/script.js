@@ -3100,7 +3100,7 @@ window.fetchAndSetDistricts = function (stateName, callback) {
 
 window.fetchedStateJurisdictions = [];
 window.fetchStateJurisdictions = function (callback) {
-    if (step !== 3) {
+    if (step !== 4) {
         if (callback) callback();
         return;
     }
@@ -3135,7 +3135,7 @@ window.fetchStateJurisdictions = function (callback) {
 
 window.fetchedCommissionerates = [];
 window.fetchCommissionerates = function (callback) {
-    if (step !== 3) {
+    if (step !== 4) {
         if (callback) callback();
         return;
     }
@@ -3171,7 +3171,7 @@ window.fetchCommissionerates = function (callback) {
 
 window.fetchedDivisions = [];
 window.fetchDivisions = function (callback) {
-    if (step !== 3) { if (callback) callback(); return; }
+    if (step !== 4) { if (callback) callback(); return; }
     const stateName = window.form.ppob_state;
     const pincode = window.form.ppob_pincode;
     const commCode = window.form.ppob_commissionerate;
@@ -3199,7 +3199,7 @@ window.fetchDivisions = function (callback) {
 
 window.fetchedRanges = [];
 window.fetchRanges = function (callback) {
-    if (step !== 3) { if (callback) callback(); return; }
+    if (step !== 4) { if (callback) callback(); return; }
     const stateName = window.form.ppob_state;
     const pincode = window.form.ppob_pincode;
     const divCode = window.form.ppob_division;

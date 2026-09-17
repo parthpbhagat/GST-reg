@@ -1861,16 +1861,7 @@ async function run() {
             sendUpdate('Warning: Principal Place of Business section not found or failed to fill.');
         }
         // Click intermediate CONTINUE button if it exists
-        try {
-            const continueBtn = page.locator('#newRegForm > div > div.row.next-tab-nav > div > button:nth-child(3)');
-            if (await continueBtn.isVisible({ timeout: 2000 })) {
-                sendUpdate('Clicking intermediate CONTINUE button...');
-                await continueBtn.click();
-                await page.waitForTimeout(1000);
-            }
-        } catch (e) {
-            // Ignore if not present
-        }
+        await saveAndContinueToTab(page, 'Goods and Services', 'button[title="Save & Continue"]');
 
         // ============================================
         // GOODS / SERVICES

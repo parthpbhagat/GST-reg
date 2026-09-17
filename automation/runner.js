@@ -2,6 +2,7 @@ const { chromium } = require('playwright');
 const http = require('http');
 
 const appId = process.argv[2];
+const token = process.argv[3];
 
 if (!appId) {
     console.error('ERROR: No App ID provided');
@@ -180,7 +181,7 @@ async function run() {
 
     // Fetch data from backend API
     const appData = await new Promise((resolve, reject) => {
-        http.get('http://localhost:3002/api/applications', (res) => {
+        http.get('http://localhost:3002/api/applications', { headers: { 'Authorization': `Bearer ${token}` } }, (res) => {
             let body = '';
             res.on('data', chunk => body += chunk);
             res.on('end', () => {
@@ -480,7 +481,7 @@ async function run() {
         await new Promise((resolve, reject) => {
             const req = http.request(`http://localhost:3002/api/applications/${appId}/trn`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
             }, (res) => {
                 res.on('data', () => { });
                 res.on('end', resolve);

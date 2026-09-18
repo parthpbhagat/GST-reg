@@ -387,6 +387,19 @@ app.post('/api/automation/otp', (req, res) => {
     res.json({ message: 'OTPs received successfully' });
 });
 
+// Ping endpoint to keep Render awake
+app.get('/ping', (req, res) => {
+    res.status(200).send('pong');
+});
+
+// Self-ping to prevent Render sleep mode (every 14 minutes)
+const RENDER_URL = process.env.RENDER_URL || 'https://gst-reg.onrender.com';
+setInterval(() => {
+    fetch(`${RENDER_URL}/ping`)
+        .then(res => console.log(`[KeepAlive] Pinged backend: ${res.status}`))
+        .catch(err => console.log(`[KeepAlive] Ping failed:`, err.message));
+}, 14 * 60 * 1000);
+
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Backend server is running on http://localhost:${PORT}`);
 });

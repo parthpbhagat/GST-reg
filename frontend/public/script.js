@@ -1,8 +1,8 @@
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3002' : 'https://gst-reg.onrender.com';
 
 // ---------------- AUTHENTICATION SETUP ----------------
-const supabaseUrl = 'https://mgxsxpbrzmcmzlzgzfde.supabase.co';
-const supabaseKey = 'sb_publishable_159AAeN0gJjlQK7IgozhRQ_5yWUUKmm'; // From backend/.env
+const supabaseUrl = window.ENV ? window.ENV.SUPABASE_URL : '';
+const supabaseKey = window.ENV ? window.ENV.SUPABASE_KEY : '';
 let supabaseClient;
 if (window.supabase) {
     supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);

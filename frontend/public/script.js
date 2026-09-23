@@ -12,35 +12,99 @@ if (window.supabase) {
 let authToken = localStorage.getItem('sb_token');
 
 async function checkAuth() {
-    if (!authToken && !window.location.href.includes('login.html')) {
-        window.location.href = '/login.html';
+    const loginSection = document.getElementById('login-section');
+    const appContainer = document.getElementById('app-container');
+
+    if (!authToken) {
+        if (loginSection) loginSection.classList.remove('hidden');
+        if (appContainer) appContainer.classList.add('hidden');
         return;
     }
 
-    if (authToken && !window.location.href.includes('login.html')) {
+    if (authToken) {
         const { data: { session }, error } = await supabaseClient.auth.getSession();
         if (error || !session) {
             localStorage.removeItem('sb_token');
-            window.location.href = '/login.html';
+            authToken = null;
+            if (loginSection) loginSection.classList.remove('hidden');
+            if (appContainer) appContainer.classList.add('hidden');
             return;
         }
 
-        // Sync token in case it was stuck on 'temp-token'
         localStorage.setItem('sb_token', session.access_token);
         authToken = session.access_token;
 
         const emailDisplay = document.getElementById('userEmailDisplay');
         if (emailDisplay) emailDisplay.innerText = session.user.email;
+
+        if (loginSection) loginSection.classList.add('hidden');
+        if (appContainer) appContainer.classList.remove('hidden');
     }
 }
 
+let isLogin = true;
 document.addEventListener('DOMContentLoaded', () => {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
         logoutBtn.addEventListener('click', async () => {
             await supabaseClient.auth.signOut();
             localStorage.removeItem('sb_token');
-            window.location.href = '/login.html';
+            authToken = null;
+            checkAuth();
+        });
+    }
+
+    const toggleLink = document.getElementById('toggleLink');
+    if (toggleLink) {
+        toggleLink.addEventListener('click', () => {
+            isLogin = !isLogin;
+            document.getElementById('title').innerText = isLogin ? 'Sign In' : 'Create Account';
+            document.getElementById('submitBtn').innerText = isLogin ? 'Sign In' : 'Sign Up';
+            document.getElementById('toggleText').innerText = isLogin ? "Don't have an account? " : "Already have an account? ";
+            toggleLink.innerText = isLogin ? 'Sign Up' : 'Sign In';
+            document.getElementById('errorMsg').innerText = '';
+        });
+    }
+
+    const authForm = document.getElementById('authForm');
+    if (authForm) {
+        authForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorMsg = document.getElementById('errorMsg');
+            const submitBtn = document.getElementById('submitBtn');
+            
+            submitBtn.disabled = true;
+            submitBtn.innerText = 'Please wait...';
+            errorMsg.innerText = '';
+
+            try {
+                if (isLogin) {
+                    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                    if (error) throw error;
+                    localStorage.setItem('sb_token', data.session.access_token);
+                    authToken = data.session.access_token;
+                    checkAuth();
+                } else {
+                    const { data, error } = await supabaseClient.auth.signUp({ email, password });
+                    if (error) throw error;
+                    if (data.session) {
+                        localStorage.setItem('sb_token', data.session.access_token);
+                        authToken = data.session.access_token;
+                        checkAuth();
+                    } else {
+                        errorMsg.innerText = 'Registration successful! Please check your email to verify your account.';
+                        errorMsg.style.color = '#16a34a';
+                    }
+                }
+            } catch (err) {
+                errorMsg.innerText = err.message;
+                errorMsg.style.color = '#dc2626';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerText = isLogin ? 'Sign In' : 'Sign Up';
+            }
         });
     }
 });

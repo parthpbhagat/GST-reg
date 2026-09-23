@@ -5,15 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GST Registration Portal</title>
     <link rel="stylesheet" href="/styles.css">
-    <script>
-        if (!localStorage.getItem('sb_token') && !window.location.href.includes('login.html')) {
-            window.location.href = '/login.html';
-        }
-    </script>
+
     <script src="https://apis.mappls.com/advancedmaps/api/%VITE_MAPPLS_API_KEY%/map_sdk_plugins?v=3.0"></script>
     <style>
         .error { color: #ef4444; font-size: 13px; margin-top: 4px; }
         .hidden { display: none !important; }
+        /* Login Styles */
+        .login-wrapper { display: flex; align-items: center; justify-content: center; height: 100vh; background-color: #f1f5f9; position: fixed; top: 0; left: 0; width: 100%; z-index: 50; }
+        .login-card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); width: 100%; max-width: 400px; }
+        .login-card h1 { margin-top: 0; font-size: 24px; color: #1e293b; text-align: center; margin-bottom: 24px; }
+        .login-card .input-group { margin-bottom: 16px; }
+        .login-card label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 500; color: #475569; }
+        .login-card input { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        .login-card button { width: 100%; background: #2563eb; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: 600; cursor: pointer; margin-top: 8px; transition: background 0.2s; }
+        .login-card button:hover { background: #1d4ed8; }
+        .login-card .toggle { text-align: center; margin-top: 16px; font-size: 14px; color: #64748b; }
+        .login-card .toggle a { color: #2563eb; text-decoration: none; font-weight: 500; cursor: pointer; }
+        
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center;
@@ -74,6 +82,28 @@
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 </head>
 <body>
+    <div id="login-section" class="login-wrapper hidden">
+        <div class="login-card">
+            <h1 id="title">Sign In</h1>
+            <form id="authForm">
+                <div class="input-group">
+                    <label>Email</label>
+                    <input type="email" id="email" value="admin@example.com" required>
+                </div>
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" id="password" value="admin123" required>
+                </div>
+                <button type="submit" id="submitBtn">Sign In</button>
+                <div id="errorMsg" class="error"></div>
+            </form>
+            <div class="toggle">
+                <span id="toggleText">Don't have an account? </span><a id="toggleLink">Sign Up</a>
+            </div>
+        </div>
+    </div>
+
+    <div id="app-container" class="hidden">
     <header class="top">
         <div class="top-inner">
             <div class="mark">
@@ -316,6 +346,7 @@
             </div>
         </div>
     </main>
+    </div>
 
     <div id="admin-login-modal" class="modal-overlay hidden">
         <div class="modal">

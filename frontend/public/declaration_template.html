@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Declaration for Authorized Signatory</title>
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 0;
+            padding: 40px;
+            background: #f0f0f0;
+            display: flex;
+            justify-content: center;
+        }
+        .page {
+            width: 794px; /* A4 width */
+            min-height: 1123px; /* A4 height */
+            background: white;
+            padding: 75px;
+            box-sizing: border-box;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            line-height: 1.6;
+            color: #000;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header .company-name {
+            font-size: 20px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .header-details {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .header-contact {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .title {
+            text-align: center;
+            font-weight: bold;
+            text-decoration: underline;
+            margin: 30px 0;
+            font-size: 16px;
+        }
+        .content-body {
+            text-align: left;
+            font-size: 15px;
+            margin-bottom: 40px;
+            
+            
+        }
+        .blank {
+            display: inline-block;
+            border: none;
+            border-bottom: 1px solid #000;
+            min-width: 150px;
+            text-align: center;
+            font-weight: bold;
+            font-family: inherit;
+            font-size: inherit;
+            background: transparent;
+            outline: none;
+            padding: 0;
+            margin: 0 10px; padding: 0 5px;
+        }
+        .blank.small { min-width: 80px; }
+        .blank.large { min-width: 250px; }
+        .signatures {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 60px;
+        }
+        .signature-block {
+            width: 200px;
+        }
+        .signature-line {
+            border-bottom: 1px solid #000;
+            margin-bottom: 5px;
+            height: 40px;
+        }
+        .acceptance-section {
+            margin-top: 50px;
+        }
+        .footer-details {
+            margin-top: 50px;
+        }
+        .footer-details div {
+            margin-bottom: 5px;
+        }
+        
+        @media print {
+            body { background: none; padding: 0; }
+            .page { box-shadow: none; width: 100%; min-height: auto; padding: 0; }
+            .no-print { display: none; }
+        }
+        
+        .print-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <button class="print-btn no-print" onclick="window.print()">Print Form</button>
+
+    <div class="page">
+        <div class="header">
+            <div class="company-name">
+                <input type="text" class="blank large" id="company_name"> PRIVATE LIMITED
+            </div>
+            <div class="header-details">
+                <div>CIN: <input type="text" class="blank" id="cin"></div>
+            </div>
+            <div style="margin-top: 10px; font-size: 14px;">
+                Address: <input type="text" class="blank large" style="width: 80%;" id="address">
+            </div>
+            <div class="header-contact">
+                <div>Contact No. <input type="text" class="blank small" id="contact"></div>
+                <div>Email : <input type="text" class="blank" id="email"></div>
+            </div>
+        </div>
+
+        <div class="title">DECLARATION FOR AUTHORIZED SIGNATORY</div>
+
+        <div class="content-body" style="line-height: 1.8;">
+            <span>We, Mr. </span><input type="text" class="blank" id="dir1_name"><span> and Mr. </span><input type="text" class="blank" id="dir2_name"><span> (Director of </span><input type="text" class="blank" id="company_name_2"><span> PVT LTD) hereby solemnly authorize Mr. </span><input type="text" class="blank" id="auth_signatory_name"><span> to act as primary authorized signatory of Private Limited Company "</span><input type="text" class="blank" id="company_name_3"><span> PVT LTD" for GST Registration.</span>
+            <br><br>
+            <span>Mr. </span><input type="text" class="blank" id="auth_signatory_name_2"><span> of "</span><input type="text" class="blank" id="company_name_4"><span> PVT LTD" are authorized to sign all the necessary applications, undertakings and such other documents as may be necessary for GST registration application & all other compliances on behalf of Company</span>
+            <br><br>
+            <span>All his actions in relation to this business will be binding on us.</span>
+            <br><br>
+            <span>For </span><input type="text" class="blank" id="company_name_5"><span> PVT LTD</span>
+        </div>
+
+        <div class="signatures">
+            <div class="signature-block">
+                <div class="signature-line"></div>
+                <div>Director</div>
+                <div>DIN: <input type="text" class="blank small" id="dir1_din"></div>
+            </div>
+            <div class="signature-block">
+                <div class="signature-line"></div>
+                <div>Director</div>
+                <div>DIN: <input type="text" class="blank small" id="dir2_din"></div>
+            </div>
+        </div>
+
+        <div class="acceptance-section">
+            <div class="title" style="margin-bottom: 20px;">Acceptance as an authorized signatory</div>
+            <div class="content-body" style="line-height: 1.8;">
+            <span>I, </span><input type="text" class="blank" id="auth_signatory_name_3"><span>, hereby solemnly accord my acceptance to act as authorized signatory for the above referred business and all acts shall be binding on the business.</span>
+        </div>
+            
+            <div class="signature-block">
+                <div class="signature-line"></div>
+                <div>Director</div>
+                <div>DIN: <input type="text" class="blank small" id="auth_signatory_din"></div>
+            </div>
+
+            <div class="footer-details">
+                <div>Date: <input type="text" class="blank small" id="date"></div>
+                <div>Place: <input type="text" class="blank small" id="place"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Logic to auto-fill data if appId is passed in URL
+        async function loadData() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const appId = urlParams.get('appId');
+            if (!appId) return;
+
+            try {
+                // Determine base URL dynamically (handles both local and production)
+                const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3002' : window.location.origin;
+                
+                let headers = {};
+                // If you are using auth token:
+                const token = localStorage.getItem('sb_token');
+                if (token && token !== 'temp-token') {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+
+                const response = await fetch(`${API_BASE_URL}/api/applications`, { headers });
+                const applications = await response.json();
+                const app = applications.find(a => a.appId === appId);
+                
+                if (app && app.data) {
+                    const data = app.data;
+                    
+                    // Fill Company Name (remove "PVT LTD" if present so it doesn't duplicate)
+                    let companyName = data.legalName || data.tradeName || '';
+                    companyName = companyName.replace(/PVT\s+LTD\.?/i, '').replace(/PRIVATE\s+LIMITED/i, '').trim();
+                    
+                    const setVal = (id, val) => {
+                        const el = document.getElementById(id);
+                        if(el && val) el.value = val;
+                    };
+
+                    setVal('company_name', companyName);
+                    setVal('company_name_2', companyName);
+                    setVal('company_name_3', companyName);
+                    setVal('company_name_4', companyName);
+                    setVal('company_name_5', companyName);
+                    
+                    setVal('cin', data.cin || '');
+                    setVal('address', data.principalAddress || '');
+                    setVal('contact', data.mobile || '');
+                    setVal('email', data.email || '');
+
+                    // Extract Promoters / Directors
+                    if (data.promoters && data.promoters.length >= 2) {
+                        setVal('dir1_name', `${data.promoters[0].firstName || ''} ${data.promoters[0].lastName || ''}`);
+                        setVal('dir1_din', data.promoters[0].din || '');
+                        
+                        setVal('dir2_name', `${data.promoters[1].firstName || ''} ${data.promoters[1].lastName || ''}`);
+                        setVal('dir2_din', data.promoters[1].din || '');
+                    }
+
+                    // Extract Authorized Signatory
+                    if (data.authorizedSignatory) {
+                        const authName = `${data.authorizedSignatory.firstName || ''} ${data.authorizedSignatory.lastName || ''}`;
+                        setVal('auth_signatory_name', authName);
+                        setVal('auth_signatory_name_2', authName);
+                        setVal('auth_signatory_name_3', authName);
+                        setVal('auth_signatory_din', data.authorizedSignatory.din || '');
+                    }
+                    
+                    // Set Date as today
+                    const today = new Date();
+                    setVal('date', today.toLocaleDateString('en-IN'));
+                }
+            } catch (e) {
+                console.error("Error loading application data:", e);
+            }
+        }
+
+        window.onload = loadData;
+    </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "gst_frontend",
+  "version": "1.0.0",
+  "description": "This document outlines the data structure of the GST Registration form to easily integrate it with any backend API (Node.js, Python/Django, Java, etc.).",
+  "main": "fix.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "vite",
+    "build": "node generate_config.js && vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "dotenv": "^17.4.2",
+    "vite": "^8.0.14"
+  }
+}

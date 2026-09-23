@@ -5,8 +5,12 @@ const supabaseUrl = window.ENV ? window.ENV.SUPABASE_URL : '';
 const supabaseKey = window.ENV ? window.ENV.SUPABASE_KEY : '';
 let supabaseClient;
 if (window.supabase) {
-    supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
-    checkAuth();
+    try {
+        supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+        checkAuth();
+    } catch (err) {
+        console.error("Supabase init error:", err.message);
+    }
 }
 
 let authToken = localStorage.getItem('sb_token');

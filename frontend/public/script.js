@@ -896,8 +896,13 @@ window.updateForm = function (key, value) {
             setDeep(window.form, districtKeyToReset, '');
         }
 
-        if (window.fetchAndSetDistricts) window.fetchAndSetDistricts(value, renderContent);
-        else renderContent();
+        if (window.fetchAndSetDistricts) {
+            let pending = 1;
+            const cb = () => { pending--; if (pending <= 0) renderContent(); };
+            if (window.fetchSezNames) pending++;
+            window.fetchAndSetDistricts(value, cb);
+            if (window.fetchSezNames) window.fetchSezNames(value, cb);
+        } else renderContent();
     }
 
     // Existing specific logic
@@ -2136,7 +2141,7 @@ function renderContent() {
 
                 <h3 style="font-size: 14px; font-weight: 600; color: #1e3a8a; margin: 24px 0 12px 0;">SEZ Details</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                    ${field('Select name of SEZ <span style="color: #ef4444">*</span>', select('sezName', form.sezName, ['SEZ Name 1', 'SEZ Name 2', 'SEZ Name 3'], 'Select'))}
+                    ${field('Select name of SEZ <span style="color: #ef4444">*</span>', select('sezName', form.sezName, (window.fetchedSezNames && window.fetchedSezNames[form.state]) ? window.fetchedSezNames[form.state] : [], 'Select'))}
                     ${field('Designation of approving authority <span style="color: #ef4444">*</span>', textInput('sezDesignation', form.sezDesignation))}
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
@@ -3220,6 +3225,38 @@ window.fetchAndSetDistricts = function (stateName, callback) {
             }
         })
         .catch(err => console.error("Error fetching districts:", err))
+        .finally(() => {
+            if (callback) callback();
+        });
+};
+
+window.fetchedSezNames = {};
+window.fetchSezNames = function (stateName, callback) {
+    if (!stateName || window.fetchedSezNames[stateName]) {
+        if (callback) callback();
+        return;
+    }
+    const stateCode = window.fetchedStatesMap[stateName.toUpperCase()];
+    if (!stateCode) {
+        if (callback) callback();
+        return;
+    }
+    fetch(`https://reg.gst.gov.in/master/sez/${stateCode}`)
+        .then(r => r.json())
+        .then(data => {
+            let items = [];
+            if (Array.isArray(data)) items = data;
+            else if (data && Array.isArray(data.data)) {
+                if (data.data[0] && Array.isArray(data.data[0].n)) items = data.data[0].n;
+                else items = data.data;
+            }
+            if (items.length > 0) {
+                window.fetchedSezNames[stateName] = items.map(item => item.n || item.name || item.name_en || item.v || item.val || item.sezName || item.desc || item).filter(Boolean);
+            } else {
+                window.fetchedSezNames[stateName] = [];
+            }
+        })
+        .catch(err => console.error("Error fetching SEZ names:", err))
         .finally(() => {
             if (callback) callback();
         });

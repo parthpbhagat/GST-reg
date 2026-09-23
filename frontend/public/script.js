@@ -2113,6 +2113,56 @@ function renderContent() {
                     </div>
                 </div>
                 ` : ''}
+
+                ${['SEZ Unit', 'SEZ Developer'].includes(form.reasonToObtainRegistration) ? `
+                <div style="margin-top: 24px; padding: 16px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 4px;">
+                    <p style="color: #ef4444; font-size: 13px; font-weight: 500; margin: 0 0 8px 0;">I. In case you are SEZ unit / SEZ Developer, please select 'Reason to Obtain Registration' as SEZ Unit / Developer and then you can fill further details in this section.</p>
+                    <p style="color: #ef4444; font-size: 13px; font-weight: 500; margin: 0;">II. Once you are registered as SEZ unit/SEZ developer, 'Reason to obtain Registration' cannot be changed. New registration will be required.</p>
+                </div>
+                <div style="margin-top: 24px; display: flex; flex-direction: column; gap: 16px;">
+                    <label style="display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 600; color: #334155; width: 400px;">
+                        Are you applying for registration as a SEZ Unit?
+                        <div class="toggle-switch ${form.isSEZUnit ? 'active' : ''}" onclick="window.updateForm('isSEZUnit', ${!form.isSEZUnit}); if(${!form.isSEZUnit}) window.updateForm('isSEZDeveloper', false);" style="cursor: pointer; width: 40px; height: 20px; background: ${form.isSEZUnit ? '#22c55e' : '#cbd5e1'}; border-radius: 10px; position: relative;">
+                            <div style="width: 16px; height: 16px; background: #fff; border-radius: 50%; position: absolute; top: 2px; ${form.isSEZUnit ? 'right: 2px;' : 'left: 2px;'} transition: all 0.2s;"></div>
+                        </div>
+                    </label>
+                    <label style="display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 600; color: #334155; width: 400px;">
+                        Are you applying for registration as a SEZ Developer?
+                        <div class="toggle-switch ${form.isSEZDeveloper ? 'active' : ''}" onclick="window.updateForm('isSEZDeveloper', ${!form.isSEZDeveloper}); if(${!form.isSEZDeveloper}) window.updateForm('isSEZUnit', false);" style="cursor: pointer; width: 40px; height: 20px; background: ${form.isSEZDeveloper ? '#22c55e' : '#cbd5e1'}; border-radius: 10px; position: relative;">
+                            <div style="width: 16px; height: 16px; background: #fff; border-radius: 50%; position: absolute; top: 2px; ${form.isSEZDeveloper ? 'right: 2px;' : 'left: 2px;'} transition: all 0.2s;"></div>
+                        </div>
+                    </label>
+                </div>
+
+                <h3 style="font-size: 14px; font-weight: 600; color: #1e3a8a; margin: 24px 0 12px 0;">SEZ Details</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    ${field('Select name of SEZ <span style="color: #ef4444">*</span>', select('sezName', form.sezName, ['SEZ Name 1', 'SEZ Name 2', 'SEZ Name 3'], 'Select'))}
+                    ${field('Designation of approving authority <span style="color: #ef4444">*</span>', textInput('sezDesignation', form.sezDesignation))}
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
+                    ${field('Approval order number <span style="color: #ef4444">*</span>', textInput('sezOrderNumber', form.sezOrderNumber))}
+                    ${field('Approval date of order <span style="color: #ef4444">*</span>', `<input type="date" value="${form.sezOrderDate}" onchange="window.updateForm('sezOrderDate', this.value)" />`)}
+                </div>
+                <h4 style="font-size: 13px; font-weight: 600; color: #ef4444; margin: 16px 0 8px 0;">Period Of Validity <span style="color: #ef4444">*</span></h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    ${field('From <span style="color: #ef4444">*</span>', `<input type="date" value="${form.sezValidFrom}" onchange="window.updateForm('sezValidFrom', this.value)" />`)}
+                    ${field('To <span style="color: #ef4444">*</span>', `<input type="date" value="${form.sezValidTo}" onchange="window.updateForm('sezValidTo', this.value)" />`)}
+                </div>
+                <div style="margin-top: 16px; padding: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px;">
+                    <p style="font-size: 12px; color: #64748b; font-style: italic; margin: 0 0 12px 0;">ℹ Kindly Upload Letter Of Approval(LOA)/Letter Of Permission(LOP) issued by SEZ Authority,Government Of India by choosing Letter of Approval or Letter of Permission issued</p>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        ${field('Letter of Approval/Letter Of Permission <span style="color: #ef4444">*</span>', select('sezDocumentType', form.sezDocumentType, ['Letter of Approval', 'Letter of Permission'], 'Select'))}
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <label style="font-size: 11px; font-weight: 600; color: #334155; text-transform: uppercase; margin-bottom: 4px;">&nbsp;</label>
+                            <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 2048, (data, filename) => { window.form.sezDocumentFile = data; window.form.sezDocumentFileName = filename; window.renderContent(); })" style="font-size: 12px; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; ${form.sezDocumentFile ? 'display: none;' : ''}" />
+                            <div style="font-size: 10px; color: #64748b; margin-top: 4px;">
+                                ℹ File with PDF or JPEG format is only allowed. Max file size of upload is 2MB
+                                ${form.sezDocumentFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${form.sezDocumentFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form.sezDocumentFile, () => { window.form.sezDocumentFile = ''; window.form.sezDocumentFileName = ''; window.renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form.sezDocumentFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
             </div>
         </div>
 

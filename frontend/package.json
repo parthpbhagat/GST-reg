@@ -15,6 +15,6 @@
   "type": "commonjs",
   "devDependencies": {
     "dotenv": "^17.4.2",
-    "vite": "^8.0.14"
+    "vite": "^8.3.0"
   }
 }

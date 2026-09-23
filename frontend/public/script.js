@@ -596,7 +596,10 @@ const REGISTRATION_REASONS = [
     "Voluntary Basis",
     "Input Service Distributor only",
     "Supplies on behalf of other taxable Person",
-    "Others"
+    "SEZ Unit",
+    "SEZ Developer",
+    "Others",
+    "Corporate Debtor undergoing the Corporate Insolvency Resolution Process with IRP/RP"
 ];
 
 const EXISTING_REGISTRATION_TYPES = [
@@ -2091,9 +2094,9 @@ function renderContent() {
             })()}
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 12px;">
-                    ${field('DATE OF COMMENCEMENT', `<input type="date" value="${form.dateOfCommencement}" onchange="updateForm('dateOfCommencement', this.value)" />`)}
-                    ${field('DATE ON WHICH LIABILITY TO REGISTER ARISES <span style="color: #ef4444">*</span>', `<input type="date" value="${form.dateOfLiability}" onchange="updateForm('dateOfLiability', this.value)" />`)}
                     ${field('REASON TO OBTAIN REGISTRATION <span style="color: #ef4444">*</span>', select('reasonToObtainRegistration', form.reasonToObtainRegistration, REGISTRATION_REASONS, 'Select'))}
+                    ${field('DATE OF COMMENCEMENT OF BUSINESS <span style="color: #ef4444">*</span>', `<input type="date" value="${form.dateOfCommencement}" onchange="updateForm('dateOfCommencement', this.value)" />`)}
+                    ${field('DATE ON WHICH LIABILITY TO REGISTER ARISES <span style="color: #ef4444">*</span>', `<input type="date" value="${form.dateOfLiability}" onchange="updateForm('dateOfLiability', this.value)" />`)}
                 </div>
                 ${!['Public Sector Undertaking', 'Statutory Body', 'Government Department', 'Local Authority'].includes(form.businessConstitution) ? `
                 <div style="margin-top: 12px;">

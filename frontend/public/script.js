@@ -3244,13 +3244,15 @@ window.fetchSezNames = function (stateName, callback) {
         .then(r => r.json())
         .then(data => {
             let items = [];
-            if (Array.isArray(data)) items = data;
-            else if (data && Array.isArray(data.data)) {
-                if (data.data[0] && Array.isArray(data.data[0].n)) items = data.data[0].n;
-                else items = data.data;
+            if (data && Array.isArray(data.data) && data.data[0] && Array.isArray(data.data[0].dt)) {
+                items = data.data[0].dt;
+            } else if (data && Array.isArray(data.data)) {
+                items = data.data;
+            } else if (Array.isArray(data)) {
+                items = data;
             }
             if (items.length > 0) {
-                window.fetchedSezNames[stateName] = items.map(item => item.n || item.name || item.name_en || item.v || item.val || item.sezName || item.desc || item).filter(Boolean);
+                window.fetchedSezNames[stateName] = items.map(item => item.nm || item.n || item.name || item.name_en || item.v || item.val || item.sezName || item.desc || item).filter(Boolean);
             } else {
                 window.fetchedSezNames[stateName] = [];
             }

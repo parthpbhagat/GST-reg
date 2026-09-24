@@ -2,8 +2,8 @@ const fs = require('fs');
 const path = require('path');
 
 // Fallback to empty string if not provided
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.VITE_SUPABASE_KEY || process.env.SUPABASE_KEY || '';
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://mgxsxpbrzmcmzlzgzfde.supabase.co';
+const supabaseKey = process.env.VITE_SUPABASE_KEY || process.env.SUPABASE_KEY || 'sb_publishable_159AAeN0gJjlQK7IgozhRQ_5yWUUKmm';
 
 const configContent = `window.ENV = { 
     SUPABASE_URL: '${supabaseUrl}', 

@@ -2125,18 +2125,18 @@ function renderContent() {
                     <p style="color: #ef4444; font-size: 11px; font-weight: 500; margin: 0;">II. Once you are registered as SEZ unit/SEZ developer, 'Reason to obtain Registration' cannot be changed. New registration will be required.</p>
                 </div>
                 <div style="margin-top: 24px; display: flex; flex-direction: column; gap: 16px;">
-                    <label style="display: flex; align-items: center; gap: 16px; font-size: 13px; font-weight: 600; color: #334155;">
+                    <div style="display: flex; align-items: center; gap: 16px; font-size: 13px; font-weight: 600; color: #334155; cursor: pointer;" onclick="window.form.isSEZUnit = ${!form.isSEZUnit}; if(window.form.isSEZUnit) window.form.isSEZDeveloper = false; window.renderContent();">
                         <span style="width: 320px;">Are you applying for registration as a SEZ Unit?</span>
-                        <div class="toggle-switch ${form.isSEZUnit ? 'active' : ''}" onclick="window.updateForm('isSEZUnit', ${!form.isSEZUnit}); if(${!form.isSEZUnit}) window.updateForm('isSEZDeveloper', false);" style="cursor: pointer; width: 36px; height: 18px; background: ${form.isSEZUnit ? '#22c55e' : '#cbd5e1'}; border-radius: 9px; position: relative;">
+                        <div class="toggle-switch ${form.isSEZUnit ? 'active' : ''}" style="width: 36px; height: 18px; background: ${form.isSEZUnit ? '#22c55e' : '#cbd5e1'}; border-radius: 9px; position: relative;">
                             <div style="width: 14px; height: 14px; background: #fff; border-radius: 50%; position: absolute; top: 2px; ${form.isSEZUnit ? 'right: 2px;' : 'left: 2px;'} transition: all 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.2);"></div>
                         </div>
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 16px; font-size: 13px; font-weight: 600; color: #334155;">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 16px; font-size: 13px; font-weight: 600; color: #334155; cursor: pointer;" onclick="window.form.isSEZDeveloper = ${!form.isSEZDeveloper}; if(window.form.isSEZDeveloper) window.form.isSEZUnit = false; window.renderContent();">
                         <span style="width: 320px;">Are you applying for registration as a SEZ Developer?</span>
-                        <div class="toggle-switch ${form.isSEZDeveloper ? 'active' : ''}" onclick="window.updateForm('isSEZDeveloper', ${!form.isSEZDeveloper}); if(${!form.isSEZDeveloper}) window.updateForm('isSEZUnit', false);" style="cursor: pointer; width: 36px; height: 18px; background: ${form.isSEZDeveloper ? '#22c55e' : '#cbd5e1'}; border-radius: 9px; position: relative;">
+                        <div class="toggle-switch ${form.isSEZDeveloper ? 'active' : ''}" style="width: 36px; height: 18px; background: ${form.isSEZDeveloper ? '#22c55e' : '#cbd5e1'}; border-radius: 9px; position: relative;">
                             <div style="width: 14px; height: 14px; background: #fff; border-radius: 50%; position: absolute; top: 2px; ${form.isSEZDeveloper ? 'right: 2px;' : 'left: 2px;'} transition: all 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.2);"></div>
                         </div>
-                    </label>
+                    </div>
                 </div>
 
                 <h3 style="font-size: 14px; font-weight: 600; color: #1e3a8a; margin: 24px 0 16px 0;">SEZ Details</h3>

@@ -153,12 +153,14 @@
 
         <div class="signatures">
             <div class="signature-block">
-                <div class="signature-line"></div>
+                <canvas id="sign1" width="200" height="60" class="signature-canvas" style="border-bottom: 1px solid #000; cursor: crosshair;" title="Draw signature here"></canvas>
+                <div class="no-print" style="text-align: center; margin-bottom: 5px;"><button onclick="clearSign('sign1')" style="font-size:11px; cursor:pointer;">Clear Sign</button></div>
                 <div>Director</div>
                 <div>DIN: <input type="text" class="blank small" id="dir1_din"></div>
             </div>
             <div class="signature-block">
-                <div class="signature-line"></div>
+                <canvas id="sign2" width="200" height="60" class="signature-canvas" style="border-bottom: 1px solid #000; cursor: crosshair;" title="Draw signature here"></canvas>
+                <div class="no-print" style="text-align: center; margin-bottom: 5px;"><button onclick="clearSign('sign2')" style="font-size:11px; cursor:pointer;">Clear Sign</button></div>
                 <div>Director</div>
                 <div>DIN: <input type="text" class="blank small" id="dir2_din"></div>
             </div>
@@ -171,7 +173,8 @@
         </div>
             
             <div class="signature-block">
-                <div class="signature-line"></div>
+                <canvas id="sign3" width="200" height="60" class="signature-canvas" style="border-bottom: 1px solid #000; cursor: crosshair;" title="Draw signature here"></canvas>
+                <div class="no-print" style="text-align: center; margin-bottom: 5px;"><button onclick="clearSign('sign3')" style="font-size:11px; cursor:pointer;">Clear Sign</button></div>
                 <div>Director</div>
                 <div>DIN: <input type="text" class="blank small" id="auth_signatory_din"></div>
             </div>
@@ -256,6 +259,70 @@
         }
 
         window.onload = loadData;
+
+        // Signature Canvas Logic
+        function initSignatureCanvas(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            let isDrawing = false;
+            let lastX = 0;
+            let lastY = 0;
+
+            function startDrawing(e) {
+                isDrawing = true;
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+                lastX = clientX - rect.left;
+                lastY = clientY - rect.top;
+            }
+
+            function draw(e) {
+                if (!isDrawing) return;
+                e.preventDefault(); // prevent scrolling while signing
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+                const currentX = clientX - rect.left;
+                const currentY = clientY - rect.top;
+
+                ctx.beginPath();
+                ctx.moveTo(lastX, lastY);
+                ctx.lineTo(currentX, currentY);
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                lastX = currentX;
+                lastY = currentY;
+            }
+
+            function stopDrawing() {
+                isDrawing = false;
+            }
+
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mouseout', stopDrawing);
+
+            // Touch support for mobile devices
+            canvas.addEventListener('touchstart', startDrawing, {passive: false});
+            canvas.addEventListener('touchmove', draw, {passive: false});
+            canvas.addEventListener('touchend', stopDrawing);
+        }
+
+        window.clearSign = function(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        };
+
+        // Initialize all signature canvases
+        initSignatureCanvas('sign1');
+        initSignatureCanvas('sign2');
+        initSignatureCanvas('sign3');
     </script>
 </body>
 </html>

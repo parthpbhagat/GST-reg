@@ -3941,6 +3941,18 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
         pdf.line(margin, y - 5, margin + 40, y - 5);
         pdf.line(width - margin - 40, y - 5, width - margin, y - 5);
         
+        // Add signature images if they exist in the canvas
+        const sign1Canvas = doc.getElementById('sign1');
+        if (sign1Canvas) {
+            const sign1Data = sign1Canvas.toDataURL('image/png');
+            pdf.addImage(sign1Data, 'PNG', margin, y - 20, 40, 12);
+        }
+        const sign2Canvas = doc.getElementById('sign2');
+        if (sign2Canvas) {
+            const sign2Data = sign2Canvas.toDataURL('image/png');
+            pdf.addImage(sign2Data, 'PNG', width - margin - 40, y - 20, 40, 12);
+        }
+
         pdf.text(`Director`, margin, y);
         pdf.text(`DIN: ${dir1_din}`, margin, y + 6);
         
@@ -3964,6 +3976,13 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
         
         // Signature 2
         pdf.line(margin, y - 5, margin + 40, y - 5);
+        
+        const sign3Canvas = doc.getElementById('sign3');
+        if (sign3Canvas) {
+            const sign3Data = sign3Canvas.toDataURL('image/png');
+            pdf.addImage(sign3Data, 'PNG', margin, y - 20, 40, 12);
+        }
+
         pdf.text(`Director`, margin, y);
         pdf.text(`DIN: ${auth_signatory_din}`, margin, y + 6);
         

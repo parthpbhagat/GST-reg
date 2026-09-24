@@ -2999,6 +2999,7 @@ window.fetchMapplsPincode = debounce(async function (pin, targetKey) {
                 }
             }
         }
+        }
         renderContent();
     } catch (e) {
         console.error("Error fetching pincode details:", e);

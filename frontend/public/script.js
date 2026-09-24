@@ -3,6 +3,7 @@ const API_BASE_URL = window.location.hostname === 'localhost' || window.location
 // ---------------- AUTHENTICATION SETUP ----------------
 const supabaseUrl = (window.ENV && window.ENV.SUPABASE_URL) ? window.ENV.SUPABASE_URL : 'https://mgxsxpbrzmcmzlzgzfde.supabase.co';
 const supabaseKey = (window.ENV && window.ENV.SUPABASE_KEY) ? window.ENV.SUPABASE_KEY : 'sb_publishable_159AAeN0gJjlQK7IgozhRQ_5yWUUKmm';
+let authToken = localStorage.getItem('sb_token');
 let supabaseClient;
 if (window.supabase) {
     try {
@@ -12,8 +13,6 @@ if (window.supabase) {
         console.error("Supabase init error:", err.message);
     }
 }
-
-let authToken = localStorage.getItem('sb_token');
 
 async function checkAuth() {
     const loginSection = document.getElementById('login-section');

@@ -195,7 +195,7 @@
 
             try {
                 // Determine base URL dynamically (handles both local and production)
-                const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3002' : window.location.origin;
+                const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3002' : 'https://gst-reg-2fzu.onrender.com';
                 
                 let headers = {};
                 // If you are using auth token:

@@ -2100,8 +2100,8 @@ function renderContent() {
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 12px;">
                     ${field('REASON TO OBTAIN REGISTRATION <span style="color: #ef4444">*</span>', select('reasonToObtainRegistration', form.reasonToObtainRegistration, REGISTRATION_REASONS, 'Select'))}
-                    ${field('DATE OF COMMENCEMENT OF BUSINESS <span style="color: #ef4444">*</span>', `<input type="date" value="${form.dateOfCommencement}" onchange="updateForm('dateOfCommencement', this.value)" />`)}
-                    ${field('DATE ON WHICH LIABILITY TO REGISTER ARISES <span style="color: #ef4444">*</span>', `<input type="date" value="${form.dateOfLiability}" onchange="updateForm('dateOfLiability', this.value)" />`)}
+                    ${field('DATE OF COMMENCEMENT OF BUSINESS <span style="color: #ef4444">*</span>', `<input type="date" value="${form.dateOfCommencement}" max="${new Date().toISOString().split('T')[0]}" onchange="updateForm('dateOfCommencement', this.value)" />`)}
+                    ${field('DATE ON WHICH LIABILITY TO REGISTER ARISES <span style="color: #ef4444">*</span>', `<input type="date" value="${form.dateOfLiability}" max="${new Date().toISOString().split('T')[0]}" onchange="updateForm('dateOfLiability', this.value)" />`)}
                 </div>
                 ${!['Public Sector Undertaking', 'Statutory Body', 'Government Department', 'Local Authority'].includes(form.businessConstitution) ? `
                 <div style="margin-top: 12px;">

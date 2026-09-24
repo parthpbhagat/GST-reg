@@ -2956,12 +2956,15 @@ window.searchPincode = function (query, targetKey) {
 window.fetchMapplsPincode = debounce(async function (pin, targetKey) {
     if (pin.length !== 6) return;
 
-    const results = await mapplsService.searchPincode(pin);
-    if (results && results.length > 0) {
-        const data = results[0].properties;
-        const state = data.state;
-        const district = data.district || '';
-        const city = data.city || '';
+    try {
+        const response = await fetch(`https://api.postalpincode.in/pincode/${pin}`);
+        const results = await response.json();
+        
+        if (results && results[0] && results[0].Status === 'Success' && results[0].PostOffice && results[0].PostOffice.length > 0) {
+            const data = results[0].PostOffice[0];
+            const state = data.State;
+            const district = data.District || '';
+            const city = data.Block || data.Name || '';
 
         if (targetKey) {
             const baseKey = targetKey.replace('.res_pincode', '').replace('ppob_pincode', '');
@@ -2998,6 +3001,8 @@ window.fetchMapplsPincode = debounce(async function (pin, targetKey) {
             }
         }
         renderContent();
+    } catch (e) {
+        console.error("Error fetching pincode details:", e);
     }
 }, 500);
 

@@ -3013,7 +3013,7 @@ window.initMapsAndAutocomplete = function () {
     if (step === 1 || step === 2 || step === 4) {
         const mapContainer = document.getElementById('leaflet-map');
         if (mapContainer) {
-            let lat = 28.6139; // Default to New Delhi
+            let lat = 28.6139;
             let lon = 77.2090;
 
             let f;
@@ -3030,100 +3030,60 @@ window.initMapsAndAutocomplete = function () {
             }
 
             try {
-                if (!window.mappls) {
-                    console.warn("Mappls SDK not loaded yet.");
-                    return;
+                if (window.currentMap && window.currentMap.remove) {
+                    window.currentMap.off();
+                    window.currentMap.remove();
+                    window.currentMap = null;
                 }
 
-                if (currentMap) {
-                    const mapEl = document.getElementById('leaflet-map');
-                    if (mapEl) mapEl.innerHTML = '';
-                }
+                window.currentMap = L.map('leaflet-map').setView([lat, lon], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© OpenStreetMap'
+                }).addTo(window.currentMap);
 
-                currentMap = new mappls.Map('leaflet-map', {
-                    center: [lat, lon],
-                    zoom: 13,
-                    zoomControl: true,
-                    location: true
-                });
+                window.currentMarker = L.marker([lat, lon], { draggable: true }).addTo(window.currentMap);
 
-                currentMarker = new mappls.Marker({
-                    map: currentMap,
-                    position: { lat: lat, lng: lon },
-                    draggable: true
-                });
-
-                const handleDrag = async function (e) {
-                    const pos = currentMarker.getPosition();
-                    if (!pos) return;
-
+                window.currentMarker.on('dragend', async function (e) {
+                    const pos = window.currentMarker.getLatLng();
                     const pLat = pos.lat;
                     const pLon = pos.lng;
-
-                    const data = await mapplsService.reverseGeocode(pLat, pLon);
-                    if (data) {
-                        if (step === 4) {
-                            window.form.ppob_state = data.state || '';
-                            window.form.ppob_district = data.district || '';
-                            window.form.ppob_city = data.city || '';
-                            window.form.ppob_locality = data.locality || '';
-                            window.form.ppob_street = data.street || '';
-                            window.form.ppob_pincode = data.postcode || '';
-                            window.form.ppob_latitude = pLat;
-                            window.form.ppob_longitude = pLon;
-
-                            const elState = document.getElementById('ppob_state');
-                            if (elState && window.form.ppob_state) {
-                                if (!Array.from(elState.options).some(o => o.value === window.form.ppob_state)) {
-                                    elState.add(new Option(window.form.ppob_state, window.form.ppob_state));
-                                }
-                                elState.value = window.form.ppob_state;
-                            }
-
-                            const elDistrict = document.getElementById('ppob_district');
-                            if (elDistrict && window.form.ppob_district) {
-                                if (!Array.from(elDistrict.options).some(o => o.value === window.form.ppob_district)) {
-                                    elDistrict.add(new Option(window.form.ppob_district, window.form.ppob_district));
-                                }
-                                elDistrict.value = window.form.ppob_district;
-                            }
-
-                            const elCity = document.getElementById('ppob_city');
-                            if (elCity) elCity.value = window.form.ppob_city;
-                            const elLocality = document.getElementById('ppob_locality');
-                            if (elLocality) elLocality.value = window.form.ppob_locality;
-                            const elStreet = document.getElementById('ppob_street');
-                            if (elStreet) elStreet.value = window.form.ppob_street;
-                            const elPincode = document.getElementById('ppob_pincode');
-                            if (elPincode) elPincode.value = window.form.ppob_pincode;
-                            const elLat = document.getElementById('ppob_latitude');
-                            if (elLat) elLat.value = window.form.ppob_latitude;
-                            const elLon = document.getElementById('ppob_longitude');
-                            if (elLon) elLon.value = window.form.ppob_longitude;
-
-                        } else {
-                            const f = step === 1 ? window.form.promoters[0] : (step === 2 ? window.form.authSig : null);
-                            if (f) {
-                                f.res_state = data.state || '';
-                                f.res_district = data.district || '';
-                                f.res_city = data.city || '';
-                                f.res_locality = data.locality || '';
-                                f.res_road = data.street || '';
-                                f.res_pincode = data.postcode || '';
-                                renderContent();
+                    
+                    if (step === 4) {
+                        window.form.ppob_latitude = pLat.toFixed(6);
+                        window.form.ppob_longitude = pLon.toFixed(6);
+                        
+                        const elLat = document.getElementById('ppob_latitude');
+                        if (elLat) elLat.value = window.form.ppob_latitude;
+                        const elLon = document.getElementById('ppob_longitude');
+                        if (elLon) elLon.value = window.form.ppob_longitude;
+                    }
+                    
+                    try {
+                        const response = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + pLat + '&lon=' + pLon);
+                        const data = await response.json();
+                        if (data && data.address) {
+                            const addr = data.address;
+                            if (step === 4) {
+                                window.form.ppob_locality = addr.suburb || addr.neighbourhood || '';
+                                window.form.ppob_street = addr.road || '';
+                                const elLocality = document.getElementById('ppob_locality');
+                                if (elLocality) elLocality.value = window.form.ppob_locality;
+                                const elStreet = document.getElementById('ppob_street');
+                                if (elStreet) elStreet.value = window.form.ppob_street;
                             }
                         }
+                    } catch (err) {
+                        console.error('Nominatim reverse geocoding error:', err);
                     }
-                };
-
-                currentMarker.addListener('dragend', handleDrag);
+                });
 
             } catch (err) {
-                console.error("Map initialization error:", err);
+                console.error('Map initialization error:', err);
             }
         }
     }
-}
+};
 
 window.searchAddressAutocomplete = debounce(async function (query) {
     const list = document.getElementById('map_suggestions');
@@ -3134,69 +3094,39 @@ window.searchAddressAutocomplete = debounce(async function (query) {
         return;
     }
 
-    const results = await mapplsService.autocomplete(query);
-    if (results && results.length > 0) {
-        list.innerHTML = results.map(r => {
-            const prop = r.properties;
-            const label = prop.formatted;
-            return `<li style="padding: 10px 16px; cursor: pointer; border-bottom: 1px solid var(--border-color); color: var(--text-main); font-size: 13px;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'" onclick="selectAddressSuggestion('${prop.place_id}')">${label}</li>`;
-        }).join('');
-        list.style.display = 'block';
-    } else {
-        list.style.display = 'none';
+    try {
+        const response = await fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(query) + '&countrycodes=in&limit=5');
+        const results = await response.json();
+        
+        if (results && results.length > 0) {
+            list.innerHTML = results.map(r => {
+                const label = r.display_name.replace(/'/g, '');
+                return '<li style="padding: 10px 16px; cursor: pointer; border-bottom: 1px solid var(--border-color); color: var(--text-main); font-size: 13px;" onmouseover="this.style.background=\'#f1f5f9\'" onmouseout="this.style.background=\'#fff\'" onclick="selectAddressSuggestion(' + r.lat + ', ' + r.lon + ')">' + label + '</li>';
+            }).join('');
+            list.style.display = 'block';
+        } else {
+            list.style.display = 'none';
+        }
+    } catch (e) {
+        console.error('Nominatim search error', e);
     }
 }, 500);
 
-window.selectAddressSuggestion = async function (eloc) {
+window.selectAddressSuggestion = async function (lat, lon) {
     const list = document.getElementById('map_suggestions');
     if (list) list.style.display = 'none';
 
-    if (window.mappls && currentMap) {
-        try {
-            mappls.pinMarker({
-                map: currentMap,
-                pin: eloc,
-                zoom: 16
-            }, function (data) {
-                if (currentMarker) {
-                    currentMarker.remove();
-                }
-                currentMarker = data[0];
-                currentMarker.setDraggable(true);
-
-                const pos = currentMarker.getPosition();
-                mapplsService.reverseGeocode(pos.lat, pos.lng).then(addr => {
-                    if (addr) {
-                        if (step === 3) {
-                            form.ppob_state = addr.state || '';
-                            form.ppob_district = addr.district || '';
-                            form.ppob_city = addr.city || '';
-                            form.ppob_locality = addr.locality || '';
-                            form.ppob_street = addr.street || '';
-                            form.ppob_pincode = addr.postcode || '';
-                            form.ppob_latitude = pos.lat;
-                            form.ppob_longitude = pos.lng;
-                        } else {
-                            const f = step === 1 ? form.promoters[0] : (step === 2 ? form.authSig : null);
-                            if (f) {
-                                f.res_state = addr.state || '';
-                                f.res_district = addr.district || '';
-                                f.res_city = addr.city || '';
-                                f.res_locality = addr.locality || '';
-                                f.res_road = addr.street || '';
-                                f.res_pincode = addr.postcode || '';
-                            }
-                        }
-                        if (step === 4 && window.fetchStateJurisdictions) {
-                            window.fetchStateJurisdictions(renderContent);
-                        } else {
-                            renderContent();
-                        }
-                    }
-                });
-            });
-        } catch (e) {
-            console.error('Error selecting suggestion:', e);
+    if (window.currentMap && window.currentMarker) {
+        window.currentMap.setView([lat, lon], 16);
+        window.currentMarker.setLatLng([lat, lon]);
+        
+        if (step === 4) {
+            window.form.ppob_latitude = Number(lat).toFixed(6);
+            window.form.ppob_longitude = Number(lon).toFixed(6);
+            const elLat = document.getElementById('ppob_latitude');
+            if (elLat) elLat.value = window.form.ppob_latitude;
+            const elLon = document.getElementById('ppob_longitude');
+            if (elLon) elLon.value = window.form.ppob_longitude;
         }
     }
 };

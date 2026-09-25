@@ -37,6 +37,9 @@
                 <label>Password</label>
                 <input type="password" id="password" placeholder="Enter your password" autocomplete="new-password" required>
             </div>
+            <div style="text-align: right; margin-top: -10px; margin-bottom: 15px;">
+                <a href="#" id="forgotBtn" style="font-size: 13px; color: #2563eb; text-decoration: none; display: inline-block;">Forgot Password?</a>
+            </div>
             <div class="input-group signup-only" style="display: none;">
                 <label>Confirm Password</label>
                 <input type="password" id="confirmPassword" placeholder="Confirm your password" autocomplete="new-password">
@@ -67,6 +70,35 @@
             document.querySelectorAll('.signup-only').forEach(el => {
                 el.style.display = isLogin ? 'none' : 'block';
             });
+            
+            document.getElementById('forgotBtn').style.display = isLogin ? 'inline-block' : 'none';
+        });
+
+        document.getElementById('forgotBtn').addEventListener('click', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const errorMsg = document.getElementById('errorMsg');
+            
+            if (!email) {
+                errorMsg.style.color = '#dc2626';
+                errorMsg.innerText = 'Please enter your email first to reset password.';
+                return;
+            }
+            
+            errorMsg.style.color = '#64748b';
+            errorMsg.innerText = 'Sending reset link...';
+            
+            const { data, error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+                redirectTo: window.location.origin + '/reset-password.html',
+            });
+            
+            if (error) {
+                errorMsg.style.color = '#dc2626';
+                errorMsg.innerText = error.message;
+            } else {
+                errorMsg.style.color = '#16a34a';
+                errorMsg.innerText = 'Password reset link sent to your email!';
+            }
         });
 
         document.getElementById('authForm').addEventListener('submit', async (e) => {

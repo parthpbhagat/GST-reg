@@ -70,6 +70,39 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.signup-only').forEach(el => {
                 el.style.display = isLogin ? 'none' : 'block';
             });
+            
+            const forgotBtn = document.getElementById('forgotBtn');
+            if (forgotBtn) forgotBtn.style.display = isLogin ? 'inline-block' : 'none';
+        });
+    }
+
+    const forgotBtn = document.getElementById('forgotBtn');
+    if (forgotBtn) {
+        forgotBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const errorMsg = document.getElementById('errorMsg');
+            
+            if (!email) {
+                errorMsg.style.color = '#dc2626';
+                errorMsg.innerText = 'Please enter your email first to reset password.';
+                return;
+            }
+            
+            errorMsg.style.color = '#64748b';
+            errorMsg.innerText = 'Sending reset link...';
+            
+            const { data, error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+                redirectTo: window.location.origin + '/reset-password.html',
+            });
+            
+            if (error) {
+                errorMsg.style.color = '#dc2626';
+                errorMsg.innerText = error.message;
+            } else {
+                errorMsg.style.color = '#16a34a';
+                errorMsg.innerText = 'Password reset link sent to your email!';
+            }
         });
     }
 

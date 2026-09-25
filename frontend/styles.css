@@ -811,6 +811,15 @@ input:not(:placeholder-shown):not(:read-only):invalid {
     }
     .card {
         padding: 16px;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+    .card > div[style*="display: flex"] {
+        flex-wrap: wrap !important;
+        gap: 12px !important;
+    }
+    .card > div > div[style*="display: flex"] {
+        flex-wrap: wrap !important;
     }
     .field input, .field select, .field textarea {
         font-size: 16px !important; /* Prevent iOS zoom */
@@ -820,9 +829,12 @@ input:not(:placeholder-shown):not(:read-only):invalid {
         box-sizing: border-box !important;
     }
     .btn {
-        font-size: 16px;
-        padding: 12px 20px;
-        width: 100%; /* Full width buttons on mobile */
+        font-size: 15px;
+        padding: 10px 16px;
+    }
+    /* Only make form submission buttons full width */
+    .login-card .btn, form .btn, .top-inner .btn {
+        width: 100%;
         margin-bottom: 8px;
     }
     /* Fix dashboard table on mobile */

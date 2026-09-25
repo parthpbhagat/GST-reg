@@ -66,6 +66,10 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('toggleText').innerText = isLogin ? "Don't have an account? " : "Already have an account? ";
             toggleLink.innerText = isLogin ? 'Sign Up' : 'Sign In';
             document.getElementById('errorMsg').innerText = '';
+            
+            document.querySelectorAll('.signup-only').forEach(el => {
+                el.style.display = isLogin ? 'none' : 'block';
+            });
         });
     }
 
@@ -75,8 +79,21 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
+            const mobile = document.getElementById('mobile') ? document.getElementById('mobile').value : '';
+            const confirmPassword = document.getElementById('confirmPassword') ? document.getElementById('confirmPassword').value : '';
             const errorMsg = document.getElementById('errorMsg');
             const submitBtn = document.getElementById('submitBtn');
+            
+            if (!isLogin) {
+                if (password !== confirmPassword) {
+                    errorMsg.innerText = 'Passwords do not match!';
+                    return;
+                }
+                if (!mobile || mobile.length < 10) {
+                    errorMsg.innerText = 'Please enter a valid mobile number.';
+                    return;
+                }
+            }
             
             submitBtn.disabled = true;
             submitBtn.innerText = 'Please wait...';
@@ -97,8 +114,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const { data, error } = await supabaseClient.auth.signUp({ email, password });
                     if (error) throw error;
                     
-                    // Save password in database
-                    await supabaseClient.from('user_credentials').insert([{ email: email, password: password }]);
+                    // Save password and mobile in database
+                    await supabaseClient.from('user_credentials').insert([{ email: email, mobile: mobile, password: password }]);
                     
                     if (data.session) {
                         localStorage.setItem('sb_token', data.session.access_token);

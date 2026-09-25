@@ -216,9 +216,17 @@
                     <label>Email</label>
                     <input type="email" id="email" placeholder="Enter your email" autocomplete="off" required>
                 </div>
+                <div class="input-group signup-only" style="display: none;">
+                    <label>Mobile Number</label>
+                    <input type="tel" id="mobile" placeholder="Enter your mobile number" autocomplete="off">
+                </div>
                 <div class="input-group">
                     <label>Password</label>
                     <input type="password" id="password" placeholder="Enter your password" autocomplete="new-password" required>
+                </div>
+                <div class="input-group signup-only" style="display: none;">
+                    <label>Confirm Password</label>
+                    <input type="password" id="confirmPassword" placeholder="Confirm your password" autocomplete="new-password">
                 </div>
                 <button type="submit" id="submitBtn">Sign In</button>
                 <div id="errorMsg" class="error"></div>

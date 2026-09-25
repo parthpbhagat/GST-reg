@@ -795,8 +795,19 @@ input:not(:placeholder-shown):not(:read-only):invalid {
         text-align: center;
         padding: 16px;
     }
+    .top-actions {
+        margin-left: 0 !important;
+        flex-wrap: wrap;
+        justify-content: center;
+        width: 100%;
+    }
     .wizard-steps {
         padding-bottom: 12px;
+        -ms-overflow-style: none; /* IE and Edge */
+        scrollbar-width: none; /* Firefox */
+    }
+    .wizard-steps::-webkit-scrollbar {
+        display: none;
     }
     .card {
         padding: 16px;

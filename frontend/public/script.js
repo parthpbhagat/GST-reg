@@ -137,9 +137,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
                     if (error) throw error;
                     
-                    // Save password in database
-                    await supabaseClient.from('user_credentials').insert([{ email: email, password: password }]);
-                    
                     localStorage.setItem('sb_token', data.session.access_token);
                     authToken = data.session.access_token;
                     checkAuth();
@@ -2117,7 +2114,7 @@ function renderContent() {
                     ${field('LEGAL NAME (AS PER PAN)', textInput('legalName', form.legalName))}
                     ${field('PAN <span style="color: #ef4444">*</span>', `
                         ${textInput('pan', form.pan, 'oninput="updatePanFormatBoxes(this.value)" placeholder="Enter PAN" maxlength="10" pattern="[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}" style="text-transform:uppercase"')}
-                        <div style="font-size: 11px; color: #000; margin-top: 4px; font-weight: 500; position: absolute; top: 100%; left: 0;">
+                        <div style="font-size: 11px; color: #000; margin-top: 4px; font-weight: 500; margin-bottom: 8px;">
                             Eg: 
                             <span id="pan_box_0" style="display: inline-block; background-color: #fce8e6; color: #b91c1c; width: 16px; height: 16px; text-align: center; line-height: 16px; margin-right: 1px; font-size: 10px;">A</span><span id="pan_box_1" style="display: inline-block; background-color: #fce8e6; color: #b91c1c; width: 16px; height: 16px; text-align: center; line-height: 16px; margin-right: 1px; font-size: 10px;">B</span><span id="pan_box_2" style="display: inline-block; background-color: #fce8e6; color: #b91c1c; width: 16px; height: 16px; text-align: center; line-height: 16px; margin-right: 1px; font-size: 10px;">C</span><span id="pan_box_3" style="display: inline-block; background-color: #fce8e6; color: #b91c1c; width: 16px; height: 16px; text-align: center; line-height: 16px; margin-right: 1px; font-size: 10px;">D</span><span id="pan_box_4" style="display: inline-block; background-color: #fce8e6; color: #b91c1c; width: 16px; height: 16px; text-align: center; line-height: 16px; margin-right: 1px; font-size: 10px;">E</span><span id="pan_box_5" style="display: inline-block; background-color: #fce8e6; color: #b91c1c; width: 16px; height: 16px; text-align: center; line-height: 16px; margin-right: 1px; font-size: 10px;">1</span><span id="pan_box_6" style="display: inline-block; background-color: #fce8e6; color: #b91c1c; width: 16px; height: 16px; text-align: center; line-height: 16px; margin-right: 1px; font-size: 10px;">2</span><span id="pan_box_7" style="display: inline-block; background-color: #fce8e6; color: #b91c1c; width: 16px; height: 16px; text-align: center; line-height: 16px; margin-right: 1px; font-size: 10px;">3</span><span id="pan_box_8" style="display: inline-block; background-color: #fce8e6; color: #b91c1c; width: 16px; height: 16px; text-align: center; line-height: 16px; margin-right: 1px; font-size: 10px;">4</span><span id="pan_box_9" style="display: inline-block; background-color: #fce8e6; color: #b91c1c; width: 16px; height: 16px; text-align: center; line-height: 16px; font-size: 10px;">X</span>
                         </div>

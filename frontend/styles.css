@@ -815,4 +815,17 @@ input:not(:placeholder-shown):not(:read-only):invalid {
         overflow-x: auto;
         white-space: nowrap;
     }
+    
+    /* Fix inline hardcoded grids and borders on mobile */
+    div[style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+    }
+    div[style*="border-right: 1px solid"], div[style*="border-right:1px solid"] {
+        border-right: none !important;
+        padding-right: 0 !important;
+        border-bottom: 1px solid var(--border-color) !important;
+        padding-bottom: 20px !important;
+        margin-bottom: 20px !important;
+        min-height: auto !important;
+    }
 }

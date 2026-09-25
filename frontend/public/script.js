@@ -826,7 +826,12 @@ function setStep(newStep) {
         }
     }
     renderSidebar();
-    renderContent();
+    
+    if (typeof window.showLoader === 'function') window.showLoader();
+    setTimeout(() => {
+        renderContent();
+        if (typeof window.hideLoader === 'function') window.hideLoader();
+    }, 50);
 }
 
 function field(label, content, error = '') {
@@ -1279,14 +1284,17 @@ window.renderAdminDashboard = async function () {
         return;
     }
 
+    if (typeof window.showLoader === 'function') window.showLoader();
     try {
         const res = await fetch(`${API_BASE_URL}/api/applications`);
         allApps = await res.json();
     } catch (e) {
         console.error(e);
         container.innerHTML = `<p>Error loading applications from backend.</p>`;
+        if (typeof window.hideLoader === 'function') window.hideLoader();
         return;
     }
+    if (typeof window.hideLoader === 'function') window.hideLoader();
 
     let html = `<div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
@@ -3776,7 +3784,13 @@ window.handleRoute = function() {
                  header.classList.add('hidden');
             }
         }
-        if (typeof renderContent === 'function') renderContent();
+        if (typeof renderContent === 'function') {
+            if (typeof window.showLoader === 'function') window.showLoader();
+            setTimeout(() => {
+                renderContent();
+                if (typeof window.hideLoader === 'function') window.hideLoader();
+            }, 50);
+        }
     }
 };
 

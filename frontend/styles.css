@@ -777,3 +777,42 @@ input:not(:placeholder-shown):not(:read-only):invalid {
     border-color: #93c5fd;
 }
 
+/* --- Mobile Responsive Fixes --- */
+@media (max-width: 768px) {
+    body {
+        zoom: 1 !important; /* Disable zoom on mobile */
+        padding: 0;
+    }
+    .app {
+        padding: 8px;
+    }
+    .login-card {
+        max-width: 90%;
+        padding: 30px 20px;
+    }
+    .top-inner {
+        flex-direction: column;
+        text-align: center;
+        padding: 16px;
+    }
+    .wizard-steps {
+        padding-bottom: 12px;
+    }
+    .card {
+        padding: 16px;
+    }
+    .field input, .field select {
+        font-size: 16px; /* Prevent iOS zoom */
+        padding: 10px;
+    }
+    .btn {
+        font-size: 16px;
+        padding: 12px 20px;
+    }
+    /* Fix dashboard table on mobile */
+    table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+}

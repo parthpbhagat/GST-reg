@@ -113,10 +113,13 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
 
 // GET /api/applications - Get all applications for logged-in user
 app.get('/api/applications', authenticateToken, async (req, res) => {
-    const { data: rows, error } = await db.from('applications')
-        .select('*')
-        .eq('userEmail', req.user.email)
-        .order('createdAt', { ascending: false });
+    let query = db.from('applications').select('*').order('createdAt', { ascending: false });
+    
+    if (req.user.email !== 'admin@example.com') {
+        query = query.eq('userEmail', req.user.email);
+    }
+    
+    const { data: rows, error } = await query;
 
     if (error) {
         console.error('Error fetching applications:', error.message);
@@ -143,7 +146,11 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
         return res.status(400).json({ error: 'status is required' });
     }
 
-    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).eq('userEmail', req.user.email).single();
+    let query = db.from('applications').select('*').eq('appId', id);
+    if (req.user.email !== 'admin@example.com') {
+        query = query.eq('userEmail', req.user.email);
+    }
+    const { data: row, error: fetchErr } = await query.single();
 
     if (fetchErr || !row) {
         return res.status(404).json({ error: 'Application not found or unauthorized' });
@@ -201,7 +208,11 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
         }
     }
 
-    const { error } = await db.from('applications').update({ status, data: appData }).eq('appId', id).eq('userEmail', req.user.email);
+    let updateQuery = db.from('applications').update({ status, data: appData }).eq('appId', id);
+    if (req.user.email !== 'admin@example.com') {
+        updateQuery = updateQuery.eq('userEmail', req.user.email);
+    }
+    const { error } = await updateQuery;
 
     if (error) {
         console.error('Error updating status:', error.message);
@@ -215,7 +226,11 @@ app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     // First fetch the application to get the legalName and delete its folder
-    const { data: row, error: fetchErr } = await db.from('applications').select('*').eq('appId', id).eq('userEmail', req.user.email).single();
+    let fetchQuery = db.from('applications').select('*').eq('appId', id);
+    if (req.user.email !== 'admin@example.com') {
+        fetchQuery = fetchQuery.eq('userEmail', req.user.email);
+    }
+    const { data: row, error: fetchErr } = await fetchQuery.single();
 
     if (!fetchErr && row) {
         try {
@@ -235,7 +250,11 @@ app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
     }
 
     // Then delete from the database
-    const { error: deleteErr, count } = await db.from('applications').delete({ count: 'exact' }).eq('appId', id).eq('userEmail', req.user.email);
+    let deleteQuery = db.from('applications').delete({ count: 'exact' }).eq('appId', id);
+    if (req.user.email !== 'admin@example.com') {
+        deleteQuery = deleteQuery.eq('userEmail', req.user.email);
+    }
+    const { error: deleteErr, count } = await deleteQuery;
 
     if (deleteErr) {
         console.error('Error deleting application:', deleteErr.message);
@@ -254,11 +273,19 @@ app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
 
     if (!trn) return res.status(400).json({ error: 'trn is required' });
 
-    // Ensure they own it first
-    const { data: row, error: fetchErr } = await db.from('applications').select('appId').eq('appId', id).eq('userEmail', req.user.email).single();
+    // Ensure they own it first (unless admin)
+    let fetchQuery = db.from('applications').select('appId').eq('appId', id);
+    if (req.user.email !== 'admin@example.com') {
+        fetchQuery = fetchQuery.eq('userEmail', req.user.email);
+    }
+    const { data: row, error: fetchErr } = await fetchQuery.single();
     if (fetchErr || !row) return res.status(404).json({ error: 'Application not found or unauthorized' });
 
-    const { error } = await db.from('applications').update({ trn }).eq('appId', id).eq('userEmail', req.user.email);
+    let updateQuery = db.from('applications').update({ trn }).eq('appId', id);
+    if (req.user.email !== 'admin@example.com') {
+        updateQuery = updateQuery.eq('userEmail', req.user.email);
+    }
+    const { error } = await updateQuery;
     
     if (error) {
         console.error('Error updating TRN:', error.message);

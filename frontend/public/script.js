@@ -1305,6 +1305,7 @@ window.renderAdminDashboard = async function () {
                     <th style="padding: 10px;">App ID</th>
                     <th style="padding: 10px;">Date</th>
                     <th style="padding: 10px;">Legal Name</th>
+                    <th style="padding: 10px;">User Email</th>
                     <th style="padding: 10px;">TRN</th>
                     <th style="padding: 10px;">Status</th>
                     <th style="padding: 10px;">Action</th>
@@ -1316,6 +1317,7 @@ window.renderAdminDashboard = async function () {
                         <td style="padding: 10px;">${app.appId}</td>
                         <td style="padding: 10px;">${new Date(app.date).toLocaleDateString()}</td>
                         <td style="padding: 10px;">${app.data.legalName || 'N/A'}</td>
+                        <td style="padding: 10px; color: #64748b; font-size: 13px;">${app.userEmail || '-'}</td>
                         <td style="padding: 10px; font-weight: 500; color: #0f172a;">${app.trn || '-'}</td>
                         <td style="padding: 10px;"><span style="padding: 2px 6px; border-radius: 4px; font-size: 12px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span></td>
                         <td style="padding: 10px;">

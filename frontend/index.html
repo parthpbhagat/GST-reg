@@ -20,10 +20,15 @@
             position: fixed;
             top: 0;
             left: 0;
-            width: 100vw;
-            height: 150vh; /* Overshoot to account for body zoom 0.7 */
+            width: 100%;
+            height: 100vh;
             z-index: 50;
             overflow: hidden;
+        }
+        @media (min-width: 769px) {
+            .login-wrapper {
+                height: 145vh;
+            }
         }
         /* Background animated circles */
         .login-wrapper::before, .login-wrapper::after {

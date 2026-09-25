@@ -126,13 +126,17 @@ app.get('/api/applications', authenticateToken, async (req, res) => {
         return res.status(500).json({ error: 'Failed to fetch applications' });
     }
     
-    const applications = rows.map(row => ({
-        appId: row.appId,
-        status: row.status,
-        date: row.createdAt,
-        trn: row.trn,
-        data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data
-    }));
+    const applications = rows.map(row => {
+        const appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+        return {
+            appId: row.appId,
+            status: row.status,
+            date: row.createdAt,
+            trn: row.trn,
+            userEmail: row.userEmail || appData.email || appData.ppob_email || '-',
+            data: appData
+        };
+    });
 
     res.json(applications);
 });

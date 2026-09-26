@@ -66,11 +66,11 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('toggleText').innerText = isLogin ? "Don't have an account? " : "Already have an account? ";
             toggleLink.innerText = isLogin ? 'Sign Up' : 'Sign In';
             document.getElementById('errorMsg').innerText = '';
-            
+
             document.querySelectorAll('.signup-only').forEach(el => {
                 el.style.display = isLogin ? 'none' : 'block';
             });
-            
+
             const forgotBtn = document.getElementById('forgotBtn');
             if (forgotBtn) forgotBtn.style.display = isLogin ? 'inline-block' : 'none';
         });
@@ -82,20 +82,20 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             const email = document.getElementById('email').value;
             const errorMsg = document.getElementById('errorMsg');
-            
+
             if (!email) {
                 errorMsg.style.color = '#dc2626';
                 errorMsg.innerText = 'Please enter your email first to reset password.';
                 return;
             }
-            
+
             errorMsg.style.color = '#64748b';
             errorMsg.innerText = 'Sending reset link...';
-            
+
             const { data, error } = await supabaseClient.auth.resetPasswordForEmail(email, {
                 redirectTo: window.location.origin + '/reset-password.html',
             });
-            
+
             if (error) {
                 errorMsg.style.color = '#dc2626';
                 errorMsg.innerText = error.message;
@@ -116,7 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const confirmPassword = document.getElementById('confirmPassword') ? document.getElementById('confirmPassword').value : '';
             const errorMsg = document.getElementById('errorMsg');
             const submitBtn = document.getElementById('submitBtn');
-            
+
             if (!isLogin) {
                 if (password !== confirmPassword) {
                     errorMsg.innerText = 'Passwords do not match!';
@@ -127,7 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
             }
-            
+
             submitBtn.disabled = true;
             submitBtn.innerText = 'Please wait...';
             errorMsg.innerText = '';
@@ -136,17 +136,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (isLogin) {
                     const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
                     if (error) throw error;
-                    
+
                     localStorage.setItem('sb_token', data.session.access_token);
                     authToken = data.session.access_token;
                     checkAuth();
                 } else {
                     const { data, error } = await supabaseClient.auth.signUp({ email, password });
                     if (error) throw error;
-                    
+
                     // Save password and mobile in database
                     await supabaseClient.from('user_credentials').insert([{ email: email, mobile: mobile, password: password }]);
-                    
+
                     if (data.session) {
                         localStorage.setItem('sb_token', data.session.access_token);
                         authToken = data.session.access_token;
@@ -685,15 +685,15 @@ const ELECTRICITY_BOARDS = {
 };
 
 const STEPS = [
-    "Business Details", 
-    "Promoter / Partners", 
-    "Authorized Signatory", 
+    "Business Details",
+    "Promoter / Partners",
+    "Authorized Signatory",
     "Authorized Representative",
-    "Principal Place of Business", 
-    "Additional Places of Business", 
+    "Principal Place of Business",
+    "Additional Places of Business",
     "Goods and Services",
-    "State Specific Information", 
-    "Aadhaar Authentication", 
+    "State Specific Information",
+    "Aadhaar Authentication",
     "Verification"
 ];
 
@@ -826,7 +826,7 @@ function setStep(newStep) {
         }
     }
     renderSidebar();
-    
+
     if (typeof window.showLoader === 'function') window.showLoader();
     setTimeout(() => {
         renderContent();
@@ -850,7 +850,7 @@ function select(key, val, options, placeholder = '') {
 
 window.updatePanFormatBoxes = function (val) {
     val = val || '';
-    
+
     // Auto-set Constitution based on PAN 4th letter
     if (val.length >= 4) {
         const panChar = val[3].toUpperCase();
@@ -863,10 +863,10 @@ window.updatePanFormatBoxes = function (val) {
         else if (panChar === 'L') newConst = 'Local Authority';
         else if (panChar === 'J') newConst = 'Artificial Juridical Person';
         else if (panChar === 'G') newConst = 'Government Department';
-        
+
         if (newConst && newConst !== window.form.businessConstitution) {
             window.form.businessConstitution = newConst;
-            
+
             // Try to update the DOM select if it exists to avoid re-rendering entire page
             const constSelect = document.getElementById('businessConstitution');
             if (constSelect) {
@@ -1071,13 +1071,13 @@ window.submitApplication = async function () {
 
         const res = await fetch(`${API_BASE_URL}/api/applications`, {
             method: 'POST',
-            headers: { 
+            headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ' + localStorage.getItem('token')
             },
             body: JSON.stringify({ appId, data: payload })
         });
-        
+
         if (res.ok) {
             alert('Application Submitted Successfully! It is now pending admin review.');
             window.location.reload();
@@ -1095,12 +1095,12 @@ window.generateSummary = function (obj) {
     if (typeof obj !== 'object' || obj === null) {
         return `<div style="margin-top: 4px; padding-left: 10px;">${obj}</div>`;
     }
-    
+
     let printObj = Object.assign({}, obj);
     let isRootForm = ('taxpayerType' in printObj) || ('ppob_building' in printObj);
 
     let html = '<ul style="list-style-type: none; padding-left: 10px; margin-top: 5px;">';
-    
+
     // Helper function to render a single key
     const renderKey = (key, label) => {
         if (Array.isArray(printObj[key])) {
@@ -1129,7 +1129,7 @@ window.generateSummary = function (obj) {
     };
 
     if (isRootForm) {
-        let promoterKeys = Object.keys(printObj).filter(k => k.match(/^p\d+$/)).sort((a,b) => parseInt(a.substring(1)) - parseInt(b.substring(1)));
+        let promoterKeys = Object.keys(printObj).filter(k => k.match(/^p\d+$/)).sort((a, b) => parseInt(a.substring(1)) - parseInt(b.substring(1)));
         if (promoterKeys.length > 0) {
             let promotersArray = [];
             for (let k of promoterKeys) {
@@ -1139,7 +1139,7 @@ window.generateSummary = function (obj) {
             printObj.promoters = promotersArray;
         }
 
-        let authSigKeys = Object.keys(printObj).filter(k => k.match(/^a\d+$/)).sort((a,b) => parseInt(a.substring(1)) - parseInt(b.substring(1)));
+        let authSigKeys = Object.keys(printObj).filter(k => k.match(/^a\d+$/)).sort((a, b) => parseInt(a.substring(1)) - parseInt(b.substring(1)));
         if (authSigKeys.length > 0) {
             let authSigArray = [];
             for (let k of authSigKeys) {
@@ -1180,13 +1180,13 @@ window.generateSummary = function (obj) {
                 if (!(key in printObj)) continue;
                 if (key === '_appId') continue;
                 let label = PREVIEW_LABELS[key] || key.replace(/^(ppob|res|stateSpecific)_/, '').replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-                
+
                 html += renderKey(key, label);
                 delete printObj[key]; // Mark as processed
             }
             html += `</ul></li>`;
         }
-        
+
         let remainingKeys = Object.keys(printObj).filter(k => k !== '_appId');
         if (remainingKeys.length > 0) {
             html += `<li style="margin-top: 20px;">
@@ -1205,7 +1205,7 @@ window.generateSummary = function (obj) {
             html += renderKey(key, label);
         }
     }
-    
+
     html += '</ul>';
     return html;
 };
@@ -1275,7 +1275,6 @@ window.renderAdminDashboard = async function () {
             </div>
             <div style="margin-bottom: 20px;">
                 <strong>Status:</strong> <span style="padding: 4px 8px; border-radius: 4px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span>
-                <strong style="margin-left: 20px;">Submitted from IP:</strong> <span style="color: #64748b;">${app.data.clientIp || 'Unknown'}</span>
             </div>
             <div style="background: #f8fafc; padding: 15px; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 20px; overflow-y: visible;">
                 ${window.generateSummary(app.data)}
@@ -1312,7 +1311,6 @@ window.renderAdminDashboard = async function () {
                     <th style="padding: 10px;">Date</th>
                     <th style="padding: 10px;">Legal Name</th>
                     <th style="padding: 10px;">User Email</th>
-                    <th style="padding: 10px;">IP Address</th>
                     <th style="padding: 10px;">TRN</th>
                     <th style="padding: 10px;">Status</th>
                     <th style="padding: 10px;">Action</th>
@@ -1325,7 +1323,6 @@ window.renderAdminDashboard = async function () {
                         <td style="padding: 10px;">${new Date(app.date).toLocaleDateString()}</td>
                         <td style="padding: 10px;">${app.data.legalName || 'N/A'}</td>
                         <td style="padding: 10px; color: #64748b; font-size: 13px;">${app.userEmail || '-'}</td>
-                        <td style="padding: 10px; color: #64748b; font-size: 13px;">${app.data.clientIp || '-'}</td>
                         <td style="padding: 10px; font-weight: 500; color: #0f172a;">${app.trn || '-'}</td>
                         <td style="padding: 10px;"><span style="padding: 2px 6px; border-radius: 4px; font-size: 12px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span></td>
                         <td style="padding: 10px;">
@@ -1442,8 +1439,8 @@ window.registerApplication = async function (id) {
             return false;
         };
 
-        if (checkDuplicate(data.email, 'email', 'Business Details')) {}
-        if (checkDuplicate(data.mobile, 'mobile', 'Business Details')) {}
+        if (checkDuplicate(data.email, 'email', 'Business Details')) { }
+        if (checkDuplicate(data.mobile, 'mobile', 'Business Details')) { }
 
         if (!duplicateError) {
             for (let i = 1; i <= 10; i++) {
@@ -1455,21 +1452,21 @@ window.registerApplication = async function (id) {
                 }
             }
         }
-        
+
         if (!duplicateError) {
             for (let i = 1; i <= 10; i++) {
                 // Skip auth signatory validation if it's the exact same person as a promoter
                 // This prevents false positives when a promoter is also the primary authorized signatory
                 let isAlsoPromoter = false;
                 for (let j = 1; j <= 10; j++) {
-                    if (data[`p${j}`] && 
-                        data[`p${j}`].email === data[`a${i}`]?.email && 
+                    if (data[`p${j}`] &&
+                        data[`p${j}`].email === data[`a${i}`]?.email &&
                         data[`p${j}`].mobile === data[`a${i}`]?.mobile) {
                         isAlsoPromoter = true;
                         break;
                     }
                 }
-                
+
                 if (!isAlsoPromoter) {
                     if (data[`a${i}`] && data[`a${i}`].email) {
                         if (checkDuplicate(data[`a${i}`].email, 'email', `Authorized Signatory ${i}`)) break;
@@ -1495,18 +1492,18 @@ window.registerApplication = async function (id) {
                 if (!data[`p${i}`].promoterPhotoFile) missingDocuments.push(`Promoter ${i} Photo`);
             }
         }
-        
+
         for (let i = 1; i <= 10; i++) {
             if (data[`a${i}`] && data[`a${i}`].firstName) {
                 let isAlsoPromoter = false;
                 for (let j = 1; j <= 10; j++) {
-                    if (data[`p${j}`] && data[`p${j}`].alsoAuthorizedSignatory && 
+                    if (data[`p${j}`] && data[`p${j}`].alsoAuthorizedSignatory &&
                         data[`p${j}`].email === data[`a${i}`].email) {
                         isAlsoPromoter = true;
                         break;
                     }
                 }
-                
+
                 if (!isAlsoPromoter) {
                     if (!data[`a${i}`].authSigPhotoFile) missingDocuments.push(`Authorized Signatory ${i} Photo`);
                     if (!data[`a${i}`].authSigProofFile) missingDocuments.push(`Authorized Signatory ${i} Proof of Appointment`);
@@ -1555,11 +1552,11 @@ window.registerApplication = async function (id) {
     window.startAutomationPipeline(id);
 };
 
-window.saveMissingFields = async function() {
+window.saveMissingFields = async function () {
     const app = window.currentAppForMissingFields;
     if (!app) return;
     const inputs = document.querySelectorAll('#missing-fields-container input');
-    
+
     inputs.forEach(input => {
         const key = input.getAttribute('data-key');
         if (input.value.trim()) {
@@ -1573,7 +1570,7 @@ window.saveMissingFields = async function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ appId: app.appId, data: app.data })
         });
-        
+
         await fetch(`${API_BASE_URL}/api/applications/${app.appId}/status`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -1687,13 +1684,13 @@ window.startAutomationPipeline = async function (id) {
             try {
                 await fetch(`${API_BASE_URL}/api/automation/start`, {
                     method: 'POST',
-                    headers: { 
+                    headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${localStorage.getItem('sb_token')}`
                     },
                     body: JSON.stringify({ appId: id })
                 });
-            } catch (e) {}
+            } catch (e) { }
         } catch (e) {
             addTerminalLog('Failed to start automation due to connection error.');
         }
@@ -1970,15 +1967,15 @@ window.updatePersonName = function (section, field, value) {
     renderContent();
 };
 
-window.addPromoter = function() {
+window.addPromoter = function () {
     let max = 0;
-    for(let k in window.form) {
-        if(k.match(/^p\d+$/)) {
+    for (let k in window.form) {
+        if (k.match(/^p\d+$/)) {
             let num = parseInt(k.substring(1));
-            if(num > max) max = num;
+            if (num > max) max = num;
         }
     }
-    if(max >= 10) {
+    if (max >= 10) {
         alert("Maximum 10 partners allowed.");
         return;
     }
@@ -1988,38 +1985,38 @@ window.addPromoter = function() {
     renderContent();
 };
 
-window.editPromoter = function(key) {
+window.editPromoter = function (key) {
     currentPromoterKey = key;
     isPromoterListView = false;
     renderContent();
 };
 
-window.deletePromoter = function(key) {
-    if(key === 'p1') {
+window.deletePromoter = function (key) {
+    if (key === 'p1') {
         alert("Cannot delete the primary partner (p1).");
         return;
     }
-    if(confirm("Are you sure you want to delete this partner?")) {
+    if (confirm("Are you sure you want to delete this partner?")) {
         delete window.form[key];
         // if we just deleted the current one, switch back to list
-        if(currentPromoterKey === key) {
-             currentPromoterKey = 'p1';
-             isPromoterListView = true;
+        if (currentPromoterKey === key) {
+            currentPromoterKey = 'p1';
+            isPromoterListView = true;
         }
         renderContent();
     }
 };
 
 
-window.addAuthSig = function() {
+window.addAuthSig = function () {
     let max = 0;
-    for(let k in window.form) {
-        if(k.match(/^a\d+$/)) {
+    for (let k in window.form) {
+        if (k.match(/^a\d+$/)) {
             let num = parseInt(k.substring(1));
-            if(num > max) max = num;
+            if (num > max) max = num;
         }
     }
-    if(max >= 10) {
+    if (max >= 10) {
         alert("Maximum 10 authorized signatories allowed.");
         return;
     }
@@ -2030,44 +2027,44 @@ window.addAuthSig = function() {
     renderContent();
 };
 
-window.editAuthSig = function(key) {
+window.editAuthSig = function (key) {
     currentAuthSigKey = key;
     isAuthSigListView = false;
     window.isViewingPromoter = false;
     renderContent();
 };
 
-window.deleteAuthSig = function(key) {
-    if(window.form[key] && window.form[key].primary) {
+window.deleteAuthSig = function (key) {
+    if (window.form[key] && window.form[key].primary) {
         alert("Cannot delete the primary authorized signatory.");
         return;
     }
-    if(confirm("Are you sure you want to delete this authorized signatory?")) {
+    if (confirm("Are you sure you want to delete this authorized signatory?")) {
         delete window.form[key];
-        if(currentAuthSigKey === key) {
-             const remainingKeys = Object.keys(window.form).filter(k => k.match(/^a\d+$/)).sort();
-             currentAuthSigKey = remainingKeys.length > 0 ? remainingKeys[0] : null;
-             isAuthSigListView = true;
+        if (currentAuthSigKey === key) {
+            const remainingKeys = Object.keys(window.form).filter(k => k.match(/^a\d+$/)).sort();
+            currentAuthSigKey = remainingKeys.length > 0 ? remainingKeys[0] : null;
+            isAuthSigListView = true;
         }
         renderContent();
     }
 };
 
-window.viewPromoterAsAuthSig = function(key) {
+window.viewPromoterAsAuthSig = function (key) {
     currentAuthSigKey = key;
     isAuthSigListView = false;
     window.isViewingPromoter = true;
     renderContent();
 };
 
-window.removePromoterFromAuthSig = function(key) {
-    if(confirm("Are you sure you want to remove this promoter from authorized signatories?")) {
+window.removePromoterFromAuthSig = function (key) {
+    if (confirm("Are you sure you want to remove this promoter from authorized signatories?")) {
         window.form[key].alsoAuthorizedSignatory = false;
         renderContent();
     }
 };
 
-window.handlePrimaryAuthSigChange = function(isChecked) {
+window.handlePrimaryAuthSigChange = function (isChecked) {
     if (isChecked) {
         for (let key in window.form) {
             if (key.match(/^a\d+$/) || key.match(/^p\d+$/)) {
@@ -2083,13 +2080,13 @@ window.handlePrimaryAuthSigChange = function(isChecked) {
     }
 };
 
-window.showAuthSigList = function() {
+window.showAuthSigList = function () {
     isAuthSigListView = true;
     window.isViewingPromoter = false;
     renderContent();
 };
 
-window.showPromoterList = function() {
+window.showPromoterList = function () {
     isPromoterListView = true;
     renderContent();
 };
@@ -2301,9 +2298,9 @@ function renderContent() {
             </div>
         ` : ''}
         </section>`;
-        } else if (step === 1) {
+    } else if (step === 1) {
         if (isPromoterListView) {
-            let promoterKeys = Object.keys(window.form).filter(k => k.match(/^p\d+$/)).sort((a,b) => parseInt(a.substring(1)) - parseInt(b.substring(1)));
+            let promoterKeys = Object.keys(window.form).filter(k => k.match(/^p\d+$/)).sort((a, b) => parseInt(a.substring(1)) - parseInt(b.substring(1)));
             let rows = promoterKeys.map((k, i) => {
                 const p = window.form[k];
                 const name = (p.firstName || p.lastName) ? `${p.firstName || ''} ${p.middleName || ''} ${p.lastName || ''}`.replace(/\s+/g, ' ').trim() : '[No Name Yet]';
@@ -2319,7 +2316,7 @@ function renderContent() {
                     </td>
                 </tr>`;
             }).join('');
-            
+
             html = `<section class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                     <h2 style="font-size: 18px; margin: 0; color: #1e3a8a;">Details of Promoters / Partners</h2>
@@ -2492,21 +2489,21 @@ function renderContent() {
             </section>`;
         }
 
-        } else if (step === 2) {
+    } else if (step === 2) {
 
         if (isAuthSigListView) {
-            let pureAuthSigKeys = Object.keys(window.form).filter(k => k.match(/^a\d+$/)).sort((a,b) => parseInt(a.substring(1)) - parseInt(b.substring(1)));
-            let promoterAuthSigKeys = Object.keys(window.form).filter(k => k.match(/^p\d+$/) && window.form[k].alsoAuthorizedSignatory).sort((a,b) => parseInt(a.substring(1)) - parseInt(b.substring(1)));
+            let pureAuthSigKeys = Object.keys(window.form).filter(k => k.match(/^a\d+$/)).sort((a, b) => parseInt(a.substring(1)) - parseInt(b.substring(1)));
+            let promoterAuthSigKeys = Object.keys(window.form).filter(k => k.match(/^p\d+$/) && window.form[k].alsoAuthorizedSignatory).sort((a, b) => parseInt(a.substring(1)) - parseInt(b.substring(1)));
             let authSigKeys = [...promoterAuthSigKeys, ...pureAuthSigKeys];
             let rows = authSigKeys.map((k, i) => {
                 const a = window.form[k];
                 const name = (a.firstName || a.lastName) ? `${a.firstName || ''} ${a.middleName || ''} ${a.lastName || ''}`.replace(/\s+/g, ' ').trim() : '[No Name Yet]';
                 const desig = a.designation || '[No Designation]';
-                
+
                 const outlineUser = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="#15803d" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right:4px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>`;
                 const primaryUser = `<svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align: middle; margin-right:2px;"><circle cx="12" cy="12" r="11" fill="#15803d"/><path d="M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-6 7s1-4 6-4 6 4 6 4H6z" fill="#fff"/></svg>`;
                 const primaryStar = `<svg viewBox="0 0 24 24" width="14" height="14" fill="#15803d" style="vertical-align: middle; margin-right:4px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
-                
+
                 let nameIcons = '';
                 if (k.match(/^p\d+$/)) {
                     nameIcons = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="#000" stroke-width="2" fill="none" style="vertical-align: middle; margin-right:4px;"><circle cx="12" cy="12" r="11"/><path d="M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-6 7s1-4 6-4 6 4 6 4H6z"/></svg>` + (a.primary ? primaryUser + primaryStar : '');
@@ -2537,7 +2534,7 @@ function renderContent() {
                     </td>
                 </tr>`;
             }).join('');
-            
+
             html = `<section class="card" style="padding-top: 0;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding: 16px 0; margin-bottom: 16px;">
                 <h2 style="font-size: 18px; margin: 0; color: #1e3a8a;">Details of Authorized Signatory</h2>
@@ -2578,7 +2575,7 @@ function renderContent() {
         </section>`;
         } else {
             const aForm = window.form[currentAuthSigKey];
-        html = `<section class="card">
+            html = `<section class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 16px;">
             <h2 style="font-size: 18px; margin: 0; color: #1e3a8a;">Details of Authorized Signatory (${currentAuthSigKey.toUpperCase()})</h2>\n            <div><button class="btn ghost" style="padding: 8px 16px; border: 1px solid #cbd5e1; margin-right: 8px;" onclick="window.showAuthSigList()">Show list</button></div>
             <span style="font-size: 13px; color: #ef4444;">* indicates mandatory fields</span>
@@ -2706,7 +2703,7 @@ function renderContent() {
         <div><button class="btn accent" style="padding: 10px 20px; font-weight: 600; margin-top: 20px;" onclick="window.showAuthSigList()">Save Signatory & Show list</button></div>
         </section>`;
         }
-        } else if (step === 3) {
+    } else if (step === 3) {
         html = `<section class="card">
         <h2 style="font-size: 18px; margin: 0 0 16px 0; color: #1e3a8a; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Details of Authorized Representative</h2>
         <div style="margin-bottom: 16px;">
@@ -2867,7 +2864,7 @@ function renderContent() {
             
         </div>
         </section>`;
-} else if (step === 5) {
+    } else if (step === 5) {
         html = `<section class="card">
         <h2 style="font-size: 18px; margin: 0 0 16px 0; color: #1e3a8a; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Additional Places of Business</h2>
         <div style="margin-bottom: 16px;">
@@ -2937,7 +2934,7 @@ function renderContent() {
 
             </div>
         </section>`;
-        } else if (step === 7) {
+    } else if (step === 7) {
         html = `<section class="card">
         <h2 style="font-size: 18px; margin: 0 0 16px 0; color: #1e3a8a; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">State Specific Information</h2>
         <div style="margin-bottom: 16px;">
@@ -2952,7 +2949,7 @@ function renderContent() {
             ${field('AADHAAR AUTHENTICATION OPT-IN', select('aadhaarAuth', form.aadhaarAuth || 'Yes', ['Yes', 'No'], 'Select'))}
         </div>
         </section>`;
-} else if (step === 9) {
+    } else if (step === 9) {
         html = `<section class="card"><h2>Review</h2>
         <button class="btn accent" onclick="showPreview();">Complete Application</button>
         </section>`;
@@ -2967,7 +2964,7 @@ function renderContent() {
             ${step < STEPS.length - 1 ? `<button class="btn primary" onclick="setStep(${step + 1})">Next</button>` : ''}
         </div>
     </div>`;
-        content.innerHTML = html;
+    content.innerHTML = html;
 
     if (step === 2 && !isAuthSigListView && window.isViewingPromoter) {
         const inputs = content.querySelectorAll('input, select, textarea');
@@ -3026,47 +3023,47 @@ window.fetchMapplsPincode = debounce(async function (pin, targetKey) {
     try {
         const response = await fetch(`https://api.postalpincode.in/pincode/${pin}`);
         const results = await response.json();
-        
+
         if (results && results[0] && results[0].Status === 'Success' && results[0].PostOffice && results[0].PostOffice.length > 0) {
             const data = results[0].PostOffice[0];
             const state = data.State;
             const district = data.District || '';
             const city = data.Block || data.Name || '';
 
-        if (targetKey) {
-            const baseKey = targetKey.replace('.res_pincode', '').replace('ppob_pincode', '');
-            if (baseKey === '') {
-                window.updateForm('ppob_state', state);
-                window.updateForm('ppob_district', district);
-                window.updateForm('ppob_city', city);
-                if (window.fetchStateJurisdictions) {
-                    window.fetchStateJurisdictions(renderContent);
-                    return;
+            if (targetKey) {
+                const baseKey = targetKey.replace('.res_pincode', '').replace('ppob_pincode', '');
+                if (baseKey === '') {
+                    window.updateForm('ppob_state', state);
+                    window.updateForm('ppob_district', district);
+                    window.updateForm('ppob_city', city);
+                    if (window.fetchStateJurisdictions) {
+                        window.fetchStateJurisdictions(renderContent);
+                        return;
+                    }
+                } else {
+                    window.updateForm(baseKey + '.res_state', state);
+                    window.updateForm(baseKey + '.res_district', district);
+                    window.updateForm(baseKey + '.res_city', city);
                 }
             } else {
-                window.updateForm(baseKey + '.res_state', state);
-                window.updateForm(baseKey + '.res_district', district);
-                window.updateForm(baseKey + '.res_city', city);
-            }
-        } else {
-            if (step === 1) {
-                form.promoters[0].res_state = state;
-                form.promoters[0].res_district = district;
-                form.promoters[0].res_city = city;
-            } else if (step === 2) {
-                form.authSig.res_state = state;
-                form.authSig.res_district = district;
-                form.authSig.res_city = city;
-            } else if (step === 4) {
-                form.ppob_state = state;
-                form.ppob_district = district;
-                form.ppob_city = city;
-                if (window.fetchStateJurisdictions) {
-                    window.fetchStateJurisdictions(renderContent);
-                    return;
+                if (step === 1) {
+                    form.promoters[0].res_state = state;
+                    form.promoters[0].res_district = district;
+                    form.promoters[0].res_city = city;
+                } else if (step === 2) {
+                    form.authSig.res_state = state;
+                    form.authSig.res_district = district;
+                    form.authSig.res_city = city;
+                } else if (step === 4) {
+                    form.ppob_state = state;
+                    form.ppob_district = district;
+                    form.ppob_city = city;
+                    if (window.fetchStateJurisdictions) {
+                        window.fetchStateJurisdictions(renderContent);
+                        return;
+                    }
                 }
             }
-        }
         }
         renderContent();
     } catch (e) {
@@ -3116,17 +3113,17 @@ window.initMapsAndAutocomplete = function () {
                     const pos = window.currentMarker.getLatLng();
                     const pLat = pos.lat;
                     const pLon = pos.lng;
-                    
+
                     if (step === 4) {
                         window.form.ppob_latitude = pLat.toFixed(6);
                         window.form.ppob_longitude = pLon.toFixed(6);
-                        
+
                         const elLat = document.getElementById('ppob_latitude');
                         if (elLat) elLat.value = window.form.ppob_latitude;
                         const elLon = document.getElementById('ppob_longitude');
                         if (elLon) elLon.value = window.form.ppob_longitude;
                     }
-                    
+
                     try {
                         const response = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + pLat + '&lon=' + pLon);
                         const data = await response.json();
@@ -3165,7 +3162,7 @@ window.searchAddressAutocomplete = debounce(async function (query) {
     try {
         const response = await fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(query) + '&countrycodes=in&limit=5');
         const results = await response.json();
-        
+
         if (results && results.length > 0) {
             list.innerHTML = results.map(r => {
                 const label = r.display_name.replace(/'/g, '');
@@ -3187,7 +3184,7 @@ window.selectAddressSuggestion = async function (lat, lon) {
     if (window.currentMap && window.currentMarker) {
         window.currentMap.setView([lat, lon], 16);
         window.currentMarker.setLatLng([lat, lon]);
-        
+
         if (step === 4) {
             window.form.ppob_latitude = Number(lat).toFixed(6);
             window.form.ppob_longitude = Number(lon).toFixed(6);
@@ -3438,7 +3435,7 @@ window.calculateProgress = function () {
     }
 
     // Auth Sig
-        // Auth Sig (Multiple)
+    // Auth Sig (Multiple)
     for (const key in window.form) {
         if (key.match(/^a\d+$/)) {
             for (const subKey in window.form[key]) {
@@ -3513,7 +3510,7 @@ window.editExistingRegistration = function (index) {
     }
 };
 
-window.viewDocument = function(base64Data) {
+window.viewDocument = function (base64Data) {
     if (!base64Data) return;
     const win = window.open();
     if (!win) {
@@ -3535,14 +3532,14 @@ window.handleFileUpload = function (input, type, maxKB, updateFn) {
     const file = input.files[0];
     const sizeKB = file.size / 1024;
     const ext = file.name.split('.').pop().toLowerCase();
-    
+
     let validExt = [];
     if (type === 'pdf/jpeg') validExt = ['pdf', 'jpeg', 'jpg'];
     else if (type === 'jpeg') validExt = ['jpeg', 'jpg'];
 
     // If it's not a valid format, but it's an image (like png), we can auto-convert it if 'type' allows jpeg!
     const isImage = file.type.startsWith('image/');
-    
+
     if (!validExt.includes(ext) && !isImage) {
         alert(`Invalid file type. Only ${type.toUpperCase()} allowed.`);
         input.value = '';
@@ -3553,34 +3550,34 @@ window.handleFileUpload = function (input, type, maxKB, updateFn) {
         if (isImage) {
             // Auto compress image
             const reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = function (e) {
                 const img = new Image();
-                img.onload = function() {
+                img.onload = function () {
                     const canvas = document.createElement('canvas');
                     let width = img.width;
                     let height = img.height;
-                    
+
                     // Scale down to max 1200px width/height for compression
                     if (width > 1200 || height > 1200) {
                         const ratio = Math.min(1200 / width, 1200 / height);
                         width = width * ratio;
                         height = height * ratio;
                     }
-                    
+
                     canvas.width = width;
                     canvas.height = height;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
-                    
+
                     // Try quality until it fits, starting at 0.7
                     let quality = 0.7;
                     let dataUrl = canvas.toDataURL('image/jpeg', quality);
-                    
+
                     while (dataUrl.length / 1370 > maxKB && quality > 0.1) {
                         quality -= 0.1;
                         dataUrl = canvas.toDataURL('image/jpeg', quality);
                     }
-                    
+
                     if (dataUrl.length / 1370 > maxKB) {
                         alert(`Could not compress image below ${maxKB}KB. Please choose a smaller image.`);
                         input.value = '';
@@ -3604,9 +3601,9 @@ window.handleFileUpload = function (input, type, maxKB, updateFn) {
     if (!validExt.includes(ext) && isImage && (type === 'jpeg' || type === 'pdf/jpeg')) {
         // It's an image but wrong extension (like .png). Convert to .jpg
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = function (e) {
             const img = new Image();
-            img.onload = function() {
+            img.onload = function () {
                 const canvas = document.createElement('canvas');
                 canvas.width = img.width;
                 canvas.height = img.height;
@@ -3622,8 +3619,8 @@ window.handleFileUpload = function (input, type, maxKB, updateFn) {
         return;
     }
 
-    const reader = new FileReader(); 
-    reader.onload = function (e) { updateFn(e.target.result, file.name); }; 
+    const reader = new FileReader();
+    reader.onload = function (e) { updateFn(e.target.result, file.name); };
     reader.readAsDataURL(file);
 };
 
@@ -3757,20 +3754,20 @@ document.addEventListener('click', (e) => {
     }
 });
 
-window.navigateTo = function(path) {
+window.navigateTo = function (path) {
     history.pushState(null, '', path);
     handleRoute();
 };
 
-window.handleRoute = function() {
+window.handleRoute = function () {
     const path = window.location.pathname;
-    
+
     document.getElementById('user-wizard-container').classList.add('hidden');
     document.getElementById('admin-dashboard-container').classList.add('hidden');
     document.getElementById('automation-platform-container').classList.add('hidden');
-    
+
     const header = document.querySelector('header.top');
-    
+
     if (path === '/admin') {
         document.getElementById('admin-dashboard-container').classList.remove('hidden');
         if (header) header.classList.add('hidden');
@@ -3782,9 +3779,9 @@ window.handleRoute = function() {
         document.getElementById('user-wizard-container').classList.remove('hidden');
         if (header) {
             if (typeof step !== 'undefined' && step === 0 && typeof isPreview !== 'undefined' && !isPreview) {
-                 header.classList.remove('hidden');
+                header.classList.remove('hidden');
             } else {
-                 header.classList.add('hidden');
+                header.classList.add('hidden');
             }
         }
         if (typeof renderContent === 'function') {
@@ -3799,24 +3796,24 @@ window.handleRoute = function() {
 
 let currentPdfAuthKey = null;
 
-window.openDeclarationModal = function(key) {
+window.openDeclarationModal = function (key) {
     currentPdfAuthKey = key;
     const modal = document.getElementById('pdf-gen-modal');
     const iframe = document.getElementById('pdf-preview-frame');
-    
+
     fetch('/declaration_template.html')
         .then(res => res.text())
         .then(html => {
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
-            
+
             const data = window.form;
             let companyName = data.legalName || data.tradeName || '';
             companyName = companyName.replace(/PVT\s+LTD\.?/i, '').replace(/PRIVATE\s+LIMITED/i, '').trim();
-            
+
             const setVal = (id, val) => {
                 const el = doc.getElementById(id);
-                if(el && val) el.setAttribute('value', val);
+                if (el && val) el.setAttribute('value', val);
             };
 
             setVal('company_name', companyName);
@@ -3824,7 +3821,7 @@ window.openDeclarationModal = function(key) {
             setVal('company_name_3', companyName);
             setVal('company_name_4', companyName);
             setVal('company_name_5', companyName);
-            
+
             setVal('cin', data.cin || '');
             setVal('address', data.principalAddress || '');
             setVal('contact', data.mobile || '');
@@ -3847,12 +3844,12 @@ window.openDeclarationModal = function(key) {
                 setVal('auth_signatory_name_3', authName);
                 setVal('auth_signatory_din', auth.din || '');
             }
-            
+
             setVal('date', new Date().toLocaleDateString('en-IN'));
-            
+
             const printBtn = doc.querySelector('.print-btn');
             if (printBtn) printBtn.remove();
-            
+
             iframe.srcdoc = doc.documentElement.outerHTML;
             modal.classList.remove('hidden');
         });
@@ -3861,26 +3858,26 @@ window.openDeclarationModal = function(key) {
 document.getElementById('btn-generate-pdf').addEventListener('click', () => {
     const iframe = document.getElementById('pdf-preview-frame');
     const doc = iframe.contentDocument || iframe.contentWindow.document;
-    
+
     // Get all values from the form
     const v = (id) => {
         const el = doc.getElementById(id);
         return el ? el.value.trim() : '';
     };
-    
+
     const company_name = v('company_name');
     const cin = v('cin');
     const address = v('address');
     const contact = v('contact');
     const email = v('email');
-    
+
     const dir1_name = v('dir1_name');
     const dir2_name = v('dir2_name');
     const auth_signatory_name = v('auth_signatory_name');
     const dir1_din = v('dir1_din');
     const dir2_din = v('dir2_din');
     const auth_signatory_din = v('auth_signatory_din');
-    
+
     const date = v('date');
     const place = v('place');
 
@@ -3891,39 +3888,39 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
     try {
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-        
+
         // Define margins and line spacing
         const margin = 20;
         let y = 30;
         const width = 210; // A4 width in mm
-        
+
         // Fonts
         const fNormal = "helvetica";
         const fBold = "helvetica";
-        
+
         // Header
         pdf.setFontSize(16);
         pdf.setFont(fBold, "bold");
-        pdf.text(`${company_name} PRIVATE LIMITED`, width/2, y, { align: "center" });
+        pdf.text(`${company_name} PRIVATE LIMITED`, width / 2, y, { align: "center" });
         y += 7;
-        
+
         pdf.setFontSize(11);
         pdf.setFont(fNormal, "normal");
-        pdf.text(`CIN: ${cin}`, width/2, y, { align: "center" });
+        pdf.text(`CIN: ${cin}`, width / 2, y, { align: "center" });
         y += 10;
-        
+
         pdf.text(`Address: ${address}`, margin, y);
         y += 7;
         pdf.text(`Contact No. ${contact}`, margin, y);
-        pdf.text(`Email : ${email}`, width/2 + 10, y);
+        pdf.text(`Email : ${email}`, width / 2 + 10, y);
         y += 15;
-        
+
         // Title
         pdf.setFontSize(14);
         pdf.setFont(fBold, "bold");
-        pdf.text("DECLARATION FOR AUTHORIZED SIGNATORY", width/2, y, { align: "center" });
+        pdf.text("DECLARATION FOR AUTHORIZED SIGNATORY", width / 2, y, { align: "center" });
         y += 15;
-        
+
         // Body 1
         pdf.setFontSize(11);
         pdf.setFont(fNormal, "normal");
@@ -3931,25 +3928,25 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
         const lines1 = pdf.splitTextToSize(p1, width - margin * 2);
         pdf.text(lines1, margin, y);
         y += lines1.length * 6 + 5;
-        
+
         // Body 2
         const p2 = `Mr. ${auth_signatory_name} of "${company_name} PVT LTD" are authorized to sign all the necessary applications, undertakings and such other documents as may be necessary for GST registration application & all other compliances on behalf of Company`;
         const lines2 = pdf.splitTextToSize(p2, width - margin * 2);
         pdf.text(lines2, margin, y);
         y += lines2.length * 6 + 5;
-        
+
         // Body 3
         pdf.text(`All his actions in relation to this business will be binding on us.`, margin, y);
         y += 10;
-        
+
         pdf.text(`For ${company_name} PVT LTD`, margin, y);
         y += 25;
-        
+
         // Signatures 1
         // Draw lines
         pdf.line(margin, y - 5, margin + 40, y - 5);
         pdf.line(width - margin - 40, y - 5, width - margin, y - 5);
-        
+
         // Add signature images if they exist in the canvas
         const sign1Canvas = doc.getElementById('sign1');
         if (sign1Canvas) {
@@ -3964,28 +3961,28 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
 
         pdf.text(`Director`, margin, y);
         pdf.text(`DIN: ${dir1_din}`, margin, y + 6);
-        
+
         pdf.text(`Director`, width - margin - 40, y);
         pdf.text(`DIN: ${dir2_din}`, width - margin - 40, y + 6);
-        
+
         y += 20;
-        
+
         // Acceptance
         pdf.setFontSize(14);
         pdf.setFont(fBold, "bold");
-        pdf.text("Acceptance as an authorized signatory", width/2, y, { align: "center" });
+        pdf.text("Acceptance as an authorized signatory", width / 2, y, { align: "center" });
         y += 15;
-        
+
         pdf.setFontSize(11);
         pdf.setFont(fNormal, "normal");
         const p3 = `I, ${auth_signatory_name}, hereby solemnly accord my acceptance to act as authorized signatory for the above referred business and all acts shall be binding on the business.`;
         const lines3 = pdf.splitTextToSize(p3, width - margin * 2);
         pdf.text(lines3, margin, y);
         y += lines3.length * 6 + 20;
-        
+
         // Signature 2
         pdf.line(margin, y - 5, margin + 40, y - 5);
-        
+
         const sign3Canvas = doc.getElementById('sign3');
         if (sign3Canvas) {
             const sign3Data = sign3Canvas.toDataURL('image/png');
@@ -3994,9 +3991,9 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
 
         pdf.text(`Director`, margin, y);
         pdf.text(`DIN: ${auth_signatory_din}`, margin, y + 6);
-        
+
         y += 15;
-        
+
         // Footer
         pdf.text(`Date: ${date}`, margin, y);
         y += 6;
@@ -4004,14 +4001,14 @@ document.getElementById('btn-generate-pdf').addEventListener('click', () => {
 
         // Output and upload
         const pdfAsString = pdf.output('datauristring');
-        
+
         window.form[currentPdfAuthKey].authSigProofFile = pdfAsString;
         window.form[currentPdfAuthKey].authSigProofFileName = 'Declaration_Form.pdf';
-        
+
         document.getElementById('pdf-gen-modal').classList.add('hidden');
         renderContent();
 
-    } catch(err) {
+    } catch (err) {
         console.error("PDF generation failed", err);
         alert("Failed to generate PDF. Please try again.");
     } finally {

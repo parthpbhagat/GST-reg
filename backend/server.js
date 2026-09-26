@@ -29,11 +29,11 @@ const authenticateToken = async (req, res, next) => {
     }
 
     const { data: { user }, error } = await db.auth.getUser(token);
-    
+
     if (error || !user) {
         return res.status(403).json({ error: 'Invalid or expired token' });
     }
-    
+
     req.user = user;
     next();
 };
@@ -51,12 +51,12 @@ app.delete('/api/file', (req, res) => {
     const { filePath } = req.body;
     const fs = require('fs');
     const path = require('path');
-    
+
     if (filePath) {
         // Normalize both paths to avoid forward/backslash mismatch issues on Windows
         const normalizedFilePath = path.normalize(filePath);
         const dataDir = path.normalize(path.join(__dirname, 'data'));
-        
+
         if (normalizedFilePath.toLowerCase().startsWith(dataDir.toLowerCase())) {
             if (fs.existsSync(normalizedFilePath)) {
                 fs.unlinkSync(normalizedFilePath);
@@ -88,7 +88,7 @@ app.get('/api/hsn/:code', (req, res) => {
 // POST /api/applications - Submit a new application
 app.post('/api/applications', authenticateToken, async (req, res) => {
     const { appId, data } = req.body;
-    
+
     if (!appId || !data) {
         return res.status(400).json({ error: 'appId and data are required' });
     }
@@ -96,12 +96,6 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
     const userEmail = req.user.email || req.body.userEmail || data.userEmail || null;
     const userId = req.user.id;
     const status = 'Pending'; // Default status
-    const clientIp = req.headers['x-forwarded-for'] || req.connection?.remoteAddress || req.socket?.remoteAddress || req.connection?.socket?.remoteAddress || '-';
-    
-    // Inject IP into data for tracking
-    if (data) {
-        data.clientIp = clientIp;
-    }
 
     const { error } = await db.from('applications').upsert({
         appId: appId,
@@ -120,18 +114,18 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
 // GET /api/applications - Get all applications for logged-in user
 app.get('/api/applications', authenticateToken, async (req, res) => {
     let query = db.from('applications').select('*').order('createdAt', { ascending: false });
-    
+
     if (req.user.email !== 'admin@example.com') {
         query = query.eq('userEmail', req.user.email);
     }
-    
+
     const { data: rows, error } = await query;
 
     if (error) {
         console.error('Error fetching applications:', error.message);
         return res.status(500).json({ error: 'Failed to fetch applications' });
     }
-    
+
     const applications = rows.map(row => {
         const appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
         return {
@@ -167,7 +161,7 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
     }
 
     let appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-    
+
     if (status === 'Accepted' || status === 'Approved') {
         try {
             const legalName = appData.legalName || id;
@@ -175,11 +169,11 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
             const fs = require('fs');
             const path = require('path');
             const dirPath = path.join(__dirname, 'data', safeLegalName);
-            
+
             if (!fs.existsSync(dirPath)) {
                 fs.mkdirSync(dirPath, { recursive: true });
             }
-            
+
             // Move photos
             if (appData.promoters) {
                 appData.promoters.forEach((p, idx) => {
@@ -193,14 +187,14 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
                     }
                 });
             }
-            
+
             if (appData.ppob_docFile && (appData.ppob_docFile.startsWith('data:image') || appData.ppob_docFile.startsWith('data:application/pdf'))) {
-                 const base64Data = appData.ppob_docFile.replace(/^data:(image|application)\/\w+;base64,/, "");
-                 const ext = appData.ppob_docFile.includes('application/pdf') ? 'pdf' : 'jpg';
-                 const fileName = `ppob_docFile_${Date.now()}.${ext}`;
-                 const filePath = path.join(dirPath, fileName);
-                 fs.writeFileSync(filePath, base64Data, 'base64');
-                 appData.ppob_docFile = filePath;
+                const base64Data = appData.ppob_docFile.replace(/^data:(image|application)\/\w+;base64,/, "");
+                const ext = appData.ppob_docFile.includes('application/pdf') ? 'pdf' : 'jpg';
+                const fileName = `ppob_docFile_${Date.now()}.${ext}`;
+                const filePath = path.join(dirPath, fileName);
+                fs.writeFileSync(filePath, base64Data, 'base64');
+                appData.ppob_docFile = filePath;
             }
 
             // Move PDF Declaration (Added missing logic to prevent enormous base64 payload overhead in DB)
@@ -250,7 +244,7 @@ app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
             const fs = require('fs');
             const path = require('path');
             const dirPath = path.join(__dirname, 'data', safeLegalName);
-            
+
             if (fs.existsSync(dirPath)) {
                 fs.rmSync(dirPath, { recursive: true, force: true });
             }
@@ -296,7 +290,7 @@ app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
         updateQuery = updateQuery.eq('userEmail', req.user.email);
     }
     const { error } = await updateQuery;
-    
+
     if (error) {
         console.error('Error updating TRN:', error.message);
         return res.status(500).json({ error: 'Failed to update TRN' });
@@ -313,13 +307,13 @@ const activeAutomations = new Map();
 app.post('/api/automation/start', authenticateToken, (req, res) => {
     const { appId } = req.body;
     console.log(`[Automation] Starting automation for App ID: ${appId}`);
-    
+
     io.to(appId).emit('automation_update', { status: 'INITIALIZING: Launching secure automation process...' });
 
     // Spawn the Playwright runner
     const runnerDir = path.join(__dirname, '..', 'automation');
     const runnerPath = path.join(runnerDir, 'runner.js');
-    
+
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
@@ -366,7 +360,7 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
 app.post('/api/automation/stop', (req, res) => {
     const { appId } = req.body;
     console.log(`[Automation] Stopping automation for App ID: ${appId}`);
-    
+
     const child = activeAutomations.get(appId);
     if (child) {
         child.kill(); // Kill the playwright runner process
@@ -380,7 +374,7 @@ app.post('/api/automation/stop', (req, res) => {
 app.post('/api/automation/captcha', (req, res) => {
     const { appId, captcha } = req.body;
     console.log(`[Automation] Captcha received for App ID: ${appId} - Captcha: ${captcha}`);
-    
+
     const child = activeAutomations.get(appId);
     if (child) {
         // Send the captcha text directly to the running headless browser script
@@ -396,7 +390,7 @@ app.post('/api/automation/captcha', (req, res) => {
 app.post('/api/automation/warning_response', (req, res) => {
     const { appId, choice } = req.body;
     console.log(`[Automation] Warning response received for App ID: ${appId} - Choice: ${choice}`);
-    
+
     const child = activeAutomations.get(appId);
     if (child) {
         // Send the choice directly to the running headless browser script
@@ -412,7 +406,7 @@ app.post('/api/automation/warning_response', (req, res) => {
 app.post('/api/automation/otp', (req, res) => {
     const { appId, mobileOtp, emailOtp } = req.body;
     console.log(`[Automation] OTPs received for App ID: ${appId}`);
-    
+
     const child = activeAutomations.get(appId);
     if (child) {
         // Send both OTPs comma-separated to the running headless browser script

@@ -1275,6 +1275,7 @@ window.renderAdminDashboard = async function () {
             </div>
             <div style="margin-bottom: 20px;">
                 <strong>Status:</strong> <span style="padding: 4px 8px; border-radius: 4px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span>
+                <strong style="margin-left: 20px;">Submitted from IP:</strong> <span style="color: #64748b;">${app.data.clientIp || 'Unknown'}</span>
             </div>
             <div style="background: #f8fafc; padding: 15px; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 20px; overflow-y: visible;">
                 ${window.generateSummary(app.data)}
@@ -1311,6 +1312,7 @@ window.renderAdminDashboard = async function () {
                     <th style="padding: 10px;">Date</th>
                     <th style="padding: 10px;">Legal Name</th>
                     <th style="padding: 10px;">User Email</th>
+                    <th style="padding: 10px;">IP Address</th>
                     <th style="padding: 10px;">TRN</th>
                     <th style="padding: 10px;">Status</th>
                     <th style="padding: 10px;">Action</th>
@@ -1323,6 +1325,7 @@ window.renderAdminDashboard = async function () {
                         <td style="padding: 10px;">${new Date(app.date).toLocaleDateString()}</td>
                         <td style="padding: 10px;">${app.data.legalName || 'N/A'}</td>
                         <td style="padding: 10px; color: #64748b; font-size: 13px;">${app.userEmail || '-'}</td>
+                        <td style="padding: 10px; color: #64748b; font-size: 13px;">${app.data.clientIp || '-'}</td>
                         <td style="padding: 10px; font-weight: 500; color: #0f172a;">${app.trn || '-'}</td>
                         <td style="padding: 10px;"><span style="padding: 2px 6px; border-radius: 4px; font-size: 12px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span></td>
                         <td style="padding: 10px;">

@@ -96,6 +96,12 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
     const userEmail = req.user.email || req.body.userEmail || data.userEmail || null;
     const userId = req.user.id;
     const status = 'Pending'; // Default status
+    const clientIp = req.headers['x-forwarded-for'] || req.connection?.remoteAddress || req.socket?.remoteAddress || req.connection?.socket?.remoteAddress || '-';
+    
+    // Inject IP into data for tracking
+    if (data) {
+        data.clientIp = clientIp;
+    }
 
     const { error } = await db.from('applications').upsert({
         appId: appId,

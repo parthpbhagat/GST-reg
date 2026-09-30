@@ -11,6 +11,22 @@ This platform solves that problem by providing:
 
 ---
 
+## 📸 Screenshots
+
+### 1. Client Onboarding (Frontend Wizard)
+![Frontend Wizard Screenshot](screenshot_signin.png)
+
+### 2. Admin Dashboard (Application Review)
+![Admin Dashboard Screenshot](screenshot_admin.png)
+
+### 3. Live Automation Terminal (Handling CAPTCHA)
+![Automation Terminal Screenshot](screenshot_terminal_captcha.png)
+
+### 4. Live Automation Terminal (Handling OTP)
+![OTP Screenshot](screenshot_terminal_otp.png)
+
+---
+
 ## 🏗️ System Architecture
 
 The project is divided into three main components:

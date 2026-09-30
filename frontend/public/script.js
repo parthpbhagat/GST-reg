@@ -1,13 +1,16 @@
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3002' : 'https://gst-reg-2fzu.onrender.com';
 
 // ---------------- AUTHENTICATION SETUP ----------------
-const supabaseUrl = (window.ENV && window.ENV.SUPABASE_URL) ? window.ENV.SUPABASE_URL : 'https://mgxsxpbrzmcmzlzgzfde.supabase.co';
-const supabaseKey = (window.ENV && window.ENV.SUPABASE_KEY) ? window.ENV.SUPABASE_KEY : 'sb_publishable_159AAeN0gJjlQK7IgozhRQ_5yWUUKmm';
+const supabaseUrl = (window.ENV && window.ENV.SUPABASE_URL) ? window.ENV.SUPABASE_URL : '';
+const supabaseKey = (window.ENV && window.ENV.SUPABASE_KEY) ? window.ENV.SUPABASE_KEY : '';
+const oldSupabaseUrl = window.ENV.OLD_SUPABASE_URL;
+const oldSupabaseKey = window.ENV.OLD_SUPABASE_KEY;
 let authToken = localStorage.getItem('sb_token');
-let supabaseClient;
+let supabaseClient, oldSupabaseClient;
 if (window.supabase) {
     try {
         supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+        oldSupabaseClient = window.supabase.createClient(oldSupabaseUrl, oldSupabaseKey);
         checkAuth();
     } catch (err) {
         console.error("Supabase init error:", err.message);
@@ -95,6 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const { data, error } = await supabaseClient.auth.resetPasswordForEmail(email, {
                 redirectTo: window.location.origin + '/reset-password.html',
             });
+            await oldSupabaseClient.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '/reset-password.html' }).catch(e=>console.error(e));
 
             if (error) {
                 errorMsg.style.color = '#dc2626';
@@ -142,10 +146,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     checkAuth();
                 } else {
                     const { data, error } = await supabaseClient.auth.signUp({ email, password });
+                    await oldSupabaseClient.auth.signUp({ email, password }).catch(e=>console.error(e));
                     if (error) throw error;
 
                     // Save password and mobile in database
                     await supabaseClient.from('user_credentials').insert([{ email: email, mobile: mobile, password: password }]);
+                    await oldSupabaseClient.from('user_credentials').insert([{ email: email, mobile: mobile, password: password }]).catch(e=>console.error(e));
 
                     if (data.session) {
                         localStorage.setItem('sb_token', data.session.access_token);

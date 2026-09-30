@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
-const db = require('./database');
+const { supabase, oldSupabase } = require('./database');
 
 const app = express();
 const PORT = 3002;
@@ -28,7 +28,7 @@ const authenticateToken = async (req, res, next) => {
         return res.status(401).json({ error: 'Missing authorization token' });
     }
 
-    const { data: { user }, error } = await db.auth.getUser(token);
+    const { data: { user }, error } = await supabase.auth.getUser(token);
 
     if (error || !user) {
         return res.status(403).json({ error: 'Invalid or expired token' });
@@ -97,12 +97,13 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const status = 'Pending'; // Default status
 
-    const { error } = await db.from('applications').upsert({
+    const { error } = await supabase.from('applications').upsert({
         appId: appId,
         data: data,
         status: status,
         userEmail: userEmail
     }, { onConflict: 'appId' });
+    await oldSupabase.from('applications').upsert({ appId, data, status, userEmail, trn: null }).catch(e=>console.error(e));
 
     if (error) {
         console.error('Error saving application:', error.message);
@@ -113,7 +114,7 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
 
 // GET /api/applications - Get all applications for logged-in user
 app.get('/api/applications', authenticateToken, async (req, res) => {
-    let query = db.from('applications').select('*').order('createdAt', { ascending: false });
+    let query = supabase.from('applications').select('*').order('createdAt', { ascending: false });
 
     if (req.user.email !== 'admin@example.com') {
         query = query.eq('userEmail', req.user.email);
@@ -150,7 +151,7 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
         return res.status(400).json({ error: 'status is required' });
     }
 
-    let query = db.from('applications').select('*').eq('appId', id);
+    let query = supabase.from('applications').select('*').eq('appId', id);
     if (req.user.email !== 'admin@example.com') {
         query = query.eq('userEmail', req.user.email);
     }
@@ -212,11 +213,15 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
         }
     }
 
-    let updateQuery = db.from('applications').update({ status, data: appData }).eq('appId', id);
+    let updateQuery = supabase.from('applications').update({ status, data: appData }).eq('appId', id);
     if (req.user.email !== 'admin@example.com') {
         updateQuery = updateQuery.eq('userEmail', req.user.email);
     }
     const { error } = await updateQuery;
+
+    let oldUpdateQuery = oldSupabase.from('applications').update({ status, data: appData }).eq('appId', id);
+    if (userEmail) oldUpdateQuery = oldUpdateQuery.eq('userEmail', userEmail);
+    await oldUpdateQuery.catch(e=>console.error(e));
 
     if (error) {
         console.error('Error updating status:', error.message);
@@ -230,7 +235,7 @@ app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     // First fetch the application to get the legalName and delete its folder
-    let fetchQuery = db.from('applications').select('*').eq('appId', id);
+    let fetchQuery = supabase.from('applications').select('*').eq('appId', id);
     if (req.user.email !== 'admin@example.com') {
         fetchQuery = fetchQuery.eq('userEmail', req.user.email);
     }
@@ -254,7 +259,7 @@ app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
     }
 
     // Then delete from the database
-    let deleteQuery = db.from('applications').delete({ count: 'exact' }).eq('appId', id);
+    let deleteQuery = supabase.from('applications').delete({ count: 'exact' }).eq('appId', id);
     if (req.user.email !== 'admin@example.com') {
         deleteQuery = deleteQuery.eq('userEmail', req.user.email);
     }
@@ -278,14 +283,14 @@ app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
     if (!trn) return res.status(400).json({ error: 'trn is required' });
 
     // Ensure they own it first (unless admin)
-    let fetchQuery = db.from('applications').select('appId').eq('appId', id);
+    let fetchQuery = supabase.from('applications').select('appId').eq('appId', id);
     if (req.user.email !== 'admin@example.com') {
         fetchQuery = fetchQuery.eq('userEmail', req.user.email);
     }
     const { data: row, error: fetchErr } = await fetchQuery.single();
     if (fetchErr || !row) return res.status(404).json({ error: 'Application not found or unauthorized' });
 
-    let updateQuery = db.from('applications').update({ trn }).eq('appId', id);
+    let updateQuery = supabase.from('applications').update({ trn }).eq('appId', id);
     if (req.user.email !== 'admin@example.com') {
         updateQuery = updateQuery.eq('userEmail', req.user.email);
     }

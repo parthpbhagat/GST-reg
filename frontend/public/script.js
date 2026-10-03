@@ -1079,7 +1079,7 @@ window.submitApplication = async function () {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + localStorage.getItem('token')
+                'Authorization': 'Bearer ' + authToken
             },
             body: JSON.stringify({ appId, data: payload })
         });

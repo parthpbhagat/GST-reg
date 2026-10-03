@@ -1294,6 +1294,7 @@ window.renderAdminDashboard = async function () {
     try {
         const res = await fetch(`${API_BASE_URL}/api/applications`);
         allApps = await res.json();
+        if (!Array.isArray(allApps)) { throw new Error(allApps.error || 'Invalid response from server'); }
     } catch (e) {
         console.error(e);
         container.innerHTML = `<p>Error loading applications from backend.</p>`;

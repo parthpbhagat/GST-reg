@@ -1242,12 +1242,8 @@ window.loginAdmin = function () {
 };
 
 window.exitAdmin = function () {
-    if (isAdmin) {
-        isAdmin = false;
-        navigateTo('/form');
-    } else {
-        window.location.href = '/form';
-    }
+    isAdmin = false;
+    navigateTo('/form');
 };
 
 let allApps = [];

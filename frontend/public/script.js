@@ -19,7 +19,7 @@ if (window.supabase) {
 
 
 window.getFreshToken = async function() {
-    if (!supabaseClient) return (await window.getFreshToken());
+    if (!supabaseClient) return localStorage.getItem('sb_token');
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (session) {
@@ -27,7 +27,7 @@ window.getFreshToken = async function() {
             return session.access_token;
         }
     } catch(e) {}
-    return (await window.getFreshToken());
+    return localStorage.getItem('sb_token');
 };
 
 async function checkAuth() {

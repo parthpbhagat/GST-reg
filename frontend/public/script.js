@@ -1309,7 +1309,7 @@ window.renderAdminDashboard = async function () {
 
     if (typeof window.showLoader === 'function') window.showLoader();
     try {
-        const res = await fetch(`${API_BASE_URL}/api/applications`);
+        const res = await fetch(`${API_BASE_URL}/api/applications`, { headers: { "Authorization": "Bearer " + localStorage.getItem("sb_token") } });
         allApps = await res.json();
         if (!Array.isArray(allApps)) { throw new Error(allApps.error || 'Invalid response from server'); }
     } catch (e) {
@@ -1373,6 +1373,7 @@ window.deleteApplication = async function (id) {
     try {
         await fetch(`${API_BASE_URL}/api/applications/${id}`, {
             method: 'DELETE',
+            headers: { "Authorization": "Bearer " + localStorage.getItem("sb_token") }
         });
         renderAdminDashboard();
     } catch (e) {
@@ -1385,7 +1386,7 @@ window.updateAppStatus = async function (id, status) {
     try {
         await fetch(`${API_BASE_URL}/api/applications/${id}/status`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('sb_token') },
             body: JSON.stringify({ status })
         });
 
@@ -1591,13 +1592,13 @@ window.saveMissingFields = async function () {
     try {
         await fetch(`${API_BASE_URL}/api/applications`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('sb_token') },
             body: JSON.stringify({ appId: app.appId, data: app.data })
         });
 
         await fetch(`${API_BASE_URL}/api/applications/${app.appId}/status`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('sb_token') },
             body: JSON.stringify({ status: app.status })
         });
     } catch (e) {
@@ -1660,7 +1661,7 @@ window.startAutomationPipeline = async function (id) {
                 addTerminalLog('Application submitted successfully.');
 
                 // Fetch the updated TRN and display the big success card (with cache busting)
-                fetch(`${API_BASE_URL}/api/applications?t=${Date.now()}`)
+                fetch(`${API_BASE_URL}/api/applications?t=${Date.now()}`, { headers: { "Authorization": "Bearer " + localStorage.getItem("sb_token") } })
                     .then(res => res.json())
                     .then(apps => {
                         const app = apps.find(a => a.appId === activeAutomationAppId);
@@ -1736,7 +1737,7 @@ window.submitCaptcha = async function () {
     try {
         await fetch(`${API_BASE_URL}/api/automation/captcha`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('sb_token') },
             body: JSON.stringify({ appId: activeAutomationAppId, captcha: val })
         });
     } catch (e) {
@@ -1760,7 +1761,7 @@ window.submitOtp = async function () {
     try {
         await fetch(`${API_BASE_URL}/api/automation/otp`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('sb_token') },
             body: JSON.stringify({ appId: activeAutomationAppId, mobileOtp, emailOtp })
         });
     } catch (e) {
@@ -1782,7 +1783,7 @@ window.submitTrnOtp = async function () {
         // We can reuse the captcha endpoint since it just pipes a single string to stdin
         await fetch(`${API_BASE_URL}/api/automation/captcha`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('sb_token') },
             body: JSON.stringify({ appId: activeAutomationAppId, captcha: otp })
         });
     } catch (e) {
@@ -1799,7 +1800,7 @@ window.submitWarningResponse = async function (choice) {
     try {
         await fetch(`${API_BASE_URL}/api/automation/warning_response`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('sb_token') },
             body: JSON.stringify({ appId: activeAutomationAppId, choice })
         });
     } catch (e) {
@@ -1812,7 +1813,7 @@ window.deleteFile = async function (filePath, callback) {
         try {
             await fetch(`${API_BASE_URL}/api/file`, {
                 method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('sb_token') },
                 body: JSON.stringify({ filePath })
             });
         } catch (e) { console.error(e); }
@@ -1825,7 +1826,7 @@ window.closeAutomationModal = async function () {
         try {
             await fetch(`${API_BASE_URL}/api/automation/stop`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('sb_token') },
                 body: JSON.stringify({ appId: activeAutomationAppId })
             });
         } catch (e) {

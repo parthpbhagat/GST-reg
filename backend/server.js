@@ -33,9 +33,14 @@ const authenticateToken = async (req, res, next) => {
         return next();
     }
 
-    const { data: { user }, error } = await supabase.auth.getUser(token);
+    let { data: { user }, error } = await supabase.auth.getUser(token);
 
-    if (error || !user) {
+    if (!user) {
+        const res2 = await oldSupabase.auth.getUser(token);
+        user = res2.data?.user;
+    }
+
+    if (!user) {
         return res.status(403).json({ error: 'Invalid or expired token' });
     }
 
@@ -443,7 +448,7 @@ app.get('/ping', (req, res) => {
 });
 
 // Self-ping to prevent Render sleep mode (every 14 minutes)
-const RENDER_URL = process.env.RENDER_URL || 'https://gst-reg.onrender.com';
+const RENDER_URL = process.env.RENDER_URL || 'https://gst-reg-2fzu.onrender.com';
 setInterval(() => {
     fetch(`${RENDER_URL}/ping`)
         .then(res => console.log(`[KeepAlive] Pinged backend: ${res.status}`))

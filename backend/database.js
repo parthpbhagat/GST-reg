@@ -3,8 +3,8 @@ const { createClient } = require('@supabase/supabase-js');
 
 console.log("[GST DB] Connecting to Supabase databases...");
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
+const supabaseUrl = process.env.SUPABASE_URL || 'https://dyqbupgfxdgjbxgwsjjz.supabase.co';
+const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable__116FzmgxS1kWNlwMqQsMQ_Q97qPXdr';
 
 const oldSupabaseUrl = 'https://mgxsxpbrzmcmzlzgzfde.supabase.co';
 const oldSupabaseKey = 'sb_publishable_159AAeN0gJjlQK7IgozhRQ_5yWUUKmm';

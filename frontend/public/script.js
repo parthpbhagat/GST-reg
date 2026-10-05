@@ -786,6 +786,26 @@ setInterval(() => {
     }
 }, 3000);
 
+window.loadAutosave = function() {
+    try {
+        const saved = localStorage.getItem('gst_autosave');
+        if (saved) {
+            if(confirm('You have an unsaved application form. Do you want to resume it?')) {
+                const parsed = JSON.parse(saved);
+                window.form = Object.assign({}, window.form, parsed);
+                if (typeof renderContent === 'function') renderContent();
+            }
+        }
+    } catch(e) {}
+};
+setTimeout(window.loadAutosave, 500);
+
+setInterval(() => {
+    if (window.form && !window.form._appId) {
+        localStorage.setItem('gst_autosave', JSON.stringify(window.form));
+    }
+}, 3000);
+
 function renderSidebar() {
     const sidebar = document.getElementById('wizard-steps');
     if (!sidebar) return;

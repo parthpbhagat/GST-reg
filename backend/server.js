@@ -29,7 +29,7 @@ const authenticateToken = async (req, res, next) => {
     }
 
     if (token === 'admin-super-secret-token-xyz') {
-        req.user = { id: 'admin', email: 'admin@system.local' };
+        req.user = { id: 'admin', email: 'admin@example.com' };
         return next();
     }
 
@@ -119,32 +119,41 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
 
 // GET /api/applications - Get all applications for logged-in user
 app.get('/api/applications', authenticateToken, async (req, res) => {
-    let query = supabase.from('applications').select('*').order('createdAt', { ascending: false });
+    try {
+        let query1 = supabase.from('applications').select('*').order('createdAt', { ascending: false });
+        let query2 = oldSupabase.from('applications').select('*').order('createdAt', { ascending: false });
 
-    if (req.user.email !== 'admin@example.com') {
-        query = query.eq('userEmail', req.user.email);
-    }
+        if (req.user.email !== 'admin@example.com') {
+            query1 = query1.eq('userEmail', req.user.email);
+            query2 = query2.eq('userEmail', req.user.email);
+        }
 
-    const { data: rows, error } = await query;
+        const [res1, res2] = await Promise.all([query1, query2]);
 
-    if (error) {
-        console.error('Error fetching applications:', error.message);
+        let allRows = [];
+        if (res1.data) allRows = allRows.concat(res1.data);
+        if (res2.data) allRows = allRows.concat(res2.data);
+
+        const applications = allRows.map(row => {
+            const appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            return {
+                appId: row.appId,
+                status: row.status,
+                date: row.createdAt,
+                trn: row.trn,
+                userEmail: row.userEmail || appData.email || appData.ppob_email || '-',
+                data: appData
+            };
+        });
+
+        // Sort applications by date descending since they came from two different sources
+        applications.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        res.json(applications);
+    } catch (err) {
+        console.error('Error fetching applications:', err.message);
         return res.status(500).json({ error: 'Failed to fetch applications' });
     }
-
-    const applications = rows.map(row => {
-        const appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-        return {
-            appId: row.appId,
-            status: row.status,
-            date: row.createdAt,
-            trn: row.trn,
-            userEmail: row.userEmail || appData.email || appData.ppob_email || '-',
-            data: appData
-        };
-    });
-
-    res.json(applications);
 });
 
 // PUT /api/applications/:id/status - Update application status (Admin Approve/Reject)

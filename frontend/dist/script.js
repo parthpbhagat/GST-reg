@@ -1298,7 +1298,7 @@ window.renderAdminDashboard = async function () {
             alert('Your session has expired or you are not logged in. Please log in.');
             navigateTo('/form');
         } else {
-            container.innerHTML = `<p>Error loading applications from backend.</p>`;
+            container.innerHTML = `<p>Error loading applications from backend. Details: ${e.message || e}</p>`;
         }
         if (typeof window.hideLoader === 'function') window.hideLoader();
         return;

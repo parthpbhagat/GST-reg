@@ -151,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // Save password and mobile in database
                     await supabaseClient.from('user_credentials').insert([{ email: email, mobile: mobile, password: password }]);
-                    await oldSupabaseClient.from('user_credentials').insert([{ email: email, mobile: mobile, password: password }]).catch(e=>console.error(e));
+                    try { await oldSupabaseClient.from('user_credentials').insert([{ email: email, mobile: mobile, password: password }]); } catch(e) { console.error(e); }
 
                     if (data.session) {
                         localStorage.setItem('sb_token', data.session.access_token);

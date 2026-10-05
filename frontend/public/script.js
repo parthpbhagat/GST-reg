@@ -151,7 +151,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             try {
                 if (isLogin) {
-                    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                    let { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                    if (error && error.message.includes('credentials')) {
+                        const res2 = await oldSupabaseClient.auth.signInWithPassword({ email, password });
+                        if (res2.data && res2.data.session) {
+                             data = res2.data;
+                             error = null;
+                        }
+                    }
                     if (error) throw error;
 
                     localStorage.setItem('sb_token', data.session.access_token);

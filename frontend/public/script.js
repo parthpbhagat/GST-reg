@@ -1646,7 +1646,7 @@ window.startAutomationPipeline = async function (id) {
 
     if (!socket) {
         socket = io(`${API_BASE_URL}`);
-        socket.on('automation_update', (msg) => {
+        socket.on('automation_update', async (msg) => {
             const status = msg.status;
             addTerminalLog(status);
 

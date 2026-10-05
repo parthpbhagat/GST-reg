@@ -1340,7 +1340,13 @@ window.renderAdminDashboard = async function () {
         if (!Array.isArray(allApps)) { throw new Error(allApps.error || 'Invalid response from server'); }
     } catch (e) {
         console.error(e);
-        container.innerHTML = `<p>Error loading applications from backend.</p>`;
+        const tk = await window.getFreshToken();
+        if (!tk || tk === 'null' || e.message.includes('response')) {
+            alert('Your session has expired or you are not logged in. Please log in.');
+            navigateTo('/form');
+        } else {
+            container.innerHTML = `<p>Error loading applications from backend.</p>`;
+        }
         if (typeof window.hideLoader === 'function') window.hideLoader();
         return;
     }

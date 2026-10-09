@@ -75,7 +75,6 @@ async function checkAuth() {
     if (loginSection) loginSection.classList.add('hidden');
     if (appContainer) appContainer.classList.remove('hidden');
 }
-}
 
 let isLogin = true;
 document.addEventListener('DOMContentLoaded', () => {
@@ -4248,7 +4247,8 @@ window.processOCR = async function(input, type) {
             const aadharMatch = cleanText.replace(/\s/g, '').match(/[0-9]{12}/);
             if (aadharMatch) {
                 foundData = true;
-                const pinMatch = cleanText.match(/[0-9]{6}/);\n                window.form.aadhar = aadharMatch[0];
+                const pinMatch = cleanText.match(/[0-9]{6}/);
+                window.form.aadhar = aadharMatch[0];
                 if(pinMatch) window.form.ppob_pincode = pinMatch[0];
             }
         }

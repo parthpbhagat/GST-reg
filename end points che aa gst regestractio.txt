@@ -1,0 +1,53 @@
+********* end points che aa gst regestraction********************************
+
+
+* https://reg.gst.gov.in/registration/api/submit/sendotp                        "send otp"
+* https://reg.gst.gov.in/services/api/ustatus                                   "status"
+* https://reg.gst.gov.in/registration/api/submit/submitotp                      "submit otp and (trn generate)"
+* https://reg.gst.gov.in/registration/api/submit/sendtrnotp                       "trn otp"
+
+
+
+
+
+**********************************business deatail ni API******************************************* 
+
+
+https://reg.gst.gov.in/master/pincodes   
+
+https://reg.gst.gov.in/master/docsize
+
+https://reg.gst.gov.in/master/allstates
+https://reg.gst.gov.in/master/cstnbus/aplrg
+https://reg.gst.gov.in/pages/registration/data/existing_reg.json
+
+https://reg.gst.gov.in/pages/registration/data/reason_business.json                "Reason to obtain registration"
+
+https://reg.gst.gov.in/master/jursd/centrecommisionerate
+
+https://reg.gst.gov.in/pages/registration/data/loap.json
+
+
+*******************************auth token:  6c65900f66c14a98b33b503f85e20d22**************************************
+
+https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92818437
+https://reg.gst.gov.in/registration/auth/api/ca-number-enabled?stCd=27
+https://reg.gst.gov.in/registration/auth/api/doc-legibility/config
+https://reg.gst.gov.in/registration/auth/mmiapi/gettoken?regen=Y                     "map API"
+https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92818437        "application data API"
+
+
+https://reg.gst.gov.in/master/doclist/bd/active
+
+https://reg.gst.gov.in/master/st/27/activedistrict
+
+https://reg.gst.gov.in/master/st/27/activedistrict                                   "active district API"
+
+
+https://reg.gst.gov.in/master/jursd/bypincode/state/27/444906                        "pin API"
+https://reg.gst.gov.in/master/hsn/l1/100                                             "hsn code"
+
+
+
+https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92818437
+

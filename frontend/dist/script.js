@@ -17,6 +17,19 @@ if (window.supabase) {
     }
 }
 
+
+window.getFreshToken = async function() {
+    if (!supabaseClient) return localStorage.getItem('sb_token');
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (session) {
+            localStorage.setItem('sb_token', session.access_token);
+            return session.access_token;
+        }
+    } catch(e) {}
+    return localStorage.getItem('sb_token');
+};
+
 async function checkAuth() {
     const loginSection = document.getElementById('login-section');
     const appContainer = document.getElementById('app-container');
@@ -138,7 +151,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
             try {
                 if (isLogin) {
-                    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                    let { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                    if (error) {
+                        const res2 = await oldSupabaseClient.auth.signInWithPassword({ email, password });
+                        if (res2.data && res2.data.session) {
+                             data = res2.data;
+                             error = null;
+                        } else if (res2.error && res2.error.message !== 'Invalid login credentials') {
+                             error = res2.error;
+                        }
+                    }
                     if (error) throw error;
 
                     localStorage.setItem('sb_token', data.session.access_token);
@@ -744,6 +766,46 @@ window.form = {
     stateSpecific_exciseLicenseNo: "", stateSpecific_exciseLicenseHolder: ""
 };
 
+window.loadAutosave = function() {
+    try {
+        const saved = localStorage.getItem('gst_autosave');
+        if (saved) {
+            if(confirm('You have an unsaved application form. Do you want to resume it?')) {
+                const parsed = JSON.parse(saved);
+                window.form = Object.assign({}, window.form, parsed);
+                if (typeof renderContent === 'function') renderContent();
+            }
+        }
+    } catch(e) {}
+};
+setTimeout(window.loadAutosave, 500);
+
+setInterval(() => {
+    if (window.form && !window.form._appId) {
+        localStorage.setItem('gst_autosave', JSON.stringify(window.form));
+    }
+}, 3000);
+
+window.loadAutosave = function() {
+    try {
+        const saved = localStorage.getItem('gst_autosave');
+        if (saved) {
+            if(confirm('You have an unsaved application form. Do you want to resume it?')) {
+                const parsed = JSON.parse(saved);
+                window.form = Object.assign({}, window.form, parsed);
+                if (typeof renderContent === 'function') renderContent();
+            }
+        }
+    } catch(e) {}
+};
+setTimeout(window.loadAutosave, 500);
+
+setInterval(() => {
+    if (window.form && !window.form._appId) {
+        localStorage.setItem('gst_autosave', JSON.stringify(window.form));
+    }
+}, 3000);
+
 function renderSidebar() {
     const sidebar = document.getElementById('wizard-steps');
     if (!sidebar) return;
@@ -1085,6 +1147,7 @@ window.submitApplication = async function () {
         });
 
         if (res.ok) {
+            localStorage.removeItem('gst_autosave');
             alert('Application Submitted Successfully! It is now pending admin review.');
             window.location.reload();
         } else {
@@ -1234,6 +1297,8 @@ window.loginAdmin = function () {
     const pass = document.getElementById('admin-password').value;
     if (user === 'admin' && pass === 'admin') {
         isAdmin = true;
+        localStorage.setItem('sb_token', 'admin-super-secret-token-xyz');
+        authToken = 'admin-super-secret-token-xyz';
         closeAdminLogin();
         navigateTo('/admin');
     } else {
@@ -1243,6 +1308,8 @@ window.loginAdmin = function () {
 
 window.exitAdmin = function () {
     isAdmin = false;
+    localStorage.removeItem('sb_token');
+    authToken = null;
     navigateTo('/form');
 };
 
@@ -1288,7 +1355,7 @@ window.renderAdminDashboard = async function () {
 
     if (typeof window.showLoader === 'function') window.showLoader();
     try {
-        const res = await fetch(`${API_BASE_URL}/api/applications`);
+        const res = await fetch(`${API_BASE_URL}/api/applications`, { headers: { "Authorization": "Bearer " + (await window.getFreshToken()) } });
         allApps = await res.json();
         if (!Array.isArray(allApps)) { throw new Error(allApps.error || 'Invalid response from server'); }
     } catch (e) {
@@ -1358,6 +1425,7 @@ window.deleteApplication = async function (id) {
     try {
         await fetch(`${API_BASE_URL}/api/applications/${id}`, {
             method: 'DELETE',
+            headers: { "Authorization": "Bearer " + (await window.getFreshToken()) }
         });
         renderAdminDashboard();
     } catch (e) {
@@ -1370,7 +1438,7 @@ window.updateAppStatus = async function (id, status) {
     try {
         await fetch(`${API_BASE_URL}/api/applications/${id}/status`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await window.getFreshToken()) },
             body: JSON.stringify({ status })
         });
 
@@ -1576,13 +1644,13 @@ window.saveMissingFields = async function () {
     try {
         await fetch(`${API_BASE_URL}/api/applications`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await window.getFreshToken()) },
             body: JSON.stringify({ appId: app.appId, data: app.data })
         });
 
         await fetch(`${API_BASE_URL}/api/applications/${app.appId}/status`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await window.getFreshToken()) },
             body: JSON.stringify({ status: app.status })
         });
     } catch (e) {
@@ -1608,7 +1676,7 @@ window.startAutomationPipeline = async function (id) {
 
     if (!socket) {
         socket = io(`${API_BASE_URL}`);
-        socket.on('automation_update', (msg) => {
+        socket.on('automation_update', async (msg) => {
             const status = msg.status;
             addTerminalLog(status);
 
@@ -1645,7 +1713,7 @@ window.startAutomationPipeline = async function (id) {
                 addTerminalLog('Application submitted successfully.');
 
                 // Fetch the updated TRN and display the big success card (with cache busting)
-                fetch(`${API_BASE_URL}/api/applications?t=${Date.now()}`)
+                fetch(`${API_BASE_URL}/api/applications?t=${Date.now()}`, { headers: { "Authorization": "Bearer " + (await window.getFreshToken()) } })
                     .then(res => res.json())
                     .then(apps => {
                         const app = apps.find(a => a.appId === activeAutomationAppId);
@@ -1695,7 +1763,7 @@ window.startAutomationPipeline = async function (id) {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('sb_token')}`
+                        'Authorization': `Bearer ${(await window.getFreshToken())}`
                     },
                     body: JSON.stringify({ appId: id })
                 });
@@ -1721,7 +1789,7 @@ window.submitCaptcha = async function () {
     try {
         await fetch(`${API_BASE_URL}/api/automation/captcha`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await window.getFreshToken()) },
             body: JSON.stringify({ appId: activeAutomationAppId, captcha: val })
         });
     } catch (e) {
@@ -1745,7 +1813,7 @@ window.submitOtp = async function () {
     try {
         await fetch(`${API_BASE_URL}/api/automation/otp`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await window.getFreshToken()) },
             body: JSON.stringify({ appId: activeAutomationAppId, mobileOtp, emailOtp })
         });
     } catch (e) {
@@ -1767,7 +1835,7 @@ window.submitTrnOtp = async function () {
         // We can reuse the captcha endpoint since it just pipes a single string to stdin
         await fetch(`${API_BASE_URL}/api/automation/captcha`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await window.getFreshToken()) },
             body: JSON.stringify({ appId: activeAutomationAppId, captcha: otp })
         });
     } catch (e) {
@@ -1784,7 +1852,7 @@ window.submitWarningResponse = async function (choice) {
     try {
         await fetch(`${API_BASE_URL}/api/automation/warning_response`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await window.getFreshToken()) },
             body: JSON.stringify({ appId: activeAutomationAppId, choice })
         });
     } catch (e) {
@@ -1797,7 +1865,7 @@ window.deleteFile = async function (filePath, callback) {
         try {
             await fetch(`${API_BASE_URL}/api/file`, {
                 method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await window.getFreshToken()) },
                 body: JSON.stringify({ filePath })
             });
         } catch (e) { console.error(e); }
@@ -1810,7 +1878,7 @@ window.closeAutomationModal = async function () {
         try {
             await fetch(`${API_BASE_URL}/api/automation/stop`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await window.getFreshToken()) },
                 body: JSON.stringify({ appId: activeAutomationAppId })
             });
         } catch (e) {
@@ -2145,6 +2213,25 @@ function renderContent() {
     let html = '';
     if (step === 0) {
         html = `<section class="card">
+        <!-- OCR Auto-fill Section -->
+        <div style="margin-bottom: 20px; padding: 15px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 8px;">
+            <h2 style="font-size: 16px; color: #0369a1; margin: 0 0 10px 0; display: flex; align-items: center; gap: 8px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><rect x="7" y="7" width="10" height="10" rx="1"></rect></svg>
+                Auto-fill using PAN / Aadhar Card
+            </h2>
+            <div style="display: flex; gap: 15px;">
+                <div style="flex: 1;">
+                    <label style="font-size: 13px; font-weight: 600; color: #0c4a6e; display: block; margin-bottom: 5px;">Upload PAN Card (For PAN & Name)</label>
+                    <input type="file" accept="image/*" style="font-size: 13px; padding: 6px; border: 1px solid #bae6fd; border-radius: 4px; background: #fff; width: 100%;" onchange="window.processOCR(this, 'pan')">
+                </div>
+                <div style="flex: 1;">
+                    <label style="font-size: 13px; font-weight: 600; color: #0c4a6e; display: block; margin-bottom: 5px;">Upload Aadhar Card</label>
+                    <input type="file" accept="image/*" style="font-size: 13px; padding: 6px; border: 1px solid #bae6fd; border-radius: 4px; background: #fff; width: 100%;" onchange="window.processOCR(this, 'aadhar')">
+                </div>
+            </div>
+            <div id="ocrStatus" style="font-size: 13px; color: #0369a1; font-weight: 600; margin-top: 10px; min-height: 18px;"></div>
+        </div>
+        
         <!-- Two-column horizontal layout: Taxpayer left, Business right -->
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start;">
 

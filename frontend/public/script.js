@@ -4161,30 +4161,30 @@ window.processOCR = async function(input, type) {
         }
         const worker = await Tesseract.createWorker('eng');
         const ret = await worker.recognize(file);
-        const text = ret.data.text;
-        console.log("OCR Text:", text);
+        let text = ret.data.text.toUpperCase();
+        console.log("--- OCR RAW TEXT ---");
+        console.log(text);
         
         let foundData = false;
         
         if (type === 'pan') {
-            const panMatch = text.match(/[A-Z]{5}[0-9]{4}[A-Z]{1}/);
+            let cleanText = text.replace(/[^A-Z0-9\n ]/g, '');
+            const panMatch = cleanText.match(/[A-Z]{5}[0-9]{4}[A-Z]/);
             if (panMatch) {
                 window.form.pan = panMatch[0];
                 foundData = true;
                 
-                // Try to find Name (heuristic: line before PAN or just above)
-                const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 3 && !l.includes('INCOME TAX') && !l.includes('GOVT') && !l.includes('INDIA'));
+                const lines = cleanText.split('\n').map(l => l.trim()).filter(l => l.length > 3 && !l.includes('INCOME TAX') && !l.includes('GOVT') && !l.includes('INDIA') && !l.includes('DEPARTMENT') && !l.includes('CARD') && !l.includes('INCOMETAX'));
                 if(lines.length > 0) {
-                    window.form.legalName = lines[0]; // Guess first valid line as name
+                    window.form.legalName = lines[0]; 
                 }
             }
         } else if (type === 'aadhar') {
-            // Find Aadhar
-            const aadharMatch = text.match(/[0-9]{4}\s[0-9]{4}\s[0-9]{4}/);
+            let cleanText = text.replace(/[^A-Z0-9\n ]/g, '');
+            const aadharMatch = cleanText.replace(/\s/g, '').match(/[0-9]{12}/);
             if (aadharMatch) {
                 foundData = true;
-                // Currently Step 0 does not have aadhar field, but we can extract other info like State/Pincode if possible
-                const pinMatch = text.match(/[0-9]{6}/);
+                const pinMatch = cleanText.match(/[0-9]{6}/);
                 if(pinMatch) window.form.ppob_pincode = pinMatch[0];
             }
         }
@@ -4192,16 +4192,16 @@ window.processOCR = async function(input, type) {
         await worker.terminate();
         
         if (foundData) {
-            statusDiv.innerText = "Successfully extracted data from " + type.toUpperCase() + "!";
+            statusDiv.innerText = "Successfully extracted data!";
             statusDiv.style.color = "#15803d";
             setTimeout(() => { window.renderContent(); }, 1500);
         } else {
-            statusDiv.innerText = "Could not find valid data. Please try a clearer image.";
+            statusDiv.innerText = "Could not read clearly. Please upload a clear photo without glare.";
             statusDiv.style.color = "#b91c1c";
         }
     } catch(err) {
         console.error(err);
-        statusDiv.innerText = "Error during scanning: " + err.message;
+        statusDiv.innerText = "Error during scanning.";
         statusDiv.style.color = "#b91c1c";
     }
 };

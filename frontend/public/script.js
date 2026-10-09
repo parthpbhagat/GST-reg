@@ -4172,9 +4172,7 @@ window.processOCR = async function(input, type) {
     statusDiv.style.color = "#0369a1";
     
     try {
-        if (typeof Tesseract === 'undefined') {
-            throw new Error("Tesseract library not loaded.");
-        }
+        if (typeof Tesseract === 'undefined') throw new Error("Tesseract not loaded.");
         
         const img = new Image();
         img.src = URL.createObjectURL(file);
@@ -4185,13 +4183,11 @@ window.processOCR = async function(input, type) {
         canvas.height = img.height;
         const ctx = canvas.getContext('2d');
         
-        // Draw image and get data
         ctx.drawImage(img, 0, 0);
         let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         let data = imgData.data;
         
-        // Advanced Grayscale & Contrast
-        const contrast = 70; // High contrast
+        const contrast = 70;
         const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
         for (let i = 0; i < data.length; i += 4) {
             let avg = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
@@ -4203,35 +4199,36 @@ window.processOCR = async function(input, type) {
         ctx.putImageData(imgData, 0, 0);
         
         const preprocessedDataUrl = canvas.toDataURL('image/jpeg');
-
         const worker = await Tesseract.createWorker('eng');
-        await worker.setParameters({
-            tessedit_pageseg_mode: Tesseract.PSM.BLOCK,
-        });
+        await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.BLOCK });
         
         const ret = await worker.recognize(preprocessedDataUrl);
         let text = ret.data.text.toUpperCase();
-        console.log("--- OCR RAW TEXT (Advanced Preprocessed) ---");
+        console.log("--- OCR RAW TEXT ---");
         console.log(text);
         
         let foundData = false;
         
+        if (!window.form.p1) window.form.p1 = JSON.parse(JSON.stringify(window.defaultPromoter || {}));
+        
         if (type === 'pan') {
-            // Aggressive cleanup for PAN detection
             let cleanForPan = text.replace(/[^A-Z0-9]/g, '');
             let panMatch = cleanForPan.match(/[A-Z]{5}[0-9]{4}[A-Z]/);
             
-            // Name extraction logic
-            let cleanText = text.replace(/[^A-Z0-9\n ]/g, '');
+            let cleanText = text.replace(/[^A-Z0-9\n \/]/g, '');
             const lines = cleanText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
             let nameFound = false;
             let extractedName = "";
+            let fatherName = "";
 
             for (let i = 0; i < lines.length; i++) {
                 if (lines[i].includes('GOVT') || lines[i].includes('INDIA') || lines[i].includes('GOVERNMENT')) {
                     if (lines[i+1] && lines[i+1].length > 3) {
                         extractedName = lines[i+1];
                         nameFound = true;
+                        if (lines[i+2] && lines[i+2].length > 3 && !lines[i+2].includes('/')) {
+                            fatherName = lines[i+2];
+                        }
                         break;
                     }
                 }
@@ -4239,36 +4236,75 @@ window.processOCR = async function(input, type) {
             
             if (!nameFound) {
                 const validLines = lines.filter(l => !l.includes('INCOME TAX') && !l.includes('GOVT') && !l.includes('INDIA') && !l.includes('DEPARTMENT') && !l.includes('CARD') && !l.includes('INCOMETAX'));
-                if(validLines.length > 0) {
-                    extractedName = validLines[0]; 
+                if(validLines.length > 0) extractedName = validLines[0]; 
+                if(validLines.length > 1) fatherName = validLines[1];
+            }
+
+            // DOB
+            let dobMatch = cleanText.match(/[0-9]{2}\/[0-9]{2}\/[0-9]{4}/);
+            
+            if (panMatch || extractedName) {
+                foundData = true;
+                if (panMatch) {
+                    window.form.pan = panMatch[0];
+                    window.form.p1.pan = panMatch[0];
+                }
+                
+                extractedName = extractedName.replace(/[^A-Z ]/g, '').replace(/\s*(FON|PON|FW|POW|FOW|FQN|PQN)$/i, '').trim();
+                fatherName = fatherName.replace(/[^A-Z ]/g, '').trim();
+                
+                if (extractedName.length > 2) {
+                    window.form.legalName = extractedName;
+                    let parts = extractedName.split(' ');
+                    window.form.p1.firstName = parts[0] || '';
+                    window.form.p1.middleName = parts.length > 2 ? parts.slice(1, -1).join(' ') : '';
+                    window.form.p1.lastName = parts.length > 1 ? parts[parts.length-1] : '';
+                }
+                
+                if (fatherName.length > 2 && !fatherName.match(/[0-9]{4}/)) {
+                    let fParts = fatherName.split(' ');
+                    window.form.p1.fatherFirstName = fParts[0] || '';
+                    window.form.p1.fatherMiddleName = fParts.length > 2 ? fParts.slice(1, -1).join(' ') : '';
+                    window.form.p1.fatherLastName = fParts.length > 1 ? fParts[fParts.length-1] : '';
+                }
+                
+                if (dobMatch) {
+                    let [dd, mm, yyyy] = dobMatch[0].split('/');
+                    window.form.p1.dob = `${yyyy}-${mm}-${dd}`;
                 }
             }
 
-            if (panMatch || extractedName) {
-                foundData = true;
-                if (panMatch) window.form.pan = panMatch[0];
-                
-                // Clean up trailing OCR garbage from name like FON, PON, FW
-                extractedName = extractedName.replace(/[^A-Z ]/g, '');
-                extractedName = extractedName.replace(/\s*(FON|PON|FW|POW|FOW|FQN|PQN)$/i, '').trim();
-                if (extractedName.length > 2) window.form.legalName = extractedName;
-            }
-
         } else if (type === 'aadhar') {
-            let cleanText = text.replace(/[^A-Z0-9\n ]/g, '');
+            let cleanText = text.replace(/[^A-Z0-9\n \/]/g, '');
             const aadharMatch = cleanText.replace(/\s/g, '').match(/[0-9]{12}/);
             const pinMatch = cleanText.match(/[0-9]{6}/);
             
-            if (aadharMatch || pinMatch) {
+            let gender = "";
+            if (cleanText.includes('MALE') && !cleanText.includes('FEMALE')) gender = "Male";
+            if (cleanText.includes('FEMALE')) gender = "Female";
+            
+            let dobMatch = cleanText.match(/[0-9]{2}\/[0-9]{2}\/[0-9]{4}/);
+            let yobMatch = cleanText.match(/YEAR OF BIRTH.*?([0-9]{4})/i);
+            
+            if (aadharMatch || pinMatch || gender || dobMatch || yobMatch) {
                 foundData = true;
-                if (aadharMatch) window.form.aadhar = aadharMatch[0];
+                if (aadharMatch) {
+                    window.form.aadhar = aadharMatch[0];
+                    window.form.p1.aadhaar = aadharMatch[0];
+                }
                 if (pinMatch) window.form.ppob_pincode = pinMatch[0];
+                if (gender) window.form.p1.gender = gender;
+                if (dobMatch) {
+                    let [dd, mm, yyyy] = dobMatch[0].split('/');
+                    window.form.p1.dob = `${yyyy}-${mm}-${dd}`;
+                } else if (yobMatch && !window.form.p1.dob) {
+                    window.form.p1.dob = `${yobMatch[1]}-01-01`; // fallback
+                }
             }
         }
         
         await worker.terminate();
         
-        // Send logs to backend for debugging
         try {
             fetch(API_BASE_URL + '/api/log-ocr', {
                 method: 'POST',
@@ -4276,9 +4312,9 @@ window.processOCR = async function(input, type) {
                 body: JSON.stringify({
                     type: type,
                     text: text,
-                    extractedData: foundData ? { pan: window.form.pan, name: window.form.legalName, pincode: window.form.ppob_pincode, aadhar: window.form.aadhar } : null
+                    extractedData: foundData ? { pan: window.form.pan, name: window.form.legalName, pincode: window.form.ppob_pincode, aadhar: window.form.aadhar, dob: window.form.p1.dob } : null
                 })
-            }).catch(e => console.log('Log sending failed'));
+            }).catch(e => console.log('Log fail'));
         } catch(e) {}
 
         if (foundData) {

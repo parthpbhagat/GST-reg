@@ -4176,7 +4176,6 @@ window.processOCR = async function(input, type) {
             throw new Error("Tesseract library not loaded.");
         }
         
-        // Setup canvas to preprocess image (grayscale + contrast)
         const img = new Image();
         img.src = URL.createObjectURL(file);
         await new Promise(r => img.onload = r);
@@ -4191,65 +4190,79 @@ window.processOCR = async function(input, type) {
         let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         let data = imgData.data;
         
-        // Simple Grayscale and Thresholding (Binarization) to remove background patterns
+        // Advanced Grayscale & Contrast
+        const contrast = 70; // High contrast
+        const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
         for (let i = 0; i < data.length; i += 4) {
-            let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-            let val = avg > 120 ? 255 : 0; // Simple threshold
-            data[i] = data[i+1] = data[i+2] = val;
+            let avg = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
+            avg = factor * (avg - 128) + 128;
+            if (avg > 255) avg = 255;
+            if (avg < 0) avg = 0;
+            data[i] = data[i+1] = data[i+2] = avg;
         }
         ctx.putImageData(imgData, 0, 0);
         
         const preprocessedDataUrl = canvas.toDataURL('image/jpeg');
 
         const worker = await Tesseract.createWorker('eng');
-        // Increase PSM to 6 (Assume a single uniform block of text)
         await worker.setParameters({
             tessedit_pageseg_mode: Tesseract.PSM.BLOCK,
         });
         
         const ret = await worker.recognize(preprocessedDataUrl);
         let text = ret.data.text.toUpperCase();
-        console.log("--- OCR RAW TEXT (Preprocessed) ---");
+        console.log("--- OCR RAW TEXT (Advanced Preprocessed) ---");
         console.log(text);
         
         let foundData = false;
         
         if (type === 'pan') {
+            // Aggressive cleanup for PAN detection
+            let cleanForPan = text.replace(/[^A-Z0-9]/g, '');
+            let panMatch = cleanForPan.match(/[A-Z]{5}[0-9]{4}[A-Z]/);
+            
+            // Name extraction logic
             let cleanText = text.replace(/[^A-Z0-9\n ]/g, '');
-            const panMatch = cleanText.match(/[A-Z]{5}[0-9]{4}[A-Z]/);
-            if (panMatch) {
-                window.form.pan = panMatch[0];
-                foundData = true;
-                
-                // Name extraction logic
-                const lines = cleanText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
-                let nameFound = false;
-                for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].includes('GOVT') || lines[i].includes('INDIA') || lines[i].includes('GOVERNMENT')) {
-                        if (lines[i+1] && lines[i+1].length > 3) {
-                            window.form.legalName = lines[i+1];
-                            nameFound = true;
-                            break;
-                        }
-                    }
-                }
-                
-                if (!nameFound) {
-                    // Fallback to first non-header line
-                    const validLines = lines.filter(l => !l.includes('INCOME TAX') && !l.includes('GOVT') && !l.includes('INDIA') && !l.includes('DEPARTMENT') && !l.includes('CARD') && !l.includes('INCOMETAX'));
-                    if(validLines.length > 0) {
-                        window.form.legalName = validLines[0]; 
+            const lines = cleanText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+            let nameFound = false;
+            let extractedName = "";
+
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].includes('GOVT') || lines[i].includes('INDIA') || lines[i].includes('GOVERNMENT')) {
+                    if (lines[i+1] && lines[i+1].length > 3) {
+                        extractedName = lines[i+1];
+                        nameFound = true;
+                        break;
                     }
                 }
             }
+            
+            if (!nameFound) {
+                const validLines = lines.filter(l => !l.includes('INCOME TAX') && !l.includes('GOVT') && !l.includes('INDIA') && !l.includes('DEPARTMENT') && !l.includes('CARD') && !l.includes('INCOMETAX'));
+                if(validLines.length > 0) {
+                    extractedName = validLines[0]; 
+                }
+            }
+
+            if (panMatch || extractedName) {
+                foundData = true;
+                if (panMatch) window.form.pan = panMatch[0];
+                
+                // Clean up trailing OCR garbage from name like FON, PON, FW
+                extractedName = extractedName.replace(/[^A-Z ]/g, '');
+                extractedName = extractedName.replace(/\s*(FON|PON|FW|POW|FOW|FQN|PQN)$/i, '').trim();
+                if (extractedName.length > 2) window.form.legalName = extractedName;
+            }
+
         } else if (type === 'aadhar') {
             let cleanText = text.replace(/[^A-Z0-9\n ]/g, '');
             const aadharMatch = cleanText.replace(/\s/g, '').match(/[0-9]{12}/);
-            if (aadharMatch) {
+            const pinMatch = cleanText.match(/[0-9]{6}/);
+            
+            if (aadharMatch || pinMatch) {
                 foundData = true;
-                const pinMatch = cleanText.match(/[0-9]{6}/);
-                window.form.aadhar = aadharMatch[0];
-                if(pinMatch) window.form.ppob_pincode = pinMatch[0];
+                if (aadharMatch) window.form.aadhar = aadharMatch[0];
+                if (pinMatch) window.form.ppob_pincode = pinMatch[0];
             }
         }
         
@@ -4268,7 +4281,6 @@ window.processOCR = async function(input, type) {
             }).catch(e => console.log('Log sending failed'));
         } catch(e) {}
 
-        
         if (foundData) {
             statusDiv.innerText = "Successfully extracted data!";
             statusDiv.style.color = "#15803d";

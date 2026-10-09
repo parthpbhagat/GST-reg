@@ -4059,3 +4059,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
+
+
+window.processOCR = async function(input, type) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    const statusDiv = document.getElementById('ocrStatus');
+    statusDiv.innerText = "Scanning " + type.toUpperCase() + " card... Please wait.";
+    statusDiv.style.color = "#0369a1";
+    
+    try {
+        if (typeof Tesseract === 'undefined') {
+            throw new Error("Tesseract library not loaded.");
+        }
+        const worker = await Tesseract.createWorker('eng');
+        const ret = await worker.recognize(file);
+        const text = ret.data.text;
+        console.log("OCR Text:", text);
+        
+        let foundData = false;
+        
+        if (type === 'pan') {
+            const panMatch = text.match(/[A-Z]{5}[0-9]{4}[A-Z]{1}/);
+            if (panMatch) {
+                window.form.pan = panMatch[0];
+                foundData = true;
+                
+                // Try to find Name (heuristic: line before PAN or just above)
+                const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 3 && !l.includes('INCOME TAX') && !l.includes('GOVT') && !l.includes('INDIA'));
+                if(lines.length > 0) {
+                    window.form.legalName = lines[0]; // Guess first valid line as name
+                }
+            }
+        } else if (type === 'aadhar') {
+            // Find Aadhar
+            const aadharMatch = text.match(/[0-9]{4}\s[0-9]{4}\s[0-9]{4}/);
+            if (aadharMatch) {
+                foundData = true;
+                // Currently Step 0 does not have aadhar field, but we can extract other info like State/Pincode if possible
+                const pinMatch = text.match(/[0-9]{6}/);
+                if(pinMatch) window.form.ppob_pincode = pinMatch[0];
+            }
+        }
+        
+        await worker.terminate();
+        
+        if (foundData) {
+            statusDiv.innerText = "Successfully extracted data from " + type.toUpperCase() + "!";
+            statusDiv.style.color = "#15803d";
+            setTimeout(() => { window.renderContent(); }, 1500);
+        } else {
+            statusDiv.innerText = "Could not find valid data. Please try a clearer image.";
+            statusDiv.style.color = "#b91c1c";
+        }
+    } catch(err) {
+        console.error(err);
+        statusDiv.innerText = "Error during scanning: " + err.message;
+        statusDiv.style.color = "#b91c1c";
+    }
+};

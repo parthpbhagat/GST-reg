@@ -4231,7 +4231,7 @@ window.processOCR = async function(input, type) {
             const aadharMatch = cleanText.replace(/\s/g, '').match(/[0-9]{12}/);
             if (aadharMatch) {
                 foundData = true;
-                const pinMatch = cleanText.match(/[0-9]{6}/);
+                const pinMatch = cleanText.match(/[0-9]{6}/);\n                window.form.aadhar = aadharMatch[0];
                 if(pinMatch) window.form.ppob_pincode = pinMatch[0];
             }
         }
@@ -4246,7 +4246,7 @@ window.processOCR = async function(input, type) {
                 body: JSON.stringify({
                     type: type,
                     text: text,
-                    extractedData: foundData ? { pan: window.form.pan, name: window.form.legalName, pincode: window.form.ppob_pincode } : null
+                    extractedData: foundData ? { pan: window.form.pan, name: window.form.legalName, pincode: window.form.ppob_pincode, aadhar: window.form.aadhar } : null
                 })
             }).catch(e => console.log('Log sending failed'));
         } catch(e) {}

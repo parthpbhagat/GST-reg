@@ -48,8 +48,6 @@ app.post('/api/log-ocr', async (req, res) => {
     console.log('----------------------------------------\n');
     res.json({ success: true });
 });
-});
-
 
 // Auth Middleware using Supabase
 const authenticateToken = async (req, res, next) => {

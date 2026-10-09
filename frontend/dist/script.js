@@ -2222,11 +2222,11 @@ function renderContent() {
             <div style="display: flex; flex-wrap: wrap; gap: 15px;">
                 <div style="flex: 1 1 250px;">
                     <label style="font-size: 13px; font-weight: 600; color: #0c4a6e; display: block; margin-bottom: 5px;">📸 Scan/Upload PAN Card</label>
-                    <input type="file" accept="image/*" capture="environment" style="font-size: 13px; padding: 6px; border: 1px solid #bae6fd; border-radius: 4px; background: #fff; width: 100%; box-sizing: border-box; cursor: pointer;" onchange="window.processOCR(this, 'pan')">
+                    <input type="file" accept="image/*" style="font-size: 13px; padding: 6px; border: 1px solid #bae6fd; border-radius: 4px; background: #fff; width: 100%; box-sizing: border-box; cursor: pointer;" onchange="window.processOCR(this, 'pan')">
                 </div>
                 <div style="flex: 1 1 250px;">
                     <label style="font-size: 13px; font-weight: 600; color: #0c4a6e; display: block; margin-bottom: 5px;">📸 Scan/Upload Aadhar Card</label>
-                    <input type="file" accept="image/*" capture="environment" style="font-size: 13px; padding: 6px; border: 1px solid #bae6fd; border-radius: 4px; background: #fff; width: 100%; box-sizing: border-box; cursor: pointer;" onchange="window.processOCR(this, 'aadhar')">
+                    <input type="file" accept="image/*" style="font-size: 13px; padding: 6px; border: 1px solid #bae6fd; border-radius: 4px; background: #fff; width: 100%; box-sizing: border-box; cursor: pointer;" onchange="window.processOCR(this, 'aadhar')">
                 </div>
             </div>
             <div id="ocrStatus" style="font-size: 13px; color: #0369a1; font-weight: 600; margin-top: 10px; min-height: 18px;"></div>

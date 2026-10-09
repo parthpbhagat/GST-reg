@@ -19,6 +19,18 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+app.post('/api/log-ocr', (req, res) => {
+    console.log('\n[' + new Date().toISOString() + '] --- NEW OCR PROCESS LOG ---');
+    console.log('Document Type:', req.body.type);
+    console.log('Extracted Raw Text:', req.body.text);
+    if(req.body.extractedData) {
+        console.log('Final Extracted Data:', req.body.extractedData);
+    }
+    console.log('----------------------------------------\n');
+    res.json({ success: true });
+});
+
+
 // Auth Middleware using Supabase
 const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];

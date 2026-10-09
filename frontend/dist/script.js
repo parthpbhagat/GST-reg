@@ -4238,6 +4238,20 @@ window.processOCR = async function(input, type) {
         
         await worker.terminate();
         
+        // Send logs to backend for debugging
+        try {
+            fetch(API_BASE_URL + '/api/log-ocr', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: type,
+                    text: text,
+                    extractedData: foundData ? { pan: window.form.pan, name: window.form.legalName, pincode: window.form.ppob_pincode } : null
+                })
+            }).catch(e => console.log('Log sending failed'));
+        } catch(e) {}
+
+        
         if (foundData) {
             statusDiv.innerText = "Successfully extracted data!";
             statusDiv.style.color = "#15803d";

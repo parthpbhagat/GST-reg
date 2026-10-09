@@ -5,6 +5,6 @@ services:
     dockerfilePath: ./Dockerfile
     envVars:
       - key: SUPABASE_URL
-        value: https://mgxsxpbrzmcmzlzgzfde.supabase.co
+        value: https://dyqbupgfxdgjbxgwsjjz.supabase.co
       - key: SUPABASE_KEY
-        value: sb_publishable_159AAeN0gJjlQK7IgozhRQ_5yWUUKmm
+        value: sb_publishable__116FzmgxS1kWNlwMqQsMQ_Q97qPXdr

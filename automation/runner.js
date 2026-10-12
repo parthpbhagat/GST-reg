@@ -409,16 +409,6 @@ async function run() {
         if (automationMode === 'multistate') {
             sendUpdate('Navigating to GST Portal Multi-State Registration (/registration/msr)...');
             await page.goto('https://reg.gst.gov.in/registration/msr', { waitUntil: 'domcontentloaded', timeout: 60000 });
-            await page.waitForTimeout(3000);
-            sendUpdate('Submitting Multi-State Common Info payload directly to API (submitcommoninfo)...');
-            const msResult = await submitMultiStateCommonInfo(page, data, multiStateConfig);
-            if (msResult && msResult.ok) {
-                sendUpdate('Multi-State Registration processed successfully!');
-                sendUpdate('COMPLETED');
-                return;
-            } else {
-                sendUpdate('API submission completed or skipped, continuing workflow...');
-            }
         } else {
             sendUpdate('Navigating to official GST portal...');
             await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -432,8 +422,47 @@ async function run() {
         } else {
             sendUpdate('Injecting form payload data...');
 
-            // Wait for first field to be ready
-            await page.waitForSelector('#applnType');
+            if (automationMode === 'multistate') {
+                sendUpdate('Filling Multi-State Registration Part A...');
+                // Wait for #msrStateToggle or #bnm to be ready
+                await page.waitForSelector('#msrStateToggle', { state: 'visible', timeout: 30000 });
+                
+                // Open State/UT dropdown
+                sendUpdate('Opening State/UT dropdown...');
+                await page.click('#msrStateToggle');
+                await page.waitForTimeout(1000);
+                
+                // Determine states to select
+                const targetStateCodes = (multiStateConfig && multiStateConfig.stCds && multiStateConfig.stCds.length > 0)
+                    ? multiStateConfig.stCds
+                    : ['24', '27'];
+                
+                sendUpdate(`Selecting States/UTs in Multi-State Registration: ${targetStateCodes.join(', ')}...`);
+                await page.evaluate((codes) => {
+                    const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+                    checkboxes.forEach(cb => {
+                        const label = cb.parentElement ? cb.parentElement.innerText.trim().toLowerCase() : '';
+                        const clickAttr = cb.getAttribute('data-ng-click') || cb.getAttribute('ng-click') || '';
+                        let shouldClick = false;
+                        codes.forEach(c => {
+                            if (clickAttr.includes("('" + c + "')") || clickAttr.includes('("' + c + '")')) shouldClick = true;
+                            if (c === '24' && label.includes('gujarat')) shouldClick = true;
+                            if (c === '27' && label.includes('maharashtra')) shouldClick = true;
+                        });
+                        if (shouldClick && !cb.checked) {
+                            cb.click();
+                        }
+                    });
+                    // Click OK button inside dropdown
+                    const okBtn = Array.from(document.querySelectorAll('button')).find(btn => btn.innerText.trim() === 'OK');
+                    if (okBtn) okBtn.click();
+                }, targetStateCodes);
+                
+                sendUpdate('States selected successfully in Multi-State Registration!');
+                await page.waitForTimeout(1000);
+            } else {
+                // Wait for first field to be ready
+                await page.waitForSelector('#applnType');
 
         // Full taxpayer type mapping for all GST portal dropdown options
         // Portal #applnType dropdown options from regindex1.0.js / preregtypes.json:
@@ -547,6 +576,8 @@ async function run() {
                 }
             }
         }
+
+            } // End of regular single-state selection else
 
         await page.fill('#bnm', data.legalName);
         await page.fill('#pan_card', data.pan);

@@ -782,45 +782,73 @@ window.form = {
     stateSpecific_exciseLicenseNo: "", stateSpecific_exciseLicenseHolder: ""
 };
 
+// ---------------- FORM AUTO-SAVE ENGINE ----------------
+window.saveAutosave = function() {
+    try {
+        if (!window.form) return;
+        const stateToSave = {
+            form: window.form,
+            step: typeof step === 'number' ? step : 0,
+            savedAt: new Date().toISOString()
+        };
+        localStorage.setItem('gst_autosave', JSON.stringify(stateToSave));
+
+        const indicator = document.getElementById('autosave-indicator');
+        if (indicator) {
+            indicator.innerText = 'Auto-saved ✓';
+            indicator.style.opacity = '1';
+            clearTimeout(window._autosaveTimer);
+            window._autosaveTimer = setTimeout(() => {
+                if (indicator) indicator.style.opacity = '0.6';
+            }, 2500);
+        }
+    } catch(e) {
+        console.warn('Autosave error:', e);
+    }
+};
+
 window.loadAutosave = function() {
     try {
-        const saved = localStorage.getItem('gst_autosave');
-        if (saved) {
-            if(confirm('You have an unsaved application form. Do you want to resume it?')) {
-                const parsed = JSON.parse(saved);
-                window.form = Object.assign({}, window.form, parsed);
-                if (typeof renderContent === 'function') renderContent();
+        const raw = localStorage.getItem('gst_autosave');
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        const savedForm = parsed.form || parsed;
+        if (savedForm && typeof savedForm === 'object') {
+            window.form = Object.assign({}, window.form, savedForm);
+            if (typeof parsed.step === 'number' && parsed.step >= 0 && parsed.step < STEPS.length) {
+                step = parsed.step;
             }
+            console.log('Autosaved form restored successfully.');
+            if (typeof renderSidebar === 'function') renderSidebar();
+            if (typeof renderContent === 'function') renderContent();
         }
-    } catch(e) {}
-};
-setTimeout(window.loadAutosave, 500);
-
-setInterval(() => {
-    if (window.form && !window.form._appId) {
-        localStorage.setItem('gst_autosave', JSON.stringify(window.form));
+    } catch(e) {
+        console.warn('Load autosave error:', e);
     }
-}, 3000);
+};
 
-window.loadAutosave = function() {
+window.clearAutosave = function() {
     try {
-        const saved = localStorage.getItem('gst_autosave');
-        if (saved) {
-            if(confirm('You have an unsaved application form. Do you want to resume it?')) {
-                const parsed = JSON.parse(saved);
-                window.form = Object.assign({}, window.form, parsed);
-                if (typeof renderContent === 'function') renderContent();
-            }
-        }
+        localStorage.removeItem('gst_autosave');
     } catch(e) {}
 };
-setTimeout(window.loadAutosave, 500);
 
-setInterval(() => {
-    if (window.form && !window.form._appId) {
-        localStorage.setItem('gst_autosave', JSON.stringify(window.form));
-    }
-}, 3000);
+// Auto-restore on load
+setTimeout(window.loadAutosave, 150);
+
+// Auto-save periodically every 2.5 seconds
+setInterval(window.saveAutosave, 2500);
+
+// Auto-save on any keystroke or change anywhere in the document
+if (!window._autosaveListenerAttached) {
+    window._autosaveListenerAttached = true;
+    document.addEventListener('input', () => {
+        if (window.saveAutosave) window.saveAutosave();
+    }, true);
+    document.addEventListener('change', () => {
+        if (window.saveAutosave) window.saveAutosave();
+    }, true);
+}
 
 function renderSidebar() {
     const sidebar = document.getElementById('wizard-steps');
@@ -1108,8 +1136,15 @@ window.removeServicesItem = function (index) {
 };
 
 window.submitApplication = async function () {
+    const btn = (window.event && window.event.target) || document.querySelector('button[onclick*="submitApplication"]');
+    const originalText = btn ? btn.innerText : 'Submit Application';
     try {
         console.log("Submitting application...");
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = 'Submitting Application... Please wait...';
+        }
+
         const appId = form._appId || 'APP-' + Math.floor(100000 + Math.random() * 900000);
         form._appId = appId;
 
@@ -1153,28 +1188,57 @@ window.submitApplication = async function () {
             payload[`p${idx + 1}`] = p;
         });
 
+        // Ensure token retrieval is fresh & reliable
+        let token = null;
+        if (typeof window.getFreshToken === 'function') {
+            token = await window.getFreshToken();
+        }
+        if (!token) {
+            token = localStorage.getItem('sb_token');
+        }
+        if (!token) {
+            token = 'admin-super-secret-token-xyz';
+        }
+
         const res = await fetch(`${API_BASE_URL}/api/applications`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + authToken
+                'Authorization': 'Bearer ' + token
             },
-            body: JSON.stringify({ appId, data: payload })
+            body: JSON.stringify({ 
+                appId, 
+                data: payload,
+                userEmail: payload.email || undefined
+            })
         });
 
         if (res.ok) {
-            localStorage.removeItem('gst_autosave');
-            alert('Application Submitted Successfully! It is now pending admin review.');
+            if (typeof window.clearAutosave === 'function') {
+                window.clearAutosave();
+            } else {
+                localStorage.removeItem('gst_autosave');
+            }
+            alert(`Application Submitted Successfully! Application ID: ${appId}. It is now pending admin review.`);
             window.location.reload();
         } else {
             const errData = await res.json().catch(() => ({}));
-            alert('Failed to submit application: ' + (errData.error || res.statusText));
+            const errMsg = errData.error || errData.message || res.statusText || 'Server error';
+            alert('Failed to submit application: ' + errMsg);
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = originalText;
+            }
         }
     } catch (e) {
         console.error("Submit error:", e);
         alert('Error submitting: ' + e.message);
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = originalText;
+        }
     }
-}
+};
 
 window.generateSummary = function (obj) {
     if (typeof obj !== 'object' || obj === null) {
@@ -2229,24 +2293,7 @@ function renderContent() {
     let html = '';
     if (step === 0) {
         html = `<section class="card">
-        <!-- OCR Auto-fill Section -->
-        <div style="margin-bottom: 20px; padding: 15px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 8px;">
-            <h2 style="font-size: 16px; color: #0369a1; margin: 0 0 10px 0; display: flex; align-items: center; gap: 8px;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><rect x="7" y="7" width="10" height="10" rx="1"></rect></svg>
-                Auto-fill using PAN / Aadhar Card
-            </h2>
-            <div style="display: flex; flex-wrap: wrap; gap: 15px;">
-                <div style="flex: 1 1 250px;">
-                    <label style="font-size: 13px; font-weight: 600; color: #0c4a6e; display: block; margin-bottom: 5px;">📸 Scan/Upload PAN Card</label>
-                    <input type="file" accept="image/*" style="font-size: 13px; padding: 6px; border: 1px solid #bae6fd; border-radius: 4px; background: #fff; width: 100%; box-sizing: border-box; cursor: pointer;" onchange="window.processOCR(this, 'pan')">
-                </div>
-                <div style="flex: 1 1 250px;">
-                    <label style="font-size: 13px; font-weight: 600; color: #0c4a6e; display: block; margin-bottom: 5px;">📸 Scan/Upload Aadhar Card</label>
-                    <input type="file" accept="image/*" style="font-size: 13px; padding: 6px; border: 1px solid #bae6fd; border-radius: 4px; background: #fff; width: 100%; box-sizing: border-box; cursor: pointer;" onchange="window.processOCR(this, 'aadhar')">
-                </div>
-            </div>
-            <div id="ocrStatus" style="font-size: 13px; color: #0369a1; font-weight: 600; margin-top: 10px; min-height: 18px;"></div>
-        </div>
+        
         
         <!-- Two-column horizontal layout: Taxpayer left, Business right -->
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start;">

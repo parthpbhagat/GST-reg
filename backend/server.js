@@ -412,32 +412,58 @@ app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
     }
 });
 
-// PUT /api/applications/:id/trn - Save TRN
+// PUT /api/applications/:id/trn - Save TRN (supports single TRN or state-wise TRNs)
 app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
     const { id } = req.params;
-    const { trn } = req.body;
+    const { trn, stateTrns, masterTrn } = req.body;
 
-    if (!trn) return res.status(400).json({ error: 'trn is required' });
+    if (!trn && !stateTrns && !masterTrn) {
+        return res.status(400).json({ error: 'trn or stateTrns is required' });
+    }
 
     // Ensure they own it first (unless admin)
-    let fetchQuery = supabase.from('applications').select('appId').eq('appId', id);
+    let fetchQuery = supabase.from('applications').select('appId, data, trn').eq('appId', id);
     if (req.user.email !== 'admin@example.com') {
         fetchQuery = fetchQuery.eq('userEmail', req.user.email);
     }
     const { data: row, error: fetchErr } = await fetchQuery.single();
     if (fetchErr || !row) return res.status(404).json({ error: 'Application not found or unauthorized' });
 
-    let updateQuery = supabase.from('applications').update({ trn }).eq('appId', id);
+    let appData = typeof row.data === 'string' ? JSON.parse(row.data) : (row.data || {});
+
+    // Main primary TRN
+    const primaryTrn = trn || masterTrn || (stateTrns && Object.values(stateTrns)[0]) || row.trn;
+
+    // Merge state-wise TRNs into application data
+    if (stateTrns && typeof stateTrns === 'object') {
+        appData.stateTrns = Object.assign({}, appData.stateTrns || {}, stateTrns);
+    }
+    if (masterTrn) {
+        appData.masterTrn = masterTrn;
+    }
+
+    const updateFields = {
+        trn: primaryTrn,
+        data: appData
+    };
+
+    let updateQuery = supabase.from('applications').update(updateFields).eq('appId', id);
     if (req.user.email !== 'admin@example.com') {
         updateQuery = updateQuery.eq('userEmail', req.user.email);
     }
     const { error } = await updateQuery;
 
+    try {
+        await oldSupabase.from('applications').update(updateFields).eq('appId', id);
+    } catch (e) {}
+
     if (error) {
-        console.error('Error updating TRN:', error.message);
-        return res.status(500).json({ error: 'Failed to update TRN' });
+        console.error('Error updating TRN in DB:', error.message);
+        return res.status(500).json({ error: 'Failed to update TRN: ' + error.message });
     }
-    res.json({ message: 'TRN saved successfully', appId: id, trn });
+
+    console.log(`[DB] Successfully saved TRN for ${id}: Primary TRN = ${primaryTrn}, State TRNs =`, appData.stateTrns);
+    res.json({ message: 'TRN saved successfully', appId: id, trn: primaryTrn, stateTrns: appData.stateTrns, masterTrn: appData.masterTrn });
 });
 
 const { spawn } = require('child_process');

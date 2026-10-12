@@ -1491,6 +1491,35 @@ window.exitAdmin = function () {
 
 let allApps = [];
 
+function formatStateWiseTrnsHtml(app) {
+    const mainTrn = app.trn || (app.data && app.data.masterTrn) || '';
+    const stateTrns = (app.data && app.data.stateTrns) ? app.data.stateTrns : null;
+
+    if (!mainTrn && !stateTrns) return '<span style="color:#94a3b8;">-</span>';
+
+    let html = '';
+    if (mainTrn) {
+        html += `<div style="font-weight: 600; color: #0f172a; display: flex; align-items: center; gap: 4px;"><span>${mainTrn}</span></div>`;
+    }
+
+    if (stateTrns && typeof stateTrns === 'object' && Object.keys(stateTrns).length > 0) {
+        html += '<div style="margin-top: 4px; display: flex; flex-direction: column; gap: 2px;">';
+        for (const [st, sTrn] of Object.entries(stateTrns)) {
+            // Find state name if code
+            let stLabel = st;
+            if (window.STATE_CODE_MAP) {
+                const found = Object.entries(window.STATE_CODE_MAP).find(([k, v]) => v === st);
+                if (found) stLabel = found[0];
+            }
+            html += `<span style="font-size: 11px; color: #0284c7; background: #e0f2fe; padding: 1px 6px; border-radius: 4px; display: inline-block;"><strong>${stLabel}:</strong> ${sTrn}</span>`;
+        }
+        html += '</div>';
+    }
+
+    return html;
+}
+
+
 window.renderAdminDashboard = async function () {
     const container = document.getElementById('admin-dashboard-container');
 
@@ -1533,6 +1562,10 @@ window.renderAdminDashboard = async function () {
             </div>
             <div style="margin-bottom: 20px;">
                 <strong>Status:</strong> <span style="padding: 4px 8px; border-radius: 4px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span>
+                <div style="margin-top: 10px; padding: 10px 14px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px;">
+                    <strong style="color: #166534; font-size: 13px;">Generated TRN Details:</strong>
+                    <div style="margin-top: 4px;">${formatStateWiseTrnsHtml(app)}</div>
+                </div>
             </div>
             <div style="background: #f8fafc; padding: 15px; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 20px; overflow-y: visible;">
                 ${window.generateSummary(app.data)}
@@ -1591,7 +1624,7 @@ window.renderAdminDashboard = async function () {
                         <td style="padding: 10px;">${new Date(app.date).toLocaleDateString()}</td>
                         <td style="padding: 10px;">${app.data.legalName || 'N/A'}</td>
                         <td style="padding: 10px; color: #64748b; font-size: 13px;">${app.userEmail || '-'}</td>
-                        <td style="padding: 10px; font-weight: 500; color: #0f172a;">${app.trn || '-'}</td>
+                        <td style="padding: 10px; font-weight: 500; color: #0f172a;">${formatStateWiseTrnsHtml(app)}</td>
                         <td style="padding: 10px;"><span style="padding: 2px 6px; border-radius: 4px; font-size: 12px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span></td>
                         <td style="padding: 10px;">
                             <button class="btn" style="padding: 4px 10px; font-size: 13px;" onclick="previewApplication('${app.appId}')">Preview</button>

@@ -305,6 +305,49 @@ async function submitMultiStateCommonInfo(page, data, config) {
     if (apiResult.ok) {
         sendUpdate('Successfully submitted Common Info via Multi-State API!');
         sendUpdate(`Multi-State Response: ${JSON.stringify(apiResult.data)}`);
+
+        // Check for state-wise TRNs or generated reference numbers in the response
+        let stateTrns = {};
+        const respData = apiResult.data || {};
+        
+        // If the portal returns state-specific TRNs array/object
+        if (respData.stateTrns && typeof respData.stateTrns === 'object') {
+            stateTrns = respData.stateTrns;
+        } else if (Array.isArray(respData.stCds) || Array.isArray(stCds)) {
+            // Map selected state codes to state names and store them
+            const stateCodesList = respData.stCds || stCds;
+            stateCodesList.forEach(code => {
+                const trnVal = respData[`trn_${code}`] || respData.trn || secToken || 'Generated';
+                stateTrns[code] = trnVal;
+            });
+        }
+
+        // Save State-Wise TRNs to our project database
+        sendUpdate('Saving state-wise TRNs to project database...');
+        try {
+            await new Promise((resolve) => {
+                const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/trn`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+                }, (res) => {
+                    res.on('data', () => { });
+                    res.on('end', resolve);
+                });
+                req.on('error', (e) => {
+                    console.error('Failed to save stateTrns:', e);
+                    resolve();
+                });
+                req.write(JSON.stringify({ 
+                    trn: respData.trn || secToken, 
+                    masterTrn: secToken, 
+                    stateTrns: stateTrns 
+                }));
+                req.end();
+            });
+            sendUpdate('State-wise TRN data successfully saved to project database!');
+        } catch (dbErr) {
+            console.error('Error saving state TRNs to database:', dbErr);
+        }
     } else {
         sendUpdate(`Warning: submitcommoninfo API returned status ${apiResult.status || 'error'}: ${JSON.stringify(apiResult.error || apiResult.data)}`);
     }
@@ -623,7 +666,11 @@ async function run() {
 
         sendUpdate(`TRN Generated: ${trnText}`);
 
-        // Save TRN via API
+        // Save TRN via API (including state-wise mapping)
+        const appStateName = data.state || 'General';
+        const singleStateTrns = {};
+        singleStateTrns[appStateName] = trnText;
+
         await new Promise((resolve, reject) => {
             const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/trn`, {
                 method: 'PUT',
@@ -633,7 +680,7 @@ async function run() {
                 res.on('end', resolve);
             });
             req.on('error', reject);
-            req.write(JSON.stringify({ trn: trnText }));
+            req.write(JSON.stringify({ trn: trnText, stateTrns: singleStateTrns }));
             req.end();
         });
         

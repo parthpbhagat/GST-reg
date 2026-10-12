@@ -1,3 +1,15 @@
+window.resetFormDraft = function() {
+    if (confirm("Are you sure you want to clear this draft and start fresh? All unsaved inputs will be erased.")) {
+        if (typeof window.clearAutosave === "function") window.clearAutosave();
+        localStorage.removeItem("gst_autosave");
+        if (window.form && window.form._appId) {
+            delete window.form._appId;
+            delete window.form._originalStatus;
+        }
+        window.location.reload();
+    }
+};
+
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3002' : 'https://gst-reg.onrender.com';
 
 // ---------------- AUTHENTICATION SETUP ----------------
@@ -1410,17 +1422,28 @@ window.renderAdminDashboard = async function () {
         const app = allApps.find(a => a.appId === currentPreviewAppId);
         if (!app) return;
 
+        const isUserAdmin = (localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz') || 
+                            (document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com');
+
         let actionButtons = '';
-        if (app.status === 'Pending') {
-            actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-right: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
-                     <button class="btn accent" style="background: #22c55e; border-color: #22c55e;" onclick="updateAppStatus('${app.appId}', 'Accepted')">Accept</button>
-                     <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white;" onclick="updateAppStatus('${app.appId}', 'Rejected')">Reject</button>`;
-        } else if (app.status === 'Accepted' || app.status === 'Registered') {
-            actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6;" onclick="registerApplication('${app.appId}')">Register Automatically</button>
-                     <button class="btn accent" onclick="editApplication('${app.appId}')">Edit Application</button>
-                     <button class="btn accent" style="background: #6366f1; border-color: #6366f1;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>`;
-        } else if (app.status === 'Rejected') {
-            actionButtons = `<button class="btn accent" onclick="editApplication('${app.appId}')">Edit Application</button>`;
+        if (isUserAdmin) {
+            actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-right: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>`;
+            if (app.status === 'Pending') {
+                actionButtons += `<button class="btn accent" style="background: #22c55e; border-color: #22c55e;" onclick="updateAppStatus('${app.appId}', 'Accepted')">Accept</button>
+                         <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-left: 5px;" onclick="updateAppStatus('${app.appId}', 'Rejected')">Reject</button>`;
+            } else if (app.status === 'Accepted' || app.status === 'Registered') {
+                actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6;" onclick="registerApplication('${app.appId}')">Register Automatically</button>
+                         <button class="btn accent" style="margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
+                         <button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>`;
+            } else if (app.status === 'Rejected') {
+                actionButtons = `<button class="btn accent" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>`;
+            }
+        } else {
+            actionButtons = `
+                <button class="btn accent" style="background: #3b82f6; border-color: #3b82f6;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
+                <button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>
+                <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">🗑️ Delete Application</button>
+            `;
         }
 
         let html = `<div class="card" style="margin-bottom: 20px;">
@@ -1463,7 +1486,10 @@ window.renderAdminDashboard = async function () {
 
     let html = `<div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h2 style="margin: 0;">Admin Dashboard - Applications</h2>
+            <div>
+                <h2 style="margin: 0;">${(localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz' || document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com') ? 'Admin Dashboard - Applications' : 'My Applications'}</h2>
+                <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">${(localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz' || document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com') ? 'Review, edit, accept, or reject applicant submissions.' : 'Manage, edit, update, or delete your submitted applications.'}</p>
+            </div>
             <button class="btn accent" style="font-size: 14px; padding: 8px 16px; background: #3b82f6; border-color: #3b82f6; color: white;" onclick="navigateTo('/form')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg> Home
             </button>
@@ -3188,11 +3214,13 @@ function renderContent() {
     }
 
     html += `
-    <div class="nav">
-        <div style="display: flex; gap: 16px;">
+    <div class="nav" style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
+        <div style="display: flex; gap: 12px; align-items: center;">
             ${step > 0 ? `<button class="btn ghost" onclick="setStep(${step - 1})">Back</button>` : '<div></div>'}
+            <button class="btn ghost" style="color: #ef4444; border-color: #fca5a5; font-size: 13px;" onclick="window.resetFormDraft()">🗑️ Clear Draft</button>
         </div>
-        <div style="display: flex; gap: 16px;">
+        <div style="display: flex; gap: 12px; align-items: center;">
+            ${(window.form && window.form._appId) ? `<button class="btn accent" style="background: #10b981; border-color: #10b981;" onclick="submitApplication()">💾 Save / Update Application</button>` : ''}
             ${step < STEPS.length - 1 ? `<button class="btn primary" onclick="setStep(${step + 1})">Next</button>` : ''}
         </div>
     </div>`;
@@ -4002,7 +4030,7 @@ window.handleRoute = function () {
 
     if (path === '/admin') {
         document.getElementById('admin-dashboard-container').classList.remove('hidden');
-        if (header) header.classList.add('hidden');
+        if (header) header.classList.remove('hidden');
         renderAdminDashboard();
     } else if (path === '/automation') {
         document.getElementById('automation-platform-container').classList.remove('hidden');

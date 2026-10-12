@@ -747,9 +747,15 @@ async function run() {
         
         } // End of Part A else block
 
-        // Go directly to TRN Login by reloading the registration page and clicking the TRN radio button
-        sendUpdate('Navigating to TRN Login screen...');
-        await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded' });
+        // Go directly to TRN Login by navigating to the appropriate registration page and clicking TRN radio
+        if (automationMode === 'multistate' || (trnText && trnText.startsWith('M'))) {
+            sendUpdate('Navigating to Multi-State Master TRN Login screen (/registration/msr)...');
+            await page.goto('https://reg.gst.gov.in/registration/msr', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        } else {
+            sendUpdate('Navigating to TRN Login screen...');
+            await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        }
+        await page.waitForSelector('#radiotrn', { state: 'visible', timeout: 30000 });
         await page.click('#radiotrn');
 
         await page.waitForSelector('#trnno', { state: 'visible', timeout: 30000 });
@@ -805,34 +811,59 @@ async function run() {
             sendUpdate('Verifying TRN Login...');
             await page.fill('#captchatrn', loginCaptchaText);
 
-            // Click Proceed button for TRN Login
-            const proceedTrnBtn = page.locator('button', { hasText: 'Proceed' }).last();
-            await proceedTrnBtn.click();
+            // Click Proceed button for TRN Login (using robust selector and form submit fallback)
+            await page.evaluate(() => {
+                const form = document.querySelector('form[name="preg"]');
+                const submitBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim().toUpperCase() === 'PROCEED' && b.offsetParent !== null);
+                if (submitBtn) {
+                    submitBtn.click();
+                } else if (form) {
+                    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+                }
+            });
 
             sendUpdate('Waiting for TRN Login OTP verification screen...');
             try {
-                // Wait for success or clear
+                // Wait for either OTP field, navigation to /verify or /msrverify, or captcha cleared
                 await page.waitForFunction(() => {
                     const otpEl = document.querySelector('#mobile_otp');
-                    const captchaEl = document.querySelector('#captchatrn');
                     if (otpEl && otpEl.offsetParent !== null) return true;
-                    if (captchaEl && captchaEl.value === '') return true;
-                    return false;
-                }, { timeout: 30000 });
-
-                const isCleared = await page.evaluate(() => {
+                    const url = window.location.href;
+                    if (url.includes('/verify') || url.includes('/msrverify')) return true;
                     const captchaEl = document.querySelector('#captchatrn');
-                    return captchaEl && captchaEl.value === '';
+                    if (captchaEl && captchaEl.value === '') return true;
+                    // Check for invalid captcha error message
+                    const err = document.querySelector('.err, .alert-danger');
+                    if (err && err.offsetParent !== null && err.innerText.trim().length > 0) return true;
+                    return false;
+                }, { timeout: 35000 });
+
+                const resultStatus = await page.evaluate(() => {
+                    const otpEl = document.querySelector('#mobile_otp');
+                    if (otpEl && otpEl.offsetParent !== null) return 'otp_ready';
+                    const url = window.location.href;
+                    if (url.includes('/verify') || url.includes('/msrverify')) return 'otp_ready';
+                    const captchaEl = document.querySelector('#captchatrn');
+                    if (captchaEl && captchaEl.value === '') return 'invalid_captcha';
+                    const err = document.querySelector('.err, .alert-danger');
+                    if (err && err.offsetParent !== null && err.innerText.trim().length > 0) return 'error_message';
+                    return 'unknown';
                 });
 
-                if (isCleared) {
-                    sendUpdate('Invalid Captcha. Retrying...');
-                    await page.waitForTimeout(1000);
+                if (resultStatus === 'invalid_captcha' || resultStatus === 'error_message') {
+                    sendUpdate('Invalid Captcha. Retrying with fresh Captcha...');
+                    await page.waitForTimeout(1500);
                 } else {
                     trnLoginSuccess = true;
                 }
             } catch (e) {
-                throw new Error("Timeout waiting for TRN Login to proceed.");
+                sendUpdate('Warning: Timeout on TRN login wait, checking if OTP screen already present...');
+                const hasOtp = await page.locator('#mobile_otp').count() > 0;
+                if (hasOtp) {
+                    trnLoginSuccess = true;
+                } else {
+                    throw new Error('Timeout waiting for TRN Login to proceed. Please check Captcha.');
+                }
             }
         }
 

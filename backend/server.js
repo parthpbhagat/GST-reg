@@ -447,10 +447,11 @@ const activeAutomations = new Map();
 
 // POST /api/automation/start
 app.post('/api/automation/start', authenticateToken, (req, res) => {
-    const { appId } = req.body;
-    console.log(`[Automation] Starting automation for App ID: ${appId}`);
+    const { appId, mode, multiStateConfig } = req.body;
+    const automationMode = mode || 'regular';
+    console.log(`[Automation] Starting automation for App ID: ${appId} (Mode: ${automationMode})`);
 
-    io.to(appId).emit('automation_update', { status: 'INITIALIZING: Launching secure automation process...' });
+    io.to(appId).emit('automation_update', { status: `INITIALIZING: Launching ${automationMode === 'multistate' ? 'Multi-State' : 'Regular'} automation process...` });
 
     // Spawn the Playwright runner
     const runnerDir = path.join(__dirname, '..', 'automation');
@@ -459,7 +460,12 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
-    const child = spawn('node', [runnerPath, appId, token], { cwd: runnerDir });
+    const spawnArgs = [runnerPath, appId, token, automationMode];
+    if (multiStateConfig) {
+        spawnArgs.push(JSON.stringify(multiStateConfig));
+    }
+
+    const child = spawn('node', spawnArgs, { cwd: runnerDir });
     activeAutomations.set(appId, child);
 
     child.stdout.on('data', (data) => {

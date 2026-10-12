@@ -3,6 +3,15 @@ const http = require('http');
 
 const appId = process.argv[2];
 const token = process.argv[3];
+const automationMode = process.argv[4] || 'regular'; // 'regular' or 'multistate'
+let multiStateConfig = null;
+try {
+    if (process.argv[5]) {
+        multiStateConfig = JSON.parse(process.argv[5]);
+    }
+} catch (e) {
+    console.error('Warning: Could not parse multiStateConfig:', e.message);
+}
 
 if (!appId) {
     console.error('ERROR: No App ID provided');
@@ -188,6 +197,121 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
     }
 }
 
+
+// Helper to construct and submit Multi-State Registration Common Info payload
+async function submitMultiStateCommonInfo(page, data, config) {
+    sendUpdate('Submitting Common Info to Multi-State API (submitcommoninfo)...');
+
+    const aplCd = (config && config.aplCd) || '1219';
+    const typAR = (config && config.typAR) || 'TRP';
+    const cobz = (config && config.cobz) || 'PRO';
+    const secToken = (config && config.secToken) || 'M10260001219TRN';
+    const stCds = (config && config.stCds && config.stCds.length > 0) ? config.stCds : ['24', '27'];
+
+    // Format dates to DD/MM/YYYY
+    function formatToDDMMYYYY(dStr) {
+        if (!dStr) return '';
+        if (dStr.includes('/')) return dStr;
+        const [y, m, d] = dStr.split('-');
+        return `${d}/${m}/${y}`;
+    }
+
+    const todayDDMMYYYY = (() => {
+        const d = new Date();
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yyyy = d.getFullYear();
+        return `${dd}/${mm}/${yyyy}`;
+    })();
+
+    const dueDateDDMMYYYY = (() => {
+        const d = new Date();
+        d.setDate(d.getDate() + 15);
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yyyy = d.getFullYear();
+        return `${dd}/${mm}/${yyyy}`;
+    })();
+
+    // Build goods & services lists
+    const bzgddtls = (Array.isArray(data.goods_hsn) ? data.goods_hsn : []).map(code => ({ hsn: code }));
+    const bzsdtls = (Array.isArray(data.goods_sac) ? data.goods_sac : []).map(code => ({ sac: code }));
+
+    // Build existing registrations
+    const exrgdtls = (Array.isArray(data.existingRegistrations) ? data.existingRegistrations : []).map(r => ({
+        rgtyp: r.type || '',
+        rgnum: r.no || '',
+        rgdt: formatToDDMMYYYY(r.date)
+    }));
+
+    // Construct the full payload as provided by user specification
+    const payload = {
+        aplCd: aplCd,
+        arepdtls: { typAR: typAR },
+        bzdtls: {},
+        bzdtlsbz: {
+            addltrdnms: [],
+            cmbzdt: formatToDDMMYYYY(data.dateOfCommencement) || todayDDMMYYYY,
+            cobz: cobz,
+            lgnmbzpan: data.legalName || '',
+            pan: {
+                num: (data.pan || '').toUpperCase(),
+                iv: "V"
+            },
+            stCds: stCds,
+            trdnm: data.tradeName || data.legalName || ''
+        },
+        exrgdtls: exrgdtls,
+        gdssvcdtls: {
+            bzgddtls: bzgddtls,
+            bzsdtls: bzsdtls
+        },
+        jurdFlag: "N",
+        map: {},
+        rgdtls: {
+            aplst: "DFT",
+            aplty: "APLRG",
+            duedt: dueDateDDMMYYYY,
+            em: (data.email || '').toUpperCase(),
+            mbno: data.mobile || '',
+            moddt: todayDDMMYYYY,
+            secToken: secToken
+        }
+    };
+
+    console.log('[Runner Log]: Multi-State Registration Payload:', JSON.stringify(payload, null, 2));
+
+    // Submit payload via in-page fetch using the browser session cookies and headers
+    const apiResult = await page.evaluate(async (bodyPayload) => {
+        try {
+            const resp = await fetch('https://reg.gst.gov.in/registration/auth/api/multistate/submitcommoninfo', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/plain, */*'
+                },
+                body: JSON.stringify(bodyPayload)
+            });
+            const text = await resp.text();
+            let json = null;
+            try { json = JSON.parse(text); } catch (e) { json = { raw: text }; }
+            return { ok: resp.ok, status: resp.status, data: json };
+        } catch (err) {
+            return { ok: false, error: err.message };
+        }
+    }, payload);
+
+    console.log('[Runner Log]: submitcommoninfo API Result:', JSON.stringify(apiResult));
+    if (apiResult.ok) {
+        sendUpdate('Successfully submitted Common Info via Multi-State API!');
+        sendUpdate(`Multi-State Response: ${JSON.stringify(apiResult.data)}`);
+    } else {
+        sendUpdate(`Warning: submitcommoninfo API returned status ${apiResult.status || 'error'}: ${JSON.stringify(apiResult.error || apiResult.data)}`);
+    }
+
+    return apiResult;
+}
+
 async function run() {
     sendUpdate('INITIALIZING: Starting headless browser...');
 
@@ -220,7 +344,12 @@ async function run() {
     globalPage = page;
 
     try {
-        await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded' });
+        if (automationMode === 'multistate') {
+            sendUpdate('Navigating to GST Portal Multi-State Registration (/registration/msr)...');
+            await page.goto('https://reg.gst.gov.in/registration/msr', { waitUntil: 'domcontentloaded' });
+        } else {
+            await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded' });
+        }
 
         let trnText = '';
         
@@ -681,6 +810,15 @@ async function run() {
 
         // Wait for the form filling page to load
         await page.waitForTimeout(5000);
+
+        if (automationMode === 'multistate') {
+            sendUpdate('Running Multi-State Common Info Registration Step...');
+            try {
+                await submitMultiStateCommonInfo(page, data, multiStateConfig);
+            } catch (msErr) {
+                sendUpdate(`Multi-State API note: ${msErr.message}`);
+            }
+        }
 
         sendUpdate('Filling Business Details tab...');
 

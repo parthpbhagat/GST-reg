@@ -1509,6 +1509,7 @@ window.renderAdminDashboard = async function () {
                          <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-left: 5px;" onclick="updateAppStatus('${app.appId}', 'Rejected')">Reject</button>`;
             } else if (app.status === 'Accepted' || app.status === 'Registered') {
                 actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6;" onclick="registerApplication('${app.appId}')">Register Automatically</button>
+                         <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
                          <button class="btn accent" style="margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
                          <button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>`;
             } else if (app.status === 'Rejected') {
@@ -1594,6 +1595,7 @@ window.renderAdminDashboard = async function () {
                         <td style="padding: 10px;"><span style="padding: 2px 6px; border-radius: 4px; font-size: 12px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span></td>
                         <td style="padding: 10px;">
                             <button class="btn" style="padding: 4px 10px; font-size: 13px;" onclick="previewApplication('${app.appId}')">Preview</button>
+                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #0ea5e9; border: none; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #3b82f6; border: none; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #6366f1; border: none; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Declaration Form</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #ef4444; border: none; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">Delete</button>
@@ -1696,6 +1698,88 @@ function addTerminalLog(msgStr) {
     logs.appendChild(d);
     logs.scrollTop = logs.scrollHeight;
 }
+
+
+// ==================== MULTI-STATE REGISTRATION LOGIC ====================
+window.STATE_CODE_MAP = {
+    "JAMMU AND KASHMIR": "01", "HIMACHAL PRADESH": "02", "PUNJAB": "03", "CHANDIGARH": "04",
+    "UTTARAKHAND": "05", "HARYANA": "06", "DELHI": "07", "RAJASTHAN": "08",
+    "UTTAR PRADESH": "09", "BIHAR": "10", "SIKKIM": "11", "ARUNACHAL PRADESH": "12",
+    "NAGALAND": "13", "MANIPUR": "14", "MIZORAM": "15", "TRIPURA": "16",
+    "MEGHALAYA": "17", "ASSAM": "18", "WEST BENGAL": "19", "JHARKHAND": "20",
+    "ODISHA": "21", "CHHATTISGARH": "22", "MADHYA PRADESH": "23", "GUJARAT": "24",
+    "DAMAN AND DIU": "25", "DADRA AND NAGAR HAVELI": "26", "MAHARASHTRA": "27",
+    "ANDHRA PRADESH": "28", "KARNATAKA": "29", "GOA": "30", "LAKSHADWEEP": "31",
+    "KERALA": "32", "TAMIL NADU": "33", "PUDUCHERRY": "34", "ANDAMAN AND NICOBAR ISLANDS": "35",
+    "TELANGANA": "36", "ANDHRA PRADESH (NEW)": "37", "LADAKH": "38"
+};
+
+let currentMultiStateApp = null;
+
+window.openMultiStateModal = function (appId) {
+    const app = allApps.find(a => a.appId === appId);
+    if (!app) {
+        alert('Application not found');
+        return;
+    }
+    currentMultiStateApp = app;
+
+    // Populate state checkboxes
+    const stateContainer = document.getElementById('msr-state-list');
+    if (stateContainer) {
+        const appState = (app.data.state || '').toUpperCase();
+        let html = '';
+        for (const [sName, sCode] of Object.entries(window.STATE_CODE_MAP)) {
+            const isChecked = (appState.includes(sName) || sCode === '24' || sCode === '27') ? 'checked' : '';
+            html += `
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+                    <input type="checkbox" class="msr-state-checkbox" value="${sCode}" data-name="${sName}" ${isChecked} style="accent-color: #0ea5e9;" />
+                    <span>${sName} (${sCode})</span>
+                </label>
+            `;
+        }
+        stateContainer.innerHTML = html;
+    }
+
+    const modal = document.getElementById('multistate-modal');
+    if (modal) modal.classList.remove('hidden');
+};
+
+window.closeMultiStateModal = function () {
+    const modal = document.getElementById('multistate-modal');
+    if (modal) modal.classList.add('hidden');
+    currentMultiStateApp = null;
+};
+
+window.launchMultiStateAutomation = function () {
+    if (!currentMultiStateApp) return;
+
+    const checkedBoxes = Array.from(document.querySelectorAll('.msr-state-checkbox:checked'));
+    const selectedStateCodes = checkedBoxes.map(cb => cb.value);
+
+    if (selectedStateCodes.length === 0) {
+        alert('Please select at least one State for Multi-State Registration.');
+        return;
+    }
+
+    const aplCd = document.getElementById('msr-aplCd')?.value || '1219';
+    const typAR = document.getElementById('msr-typAR')?.value || 'TRP';
+    const cobz = document.getElementById('msr-cobz')?.value || 'PRO';
+    const secToken = document.getElementById('msr-secToken')?.value || 'M10260001219TRN';
+
+    const multiStateConfig = {
+        aplCd,
+        typAR,
+        cobz,
+        secToken,
+        stCds: selectedStateCodes
+    };
+
+    const appId = currentMultiStateApp.appId;
+    closeMultiStateModal();
+
+    window.startAutomationPipeline(appId, 'multistate', multiStateConfig);
+};
 
 window.registerApplication = async function (id) {
     const app = allApps.find(a => a.appId === id);

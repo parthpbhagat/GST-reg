@@ -24,11 +24,14 @@ function sendUpdate(status) {
 }
 
 let globalPage = null;
+let isExiting = false;
 setInterval(async () => {
-    if (globalPage) {
+    if (globalPage && !isExiting) {
         try {
-            const buffer = await globalPage.screenshot({ type: 'jpeg', quality: 30 });
-            console.log(`SCREENSHOT:${buffer.toString('base64')}`);
+            if (!globalPage.isClosed()) {
+                const buffer = await globalPage.screenshot({ type: 'jpeg', quality: 30 });
+                console.log(`SCREENSHOT:${buffer.toString('base64')}`);
+            }
         } catch (e) {
             // Ignore screenshot errors
         }
@@ -36,13 +39,11 @@ setInterval(async () => {
 }, 3000);
 
 process.on('uncaughtException', (err) => {
-    console.log(`[Runner Error]: UNCAUGHT EXCEPTION: ${err.stack}`);
-    process.exit(1);
+    console.error(`[Runner Error]: UNCAUGHT EXCEPTION: ${err ? (err.stack || err.message) : err}`);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.log(`[Runner Error]: UNHANDLED REJECTION: ${reason}`);
-    process.exit(1);
+    console.error(`[Runner Error]: UNHANDLED REJECTION: ${reason ? (reason.stack || reason.message || reason) : reason}`);
 });
 
 async function handleLocalityWarning(page) {
@@ -377,21 +378,40 @@ async function run() {
 
     sendUpdate('Navigating to official GST portal...');
 
-    // Launch headless browser
-    const browser = await chromium.launch({
+    // Launch headless browser (use system Chrome / Edge if available to avoid Windows AppControl DLL blocking)
+    const launchOptions = {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu'
+        ]
+    };
+    
+    // Check available browser channels
+    const fs = require('fs');
+    if (fs.existsSync('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')) {
+        launchOptions.channel = 'chrome';
+    } else if (fs.existsSync('C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe')) {
+        launchOptions.channel = 'msedge';
+    }
+
+    const browser = await chromium.launch(launchOptions);
+    const context = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        viewport: { width: 1280, height: 800 }
     });
-    const context = await browser.newContext();
     const page = await context.newPage();
     globalPage = page;
 
     try {
         if (automationMode === 'multistate') {
             sendUpdate('Navigating to GST Portal Multi-State Registration (/registration/msr)...');
-            await page.goto('https://reg.gst.gov.in/registration/msr', { waitUntil: 'domcontentloaded' });
+            await page.goto('https://reg.gst.gov.in/registration/msr', { waitUntil: 'domcontentloaded', timeout: 60000 });
         } else {
-            await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded' });
+            sendUpdate('Navigating to official GST portal...');
+            await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
         }
 
         let trnText = '';
@@ -2445,8 +2465,9 @@ async function run() {
         sendUpdate(`Error: ${e.stack || e.message}`);
         console.error(`[Runner Error Stack]:\n${e.stack || e.message}`);
     } finally {
+        isExiting = true;
         try {
-            if (browser && browser.isConnected()) {
+            if (browser && browser.isConnected() && page && !page.isClosed()) {
                 // Keep the browser open for 30 minutes so the user can manually interact
                 sendUpdate('Browser will remain open for 30 minutes for manual interaction.');
                 await page.waitForTimeout(1800000);

@@ -1532,21 +1532,26 @@ window.renderAdminDashboard = async function () {
 
         let actionButtons = '';
         if (isUserAdmin) {
-            actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-right: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>`;
+            actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-right: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
+                             <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-right: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>`;
             if (app.status === 'Pending') {
                 actionButtons += `<button class="btn accent" style="background: #22c55e; border-color: #22c55e;" onclick="updateAppStatus('${app.appId}', 'Accepted')">Accept</button>
                          <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-left: 5px;" onclick="updateAppStatus('${app.appId}', 'Rejected')">Reject</button>`;
             } else if (app.status === 'Accepted' || app.status === 'Registered') {
                 actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6;" onclick="registerApplication('${app.appId}')">Register Automatically</button>
                          <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
+                         <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>
                          <button class="btn accent" style="margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
                          <button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>`;
             } else if (app.status === 'Rejected') {
-                actionButtons = `<button class="btn accent" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>`;
+                actionButtons = `<button class="btn accent" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
+                         <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')">📋 Duplicate / Multi-State</button>`;
             }
         } else {
             actionButtons = `
-                <button class="btn accent" style="background: #3b82f6; border-color: #3b82f6;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
+                <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
+                <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>
+                <button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
                 <button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>
                 <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">🗑️ Delete Application</button>
             `;
@@ -1629,6 +1634,7 @@ window.renderAdminDashboard = async function () {
                         <td style="padding: 10px;">
                             <button class="btn" style="padding: 4px 10px; font-size: 13px;" onclick="previewApplication('${app.appId}')">Preview</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #0ea5e9; border: none; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
+                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #8b5cf6; border: none; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate application for Multi-State Registration">📋 Duplicate</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #3b82f6; border: none; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #6366f1; border: none; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Declaration Form</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #ef4444; border: none; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">Delete</button>
@@ -1674,6 +1680,104 @@ window.deleteApplication = async function (id) {
         if (typeof window.hideLoader === 'function') window.hideLoader();
         console.error("Delete error:", e);
         alert('Failed to delete application: ' + e.message);
+    }
+};
+
+window.duplicateApplication = async function (id) {
+    const app = allApps.find(a => a.appId === id);
+    if (!app) {
+        alert('Application not found');
+        return;
+    }
+
+    const confirmClone = confirm(
+        `Are you sure you want to duplicate Application "${id}" (${app.data?.legalName || 'N/A'}) for Multi-State Registration?\n\n` +
+        `This will create a new copy with all business data, promoters, and documents preserved, ready for Multi-State processing.`
+    );
+    if (!confirmClone) return;
+
+    if (typeof window.showLoader === 'function') window.showLoader();
+
+    try {
+        const newAppId = 'APP-' + Math.floor(100000 + Math.random() * 900000);
+        const clonedData = JSON.parse(JSON.stringify(app.data || {}));
+
+        // Clean up previous registration-specific identifiers and TRNs
+        delete clonedData._appId;
+        delete clonedData._originalStatus;
+        delete clonedData.trn;
+        delete clonedData.masterTrn;
+        delete clonedData.stateTrns;
+
+        let token = null;
+        if (typeof window.getFreshToken === 'function') {
+            token = await window.getFreshToken();
+        }
+        if (!token) token = localStorage.getItem('sb_token') || 'admin-super-secret-token-xyz';
+
+        const userEmail = app.userEmail || clonedData.email || clonedData.ppob_email || undefined;
+
+        const res = await fetch(`${API_BASE_URL}/api/applications`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({
+                appId: newAppId,
+                data: clonedData,
+                status: 'Accepted',
+                userEmail: userEmail
+            })
+        });
+
+        if (typeof window.hideLoader === 'function') window.hideLoader();
+
+        if (res.ok) {
+            // Re-fetch all applications so the list is fresh
+            try {
+                const getRes = await fetch(`${API_BASE_URL}/api/applications`, {
+                    headers: { "Authorization": "Bearer " + token }
+                });
+                if (getRes.ok) {
+                    allApps = await getRes.json();
+                } else {
+                    allApps.unshift({
+                        appId: newAppId,
+                        status: 'Accepted',
+                        date: new Date().toISOString(),
+                        trn: null,
+                        userEmail: userEmail || '-',
+                        data: clonedData
+                    });
+                }
+            } catch (err) {
+                console.error("Error refreshing list:", err);
+            }
+
+            // Return to applications dashboard if previewing
+            currentPreviewAppId = null;
+            renderAdminDashboard();
+
+            const actionChoice = confirm(
+                `🎉 Application duplicated successfully as ${newAppId}!\n\n` +
+                `👉 Click [OK] to Open & EDIT/UPDATE the application details now.\n` +
+                `👉 Click [Cancel] to launch Multi-State Registration directly.`
+            );
+
+            if (actionChoice) {
+                editApplication(newAppId);
+            } else {
+                openMultiStateModal(newAppId);
+            }
+        } else {
+            const errData = await res.json().catch(() => ({}));
+            alert('Failed to duplicate application: ' + (errData.error || res.statusText));
+        }
+    } catch (e) {
+        if (typeof window.hideLoader === 'function') window.hideLoader();
+        console.error("Duplicate error:", e);
+        alert('Failed to duplicate application: ' + e.message);
     }
 };
 

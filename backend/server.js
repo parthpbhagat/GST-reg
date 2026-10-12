@@ -162,7 +162,7 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
 
         const userEmail = (req.user && req.user.email) || req.body.userEmail || (data && data.userEmail) || (data && data.email) || null;
         const userId = (req.user && req.user.id) || null;
-        const status = 'Pending'; // Default status
+        const status = req.body.status || 'Pending'; // Default status
 
         const { error } = await supabase.from('applications').upsert({
             appId: appId,

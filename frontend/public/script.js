@@ -883,63 +883,128 @@ function renderSidebar() {
     }
 }
 
-function validateStep(currentStep) {
-    if (currentStep === 0) {
-        if (!form.pan || !form.legalName || !form.state || !form.district || !form.reasonToObtainRegistration || !form.dateOfLiability) {
-            alert('Please fill all mandatory fields (marked with *) in Business Details before proceeding.');
-            return false;
-        }
-    } else if (currentStep === 1) {
-        let promoterKeys = Object.keys(window.form).filter(k => k.match(/^p\d+$/));
-        let hasValidPromoter = false;
-        for (let key of promoterKeys) {
-            let p = window.form[key];
-            if (p && p.firstName && p.mobile && p.pan) {
-                hasValidPromoter = true;
-                break;
-            }
-        }
-        if (!hasValidPromoter) {
-            alert('Please add at least one Promoter with mandatory fields (First Name, PAN, Mobile) before proceeding.');
-            return false;
-        }
-    } else if (currentStep === 2) {
-        let hasPrimary = false;
-        for (let k in window.form) {
-            if (window.form[k] && window.form[k].primary === true) hasPrimary = true;
-        }
-        if (!hasPrimary) {
-            alert('Please add a Primary Authorized Signatory before proceeding.');
-            return false;
-        }
-    } else if (currentStep === 4) {
-        if (!form.ppob_pincode || !form.ppob_state || !form.ppob_district || !form.ppob_city || !form.ppob_natureOfPossession) {
-            alert('Please fill all mandatory fields for Principal Place of Business.');
-            return false;
-        }
-    }
-    return true;
-}
-
-function setStep(newStep) {
-    if (newStep === step + 1) { // Only block on Next button
-        if (!validateStep(step)) return;
-    }
-
-    if (newStep === 2) {
-        let hasPromoterAuthSig = false;
-        for (let k in window.form) {
-            if (k.match(/^p\d+$/) && window.form[k].alsoAuthorizedSignatory) {
-                hasPromoterAuthSig = true;
-                break;
-            }
-        }
-        if (hasPromoterAuthSig) {
-            isAuthSigListView = true;
-            window.isViewingPromoter = false;
-        }
-    }
-
+function validateStep(targetStep) {
+    const f = window.form || {};
+
+    if (targetStep === 0) {
+        if (!f.pan || !f.pan.trim()) {
+            alert('Please enter PAN in Business Details (Step 1).');
+            return false;
+        }
+        if (!f.legalName || !f.legalName.trim()) {
+            alert('Please enter Legal Name in Business Details (Step 1).');
+            return false;
+        }
+        if (!f.state || !f.state.trim()) {
+            alert('Please select State in Business Details (Step 1).');
+            return false;
+        }
+        if (!f.district || !f.district.trim()) {
+            alert('Please select District in Business Details (Step 1).');
+            return false;
+        }
+        if (!f.reasonToObtainRegistration || !f.reasonToObtainRegistration.trim()) {
+            alert('Please select Reason to Obtain Registration in Business Details (Step 1).');
+            return false;
+        }
+        if (!f.dateOfCommencement) {
+            alert('Please enter Date of Commencement of Business in Business Details (Step 1).');
+            return false;
+        }
+        if (!f.dateOfLiability) {
+            alert('Please enter Date on which liability arises in Business Details (Step 1).');
+            return false;
+        }
+    } else if (targetStep === 1) {
+        const promoterKeys = Object.keys(f).filter(k => k.match(/^p\d+$/));
+        let validPromoterFound = false;
+        for (const k of promoterKeys) {
+            const p = f[k];
+            if (p && p.firstName && p.firstName.trim() && p.pan && p.pan.trim() && p.mobile && p.mobile.trim()) {
+                validPromoterFound = true;
+                break;
+            }
+        }
+        if (!validPromoterFound) {
+            alert('Please add at least one Promoter / Partner with mandatory details (First Name, PAN, Mobile) in Step 2.');
+            return false;
+        }
+    } else if (targetStep === 2) {
+        let hasPrimary = false;
+        for (const k in f) {
+            if ((k.match(/^a\d+$/) || k.match(/^p\d+$/)) && f[k] && f[k].primary === true) {
+                if (f[k].firstName && f[k].firstName.trim()) {
+                    hasPrimary = true;
+                    break;
+                }
+            }
+        }
+        if (!hasPrimary) {
+            alert('Please designate at least one Primary Authorized Signatory with valid details in Step 3.');
+            return false;
+        }
+    } else if (targetStep === 4) {
+        if (!f.ppob_pincode || !f.ppob_pincode.trim()) {
+            alert('Please enter PIN Code for Principal Place of Business in Step 5.');
+            return false;
+        }
+        if (!f.ppob_state || !f.ppob_state.trim()) {
+            alert('Please select State for Principal Place of Business in Step 5.');
+            return false;
+        }
+        if (!f.ppob_district || !f.ppob_district.trim()) {
+            alert('Please select District for Principal Place of Business in Step 5.');
+            return false;
+        }
+        if (!f.ppob_city || !f.ppob_city.trim()) {
+            alert('Please enter City / Town for Principal Place of Business in Step 5.');
+            return false;
+        }
+        if (!f.ppob_natureOfPossession || !f.ppob_natureOfPossession.trim()) {
+            alert('Please select Nature of Possession of Premises in Step 5.');
+            return false;
+        }
+        const hasNature = f.ppob_natureOfBusiness && Object.values(f.ppob_natureOfBusiness).some(v => v === true);
+        if (!hasNature) {
+            alert('Please select at least one Nature of Business Activity in Step 5.');
+            return false;
+        }
+    }
+    return true;
+}
+
+window.validateFullForm = function() {
+    for (let s = 0; s <= 4; s++) {
+        if (s === 3) continue; // Authorized representative is optional
+        if (!validateStep(s)) {
+            setStep(s);
+            return false;
+        }
+    }
+    return true;
+};
+
+function setStep(newStep) {
+    if (newStep > step) {
+        for (let s = step; s < newStep; s++) {
+            if (!validateStep(s)) return;
+        }
+    }
+
+    if (newStep === 2) {
+        let hasPromoterAuthSig = false;
+        for (let k in window.form) {
+            if (k.match(/^p\d+$/) && window.form[k].alsoAuthorizedSignatory) {
+                hasPromoterAuthSig = true;
+                break;
+            }
+        }
+        if (hasPromoterAuthSig) {
+            isAuthSigListView = true;
+            window.isViewingPromoter = false;
+        }
+    }
+
     step = newStep;
     const header = document.querySelector('header.top');
     if (header) {
@@ -1107,9 +1172,12 @@ window.updateForm = function (key, value) {
     }
 }
 
-window.showPreview = function () {
-    isPreview = true;
-    renderContent();
+window.showPreview = function () {
+    if (!window.validateFullForm()) {
+        return;
+    }
+    isPreview = true;
+    renderContent();
 };
 
 window.addGoodsItem = function () {
@@ -1152,14 +1220,17 @@ window.removeServicesItem = function (index) {
     }
 };
 
-window.submitApplication = async function () {
-    const btn = (window.event && window.event.target) || document.querySelector('button[onclick*="submitApplication"]');
-    const originalText = btn ? btn.innerText : 'Submit Application';
-    try {
-        console.log("Submitting application...");
-        if (btn) {
-            btn.disabled = true;
-            btn.innerText = 'Submitting Application... Please wait...';
+window.submitApplication = async function () {
+    if (typeof window.validateFullForm === 'function' && !window.validateFullForm()) {
+        return;
+    }
+    const btn = (window.event && window.event.target) || document.querySelector('button[onclick*="submitApplication"]');
+    const originalText = btn ? btn.innerText : 'Submit Application';
+    try {
+        console.log("Submitting application...");
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = 'Submitting Application... Please wait...';
         }
 
         const appId = form._appId || 'APP-' + Math.floor(100000 + Math.random() * 900000);

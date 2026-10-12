@@ -155,6 +155,11 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: 'appId and data are required' });
         }
 
+        // Validate mandatory business details
+        if (!data.pan || !data.legalName || !data.state || !data.district) {
+            return res.status(400).json({ error: 'Incomplete application: PAN, Legal Name, State, and District are required.' });
+        }
+
         const userEmail = (req.user && req.user.email) || req.body.userEmail || (data && data.userEmail) || (data && data.email) || null;
         const userId = (req.user && req.user.id) || null;
         const status = 'Pending'; // Default status

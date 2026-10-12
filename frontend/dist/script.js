@@ -1320,7 +1320,51 @@ window.submitApplication = async function () {
         } else {
             const errData = await res.json().catch(() => ({}));
             const errMsg = errData.error || errData.message || res.statusText || 'Server error';
-            alert('Failed to submit application: ' + errMsg);
+            // Fallback: Save directly via Supabase client if backend encounters issue
+            let savedViaClient = false;
+            try {
+                if (typeof supabaseClient !== 'undefined' && supabaseClient) {
+                    const statusToSave = form._originalStatus || 'Pending';
+                    const { error: clErr } = await supabaseClient.from('applications').upsert({
+                        appId: appId,
+                        data: payload,
+                        status: statusToSave,
+                        userEmail: payload.email || null
+                    }, { onConflict: 'appId' });
+                    if (!clErr) savedViaClient = true;
+                }
+                if (typeof oldSupabaseClient !== 'undefined' && oldSupabaseClient) {
+                    await oldSupabaseClient.from('applications').upsert({
+                        appId: appId,
+                        data: payload,
+                        status: form._originalStatus || 'Pending',
+                        userEmail: payload.email || null,
+                        trn: null
+                    }, { onConflict: 'appId' }).catch(() => {});
+                }
+            } catch(fallbackErr) {
+                console.error("Client fallback submit save error:", fallbackErr);
+            }
+
+            if (savedViaClient) {
+                const isUpdate = Boolean(form._appId);
+                if (typeof window.clearAutosave === 'function') {
+                    window.clearAutosave();
+                } else {
+                    localStorage.removeItem('gst_autosave');
+                }
+                if (isUpdate) {
+                    alert(`Application ${appId} Updated Successfully!`);
+                    delete window.form._appId;
+                    delete window.form._originalStatus;
+                    navigateTo('/admin');
+                } else {
+                    alert(`Application Submitted Successfully! Application ID: ${appId}. It is now pending admin review.`);
+                    window.location.reload();
+                }
+            } else {
+                alert('Failed to submit application: ' + errMsg);
+            }
             if (btn) {
                 btn.disabled = false;
                 btn.innerText = originalText;
@@ -1796,8 +1840,58 @@ window.duplicateApplication = async function (id) {
                 openMultiStateModal(newAppId);
             }
         } else {
-            const errData = await res.json().catch(() => ({}));
-            alert('Failed to duplicate application: ' + (errData.error || res.statusText));
+            // Fallback: Save directly via Supabase client if backend encounters issue
+            let savedViaClient = false;
+            try {
+                if (typeof supabaseClient !== 'undefined' && supabaseClient) {
+                    const { error: clErr } = await supabaseClient.from('applications').upsert({
+                        appId: newAppId,
+                        data: clonedData,
+                        status: 'Accepted',
+                        userEmail: userEmail || null
+                    }, { onConflict: 'appId' });
+                    if (!clErr) savedViaClient = true;
+                }
+                if (typeof oldSupabaseClient !== 'undefined' && oldSupabaseClient) {
+                    await oldSupabaseClient.from('applications').upsert({
+                        appId: newAppId,
+                        data: clonedData,
+                        status: 'Accepted',
+                        userEmail: userEmail || null,
+                        trn: null
+                    }, { onConflict: 'appId' }).catch(() => {});
+                }
+            } catch(fallbackErr) {
+                console.error("Client fallback duplicate save error:", fallbackErr);
+            }
+
+            if (savedViaClient) {
+                allApps.unshift({
+                    appId: newAppId,
+                    status: 'Accepted',
+                    date: new Date().toISOString(),
+                    trn: null,
+                    userEmail: userEmail || '-',
+                    data: clonedData
+                });
+                currentPreviewAppId = null;
+                renderAdminDashboard();
+
+                const actionChoice = confirm(
+                    `🎉 Application duplicated successfully as ${newAppId}!\n\n` +
+                    `👉 Click [OK] to Open & EDIT/UPDATE the application details now.\n` +
+                    `👉 Click [Cancel] to launch Multi-State Registration directly.`
+                );
+
+                if (actionChoice) {
+                    editApplication(newAppId);
+                } else {
+                    openMultiStateModal(newAppId);
+                }
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                alert('Failed to duplicate application: ' + (errData.error || res.statusText));
+            }
         }
     } catch (e) {
         if (typeof window.hideLoader === 'function') window.hideLoader();

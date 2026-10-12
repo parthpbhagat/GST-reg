@@ -148,29 +148,39 @@ app.get('/api/hsn/:code', (req, res) => {
 
 // POST /api/applications - Submit a new application
 app.post('/api/applications', authenticateToken, async (req, res) => {
-    const { appId, data } = req.body;
+    try {
+        const { appId, data } = req.body;
 
-    if (!appId || !data) {
-        return res.status(400).json({ error: 'appId and data are required' });
+        if (!appId || !data) {
+            return res.status(400).json({ error: 'appId and data are required' });
+        }
+
+        const userEmail = (req.user && req.user.email) || req.body.userEmail || (data && data.userEmail) || (data && data.email) || null;
+        const userId = (req.user && req.user.id) || null;
+        const status = 'Pending'; // Default status
+
+        const { error } = await supabase.from('applications').upsert({
+            appId: appId,
+            data: data,
+            status: status,
+            userEmail: userEmail
+        }, { onConflict: 'appId' });
+
+        try {
+            await oldSupabase.from('applications').upsert({ appId, data, status, userEmail, trn: null });
+        } catch (oldErr) {
+            console.error('Error syncing to oldSupabase:', oldErr.message || oldErr);
+        }
+
+        if (error) {
+            console.error('Error saving application to Supabase:', error.message);
+            return res.status(500).json({ error: 'Failed to save application: ' + error.message });
+        }
+        res.status(201).json({ message: 'Application submitted successfully', appId });
+    } catch (err) {
+        console.error('Unhandled error in POST /api/applications:', err);
+        res.status(500).json({ error: 'Failed to save application: ' + (err.message || err) });
     }
-
-    const userEmail = req.user.email || req.body.userEmail || data.userEmail || null;
-    const userId = req.user.id;
-    const status = 'Pending'; // Default status
-
-    const { error } = await supabase.from('applications').upsert({
-        appId: appId,
-        data: data,
-        status: status,
-        userEmail: userEmail
-    }, { onConflict: 'appId' });
-    await oldSupabase.from('applications').upsert({ appId, data, status, userEmail, trn: null }).catch(e=>console.error(e));
-
-    if (error) {
-        console.error('Error saving application:', error.message);
-        return res.status(500).json({ error: 'Failed to save application: ' + error.message });
-    }
-    res.status(201).json({ message: 'Application submitted successfully', appId });
 });
 
 // GET /api/applications - Get all applications for logged-in user
@@ -289,9 +299,13 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
     }
     const { error } = await updateQuery;
 
-    let oldUpdateQuery = oldSupabase.from('applications').update({ status, data: appData }).eq('appId', id);
-    if (userEmail) oldUpdateQuery = oldUpdateQuery.eq('userEmail', userEmail);
-    await oldUpdateQuery.catch(e=>console.error(e));
+    try {
+        let oldUpdateQuery = oldSupabase.from('applications').update({ status, data: appData }).eq('appId', id);
+        if (req.user && req.user.email !== 'admin@example.com') oldUpdateQuery = oldUpdateQuery.eq('userEmail', req.user.email);
+        await oldUpdateQuery;
+    } catch (e) {
+        console.error('Error updating status in oldSupabase:', e.message);
+    }
 
     if (error) {
         console.error('Error updating status:', error.message);

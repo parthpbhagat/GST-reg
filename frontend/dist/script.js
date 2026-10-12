@@ -1674,7 +1674,32 @@ window.deleteApplication = async function (id) {
             renderAdminDashboard();
         } else {
             const errData = await res.json().catch(() => ({}));
-            alert('Failed to delete application: ' + (errData.error || res.statusText));
+            // Fallback: Delete directly via Supabase client if backend encounters issue
+            let deletedViaClient = false;
+            try {
+                if (typeof supabaseClient !== 'undefined' && supabaseClient) {
+                    const { error: clErr } = await supabaseClient.from('applications').delete().eq('appId', id);
+                    if (!clErr) deletedViaClient = true;
+                }
+                if (typeof oldSupabaseClient !== 'undefined' && oldSupabaseClient) {
+                    await oldSupabaseClient.from('applications').delete().eq('appId', id).catch(() => {});
+                }
+            } catch(fallbackErr) {
+                console.error("Client fallback delete error:", fallbackErr);
+            }
+
+            if (deletedViaClient) {
+                if (typeof allApps !== 'undefined' && Array.isArray(allApps)) {
+                    allApps = allApps.filter(a => a.appId !== id);
+                }
+                alert(`Application ${id} deleted successfully.`);
+                if (typeof currentPreviewAppId !== 'undefined' && currentPreviewAppId === id) {
+                    currentPreviewAppId = null;
+                }
+                renderAdminDashboard();
+            } else {
+                alert('Failed to delete application: ' + (errData.error || res.statusText));
+            }
         }
     } catch (e) {
         if (typeof window.hideLoader === 'function') window.hideLoader();

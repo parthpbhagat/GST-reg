@@ -409,6 +409,16 @@ async function run() {
         if (automationMode === 'multistate') {
             sendUpdate('Navigating to GST Portal Multi-State Registration (/registration/msr)...');
             await page.goto('https://reg.gst.gov.in/registration/msr', { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await page.waitForTimeout(3000);
+            sendUpdate('Submitting Multi-State Common Info payload directly to API (submitcommoninfo)...');
+            const msResult = await submitMultiStateCommonInfo(page, data, multiStateConfig);
+            if (msResult && msResult.ok) {
+                sendUpdate('Multi-State Registration processed successfully!');
+                sendUpdate('COMPLETED');
+                return;
+            } else {
+                sendUpdate('API submission completed or skipped, continuing workflow...');
+            }
         } else {
             sendUpdate('Navigating to official GST portal...');
             await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -436,7 +446,7 @@ async function run() {
         //   APLOT  → Other Notified Persons
         //   REGOI  → Online Services (OIDAR)
         //   RTTR1  → GST Practitioner
-        let taxpayerTypeLabel = data.taxpayerType || '';
+        let taxpayerTypeLabel = data.taxpayerType || 'Taxpayer';
         let taxpayerTypeValue = null;
 
         const taxpayerTypeMap = {

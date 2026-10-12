@@ -1987,7 +1987,7 @@ window.saveMissingFields = async function () {
     window.startAutomationPipeline(app.appId);
 };
 
-window.startAutomationPipeline = async function (id) {
+window.startAutomationPipeline = async function (id, mode = 'regular', multiStateConfig = null) {
     navigateTo('/automation');
 
     document.getElementById('automation-logs').innerHTML = '';
@@ -2090,7 +2090,7 @@ window.startAutomationPipeline = async function (id) {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${(await window.getFreshToken())}`
                     },
-                    body: JSON.stringify({ appId: id })
+                    body: JSON.stringify({ appId: id, mode: mode, multiStateConfig: multiStateConfig })
                 });
             } catch (e) { }
         } catch (e) {

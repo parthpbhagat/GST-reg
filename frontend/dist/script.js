@@ -953,8 +953,13 @@ function setStep(newStep) {
 
     if (typeof window.showLoader === 'function') window.showLoader();
     setTimeout(() => {
-        renderContent();
-        if (typeof window.hideLoader === 'function') window.hideLoader();
+        try {
+            renderContent();
+        } catch (e) {
+            console.error("renderContent error:", e);
+        } finally {
+            if (typeof window.hideLoader === 'function') window.hideLoader();
+        }
     }, 50);
 }
 
@@ -2350,6 +2355,21 @@ window.showPromoterList = function () {
 function renderContent() {
     const content = document.getElementById('wizard-content-inner');
     if (!content) return;
+
+    let editBannerHtml = '';
+    if (window.form && window.form._appId) {
+        editBannerHtml = `
+        <div id="edit-mode-banner" style="background: #eff6ff; border: 1.5px solid #3b82f6; border-radius: 8px; padding: 12px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(59, 130, 246, 0.1);">
+            <div>
+                <strong style="color: #1e40af; font-size: 15px;">✏️ EDITING APPLICATION: ${window.form._appId}</strong>
+                <p style="margin: 2px 0 0 0; font-size: 13px; color: #475569;">You are editing an existing application. Modify any fields and click Save.</p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn accent" style="background: #10b981; border-color: #10b981; font-size: 13px; padding: 6px 14px; color: white;" onclick="submitApplication()">💾 Save / Update Application</button>
+                <button class="btn ghost" style="font-size: 13px; padding: 6px 14px; background: white;" onclick="cancelEditApplication()">Cancel</button>
+            </div>
+        </div>`;
+    }
 
     if (isPreview) {
         let summaryHtml = `<section class="card"><h2>Application Preview</h2><div class="summary-content" style="text-align: left; overflow-y: visible; font-size: 14px; margin-bottom: 20px; background: #f8fafc; padding: 15px; border-radius: var(--radius-md); border: 1px solid var(--border-color); ">`;
@@ -4047,8 +4067,13 @@ window.handleRoute = function () {
         if (typeof renderContent === 'function') {
             if (typeof window.showLoader === 'function') window.showLoader();
             setTimeout(() => {
-                renderContent();
-                if (typeof window.hideLoader === 'function') window.hideLoader();
+                try {
+                    renderContent();
+                } catch (e) {
+                    console.error("handleRoute renderContent error:", e);
+                } finally {
+                    if (typeof window.hideLoader === 'function') window.hideLoader();
+                }
             }, 50);
         }
     }

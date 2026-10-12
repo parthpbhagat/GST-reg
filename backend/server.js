@@ -314,49 +314,97 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
     res.json({ message: 'Status updated successfully', appId: id, status });
 });
 
+// PUT /api/applications/:id - Update an existing application's data
+app.put('/api/applications/:id', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data, status } = req.body;
+
+        if (!data) {
+            return res.status(400).json({ error: 'data is required to update application' });
+        }
+
+        const updatePayload = { data };
+        if (status) updatePayload.status = status;
+
+        let updateQuery = supabase.from('applications').update(updatePayload).eq('appId', id);
+        if (req.user && req.user.email && req.user.email !== 'admin@example.com') {
+            updateQuery = updateQuery.or(`userEmail.eq.${req.user.email},userEmail.is.null`);
+        }
+        const { error } = await updateQuery;
+
+        try {
+            let oldUpdate = oldSupabase.from('applications').update(updatePayload).eq('appId', id);
+            await oldUpdate;
+        } catch(oldErr) {
+            console.error('Error updating oldSupabase:', oldErr.message || oldErr);
+        }
+
+        if (error) {
+            console.error('Error updating application in Supabase:', error.message);
+            return res.status(500).json({ error: 'Failed to update application: ' + error.message });
+        }
+
+        res.json({ message: 'Application updated successfully', appId: id });
+    } catch (err) {
+        console.error('Unhandled error in PUT /api/applications/:id:', err);
+        res.status(500).json({ error: 'Server error: ' + (err.message || err) });
+    }
+});
+
 // DELETE /api/applications/:id - Delete an application
 app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
-    const { id } = req.params;
+    try {
+        const { id } = req.params;
 
-    // First fetch the application to get the legalName and delete its folder
-    let fetchQuery = supabase.from('applications').select('*').eq('appId', id);
-    if (req.user.email !== 'admin@example.com') {
-        fetchQuery = fetchQuery.eq('userEmail', req.user.email);
-    }
-    const { data: row, error: fetchErr } = await fetchQuery.single();
-
-    if (!fetchErr && row) {
-        try {
-            const appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-            const legalName = appData.legalName || id;
-            const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const fs = require('fs');
-            const path = require('path');
-            const dirPath = path.join(__dirname, 'data', safeLegalName);
-
-            if (fs.existsSync(dirPath)) {
-                fs.rmSync(dirPath, { recursive: true, force: true });
-            }
-        } catch (e) {
-            console.error('Error deleting application folder:', e);
+        // First fetch the application to get the legalName and delete its folder
+        let fetchQuery = supabase.from('applications').select('*').eq('appId', id);
+        if (req.user && req.user.email && req.user.email !== 'admin@example.com') {
+            fetchQuery = fetchQuery.or(`userEmail.eq.${req.user.email},userEmail.is.null`);
         }
-    }
+        const { data: row } = await fetchQuery.single();
 
-    // Then delete from the database
-    let deleteQuery = supabase.from('applications').delete({ count: 'exact' }).eq('appId', id);
-    if (req.user.email !== 'admin@example.com') {
-        deleteQuery = deleteQuery.eq('userEmail', req.user.email);
-    }
-    const { error: deleteErr, count } = await deleteQuery;
+        if (row) {
+            try {
+                const appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                const legalName = (appData && appData.legalName) || id;
+                const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                const fs = require('fs');
+                const path = require('path');
+                const dirPath = path.join(__dirname, 'data', safeLegalName);
 
-    if (deleteErr) {
-        console.error('Error deleting application:', deleteErr.message);
-        return res.status(500).json({ error: 'Failed to delete application' });
+                if (fs.existsSync(dirPath)) {
+                    fs.rmSync(dirPath, { recursive: true, force: true });
+                }
+            } catch (e) {
+                console.error('Error deleting application folder:', e);
+            }
+        }
+
+        // Then delete from the main database
+        let deleteQuery = supabase.from('applications').delete({ count: 'exact' }).eq('appId', id);
+        if (req.user && req.user.email && req.user.email !== 'admin@example.com') {
+            deleteQuery = deleteQuery.or(`userEmail.eq.${req.user.email},userEmail.is.null`);
+        }
+        const { error: deleteErr } = await deleteQuery;
+
+        // Also delete from oldSupabase so it doesn't reappear on dashboard refresh
+        try {
+            await oldSupabase.from('applications').delete().eq('appId', id);
+        } catch(oldErr) {
+            console.error('Error deleting from oldSupabase:', oldErr.message || oldErr);
+        }
+
+        if (deleteErr) {
+            console.error('Error deleting application:', deleteErr.message);
+            return res.status(500).json({ error: 'Failed to delete application: ' + deleteErr.message });
+        }
+
+        res.json({ message: 'Application and associated files deleted successfully', appId: id });
+    } catch (err) {
+        console.error('Unhandled error in DELETE /api/applications/:id:', err);
+        res.status(500).json({ error: 'Server error: ' + (err.message || err) });
     }
-    if (count === 0) {
-        return res.status(404).json({ error: 'Application not found or unauthorized' });
-    }
-    res.json({ message: 'Application and associated files deleted successfully', appId: id });
 });
 
 // PUT /api/applications/:id/trn - Save TRN

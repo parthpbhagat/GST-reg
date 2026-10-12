@@ -1214,13 +1214,21 @@ window.submitApplication = async function () {
         });
 
         if (res.ok) {
+            const isUpdate = Boolean(form._appId);
             if (typeof window.clearAutosave === 'function') {
                 window.clearAutosave();
             } else {
                 localStorage.removeItem('gst_autosave');
             }
-            alert(`Application Submitted Successfully! Application ID: ${appId}. It is now pending admin review.`);
-            window.location.reload();
+            if (isUpdate) {
+                alert(`Application ${appId} Updated Successfully!`);
+                delete window.form._appId;
+                delete window.form._originalStatus;
+                navigateTo('/admin');
+            } else {
+                alert(`Application Submitted Successfully! Application ID: ${appId}. It is now pending admin review.`);
+                window.location.reload();
+            }
         } else {
             const errData = await res.json().catch(() => ({}));
             const errMsg = errData.error || errData.message || res.statusText || 'Server error';
@@ -1404,7 +1412,8 @@ window.renderAdminDashboard = async function () {
 
         let actionButtons = '';
         if (app.status === 'Pending') {
-            actionButtons = `<button class="btn accent" style="background: #22c55e; border-color: #22c55e;" onclick="updateAppStatus('${app.appId}', 'Accepted')">Accept</button>
+            actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-right: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
+                     <button class="btn accent" style="background: #22c55e; border-color: #22c55e;" onclick="updateAppStatus('${app.appId}', 'Accepted')">Accept</button>
                      <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white;" onclick="updateAppStatus('${app.appId}', 'Rejected')">Reject</button>`;
         } else if (app.status === 'Accepted' || app.status === 'Registered') {
             actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6;" onclick="registerApplication('${app.appId}')">Register Automatically</button>
@@ -1483,6 +1492,7 @@ window.renderAdminDashboard = async function () {
                         <td style="padding: 10px;"><span style="padding: 2px 6px; border-radius: 4px; font-size: 12px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span></td>
                         <td style="padding: 10px;">
                             <button class="btn" style="padding: 4px 10px; font-size: 13px;" onclick="previewApplication('${app.appId}')">Preview</button>
+                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #3b82f6; border: none; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #6366f1; border: none; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Declaration Form</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #ef4444; border: none; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">Delete</button>
                         </td>
@@ -1501,16 +1511,32 @@ window.previewApplication = function (id) {
 };
 
 window.deleteApplication = async function (id) {
-    if (!confirm('Are you sure you want to delete this application permanently?')) return;
+    if (!confirm(`Are you sure you want to permanently delete application ${id}?`)) return;
     try {
-        await fetch(`${API_BASE_URL}/api/applications/${id}`, {
+        if (typeof window.showLoader === 'function') window.showLoader();
+        const res = await fetch(`${API_BASE_URL}/api/applications/${id}`, {
             method: 'DELETE',
             headers: { "Authorization": "Bearer " + (await window.getFreshToken()) }
         });
-        renderAdminDashboard();
+        if (typeof window.hideLoader === 'function') window.hideLoader();
+
+        if (res.ok) {
+            if (typeof allApps !== 'undefined' && Array.isArray(allApps)) {
+                allApps = allApps.filter(a => a.appId !== id);
+            }
+            alert(`Application ${id} deleted successfully.`);
+            if (typeof currentPreviewAppId !== 'undefined' && currentPreviewAppId === id) {
+                currentPreviewAppId = null;
+            }
+            renderAdminDashboard();
+        } else {
+            const errData = await res.json().catch(() => ({}));
+            alert('Failed to delete application: ' + (errData.error || res.statusText));
+        }
     } catch (e) {
-        console.error(e);
-        alert('Failed to delete application');
+        if (typeof window.hideLoader === 'function') window.hideLoader();
+        console.error("Delete error:", e);
+        alert('Failed to delete application: ' + e.message);
     }
 };
 
@@ -1991,37 +2017,59 @@ window.copyTrn = function () {
 
 window.editApplication = function (id) {
     const app = allApps.find(a => a.appId === id);
-    if (app) {
-        const defaultForm = {
-            goods_hsn: [], goods_sac: [],
-            taxpayerType: '', legalName: '', tradeName: '', pan: '', email: '', mobile: '', state: '', district: '',
-            businessConstitution: '', dateOfCommencement: '', dateOfLiability: '', reasonToObtainRegistration: '', businessDistrict: '',
-            rule14A: '',
-            existingRegistrationType: '', existingRegistrationNo: '', existingRegistrationDate: '',
-            proofOfConstitutionType: '', proofOfConstitutionFile: '', documentForTradeNameFile: '',
-            ppob_building: '', ppob_flatNo: '', ppob_floor: '', ppob_street: '', ppob_locality: '', ppob_city: '',
-            ppob_state: '', ppob_district: '', ppob_pincode: '', ppob_country: 'India', ppob_landmark: '', ppob_latitude: '', ppob_longitude: '',
-            ppob_stateJurisdiction: '', ppob_commissionerate: '', ppob_division: '', ppob_range: '',
-            ppob_email: '', ppob_stdCode: '', ppob_telephone: '', ppob_mobile: '', ppob_faxStdCode: '', ppob_fax: '',
-            ppob_natureOfPossession: '', ppob_doc: '', ppob_docFile: '',
-            ppob_natureOfBusiness: { bondedWarehouse: false, factoryManufacturing: false, leasingBusiness: false, retailBusiness: false, worksContract: false, eouStpEhtp: false, import: false, officeSaleOffice: false, warehouseDepot: false, others: false, export: false, supplierOfServices: false, recipientOfGoodsOrServices: false, wholesaleBusiness: false },
-            p1: JSON.parse(JSON.stringify(window.defaultPromoter)),
-            a1: JSON.parse(JSON.stringify(window.defaultAuthSig)),
-            stateSpecific_electricityBoard: '', stateSpecific_electricityConsumerNo: '',
-            stateSpecific_ptEcNo: '', stateSpecific_ptRcNo: '',
-            stateSpecific_exciseLicenseNo: '', stateSpecific_exciseLicenseHolder: ''
-        };
-        const loadedData = JSON.parse(JSON.stringify(app.data));
-        window.form = Object.assign({}, defaultForm, loadedData);
-        window.form.p1 = Object.assign({}, defaultForm.p1, loadedData.p1 || {});
-        window.form.a1 = Object.assign({}, defaultForm.a1, loadedData.a1 || {});
-        window.form.ppob_natureOfBusiness = Object.assign({}, defaultForm.ppob_natureOfBusiness, loadedData.ppob_natureOfBusiness || {});
-        window.form.goods_hsn = loadedData.goods_hsn || [];
-        window.form.goods_sac = loadedData.goods_sac || [];
-        window.form._appId = app.appId;
-        window.exitAdmin();
-        setStep(0);
-        alert('Application loaded for editing. After you make changes, complete the application to resubmit.');
+    if (!app) {
+        alert('Application not found');
+        return;
+    }
+    const defaultForm = {
+        goods_hsn: [], goods_sac: [],
+        taxpayerType: '', legalName: '', tradeName: '', pan: '', email: '', mobile: '', state: '', district: '',
+        businessConstitution: '', dateOfCommencement: '', dateOfLiability: '', reasonToObtainRegistration: '', businessDistrict: '',
+        rule14A: '',
+        existingRegistrationType: '', existingRegistrationNo: '', existingRegistrationDate: '',
+        proofOfConstitutionType: '', proofOfConstitutionFile: '', documentForTradeNameFile: '',
+        ppob_building: '', ppob_flatNo: '', ppob_floor: '', ppob_street: '', ppob_locality: '', ppob_city: '',
+        ppob_state: '', ppob_district: '', ppob_pincode: '', ppob_country: 'India', ppob_landmark: '', ppob_latitude: '', ppob_longitude: '',
+        ppob_stateJurisdiction: '', ppob_commissionerate: '', ppob_division: '', ppob_range: '',
+        ppob_email: '', ppob_stdCode: '', ppob_telephone: '', ppob_mobile: '', ppob_faxStdCode: '', ppob_fax: '',
+        ppob_natureOfPossession: '', ppob_doc: '', ppob_docFile: '',
+        ppob_natureOfBusiness: { bondedWarehouse: false, factoryManufacturing: false, leasingBusiness: false, retailBusiness: false, worksContract: false, eouStpEhtp: false, import: false, officeSaleOffice: false, warehouseDepot: false, others: false, export: false, supplierOfServices: false, recipientOfGoodsOrServices: false, wholesaleBusiness: false },
+        p1: JSON.parse(JSON.stringify(window.defaultPromoter)),
+        a1: JSON.parse(JSON.stringify(window.defaultAuthSig)),
+        stateSpecific_electricityBoard: '', stateSpecific_electricityConsumerNo: '',
+        stateSpecific_ptEcNo: '', stateSpecific_ptRcNo: '',
+        stateSpecific_exciseLicenseNo: '', stateSpecific_exciseLicenseHolder: ''
+    };
+    const loadedData = JSON.parse(JSON.stringify(app.data || {}));
+    window.form = Object.assign({}, defaultForm, loadedData);
+    if (loadedData.p1) window.form.p1 = Object.assign({}, defaultForm.p1, loadedData.p1);
+    if (loadedData.a1) window.form.a1 = Object.assign({}, defaultForm.a1, loadedData.a1);
+    for (let i = 2; i <= 10; i++) {
+        if (loadedData[`p${i}`]) window.form[`p${i}`] = loadedData[`p${i}`];
+        if (loadedData[`a${i}`]) window.form[`a${i}`] = loadedData[`a${i}`];
+    }
+    if (loadedData.ppob_natureOfBusiness) {
+        window.form.ppob_natureOfBusiness = Object.assign({}, defaultForm.ppob_natureOfBusiness, loadedData.ppob_natureOfBusiness);
+    }
+    window.form.goods_hsn = loadedData.goods_hsn || [];
+    window.form.goods_sac = loadedData.goods_sac || [];
+    window.form._appId = app.appId;
+    window.form._originalStatus = app.status;
+
+    if (typeof window.saveAutosave === 'function') window.saveAutosave();
+
+    // Navigate to form without logging out!
+    navigateTo('/form');
+    setStep(0);
+    alert(`Application ${app.appId} loaded for editing! You can modify any fields and click "Save / Update Application" to save your updates.`);
+};
+
+window.cancelEditApplication = function () {
+    if (confirm('Discard edits and return to applications list?')) {
+        delete window.form._appId;
+        delete window.form._originalStatus;
+        if (typeof window.clearAutosave === 'function') window.clearAutosave();
+        navigateTo('/admin');
     }
 };
 
@@ -2282,11 +2330,11 @@ function renderContent() {
         summaryHtml += window.generateSummary(form);
         summaryHtml += `</div>
         <div style="display: flex; gap: 10px;">
-            <button class="btn accent" onclick="submitApplication()">Submit Application</button>
+            <button class="btn accent" onclick="submitApplication()"><span id="submit-btn-label">${(window.form && window.form._appId) ? '💾 Update Application' : 'Submit Application'}</span></button>
             <button class="btn ghost" onclick="isPreview = false; setStep(0);">Edit Application</button>
         </div>
         </section>`;
-        content.innerHTML = summaryHtml;
+        content.innerHTML = editBannerHtml + summaryHtml;
         return;
     }
 
@@ -3148,7 +3196,7 @@ function renderContent() {
             ${step < STEPS.length - 1 ? `<button class="btn primary" onclick="setStep(${step + 1})">Next</button>` : ''}
         </div>
     </div>`;
-    content.innerHTML = html;
+    content.innerHTML = editBannerHtml + html;
 
     if (step === 2 && !isAuthSigListView && window.isViewingPromoter) {
         const inputs = content.querySelectorAll('input, select, textarea');

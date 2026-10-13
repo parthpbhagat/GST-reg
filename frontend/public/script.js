@@ -920,13 +920,13 @@ function validateStep(targetStep) {
         let validPromoterFound = false;
         for (const k of promoterKeys) {
             const p = f[k];
-            if (p && p.firstName && p.firstName.trim() && p.pan && p.pan.trim() && p.mobile && p.mobile.trim()) {
+            if (p && p.firstName && p.firstName.trim() && p.mobile && p.mobile.trim()) {
                 validPromoterFound = true;
                 break;
             }
         }
         if (!validPromoterFound) {
-            alert('Please add at least one Promoter / Partner with mandatory details (First Name, PAN, Mobile) in Step 2.');
+            alert('Please add at least one Promoter / Partner with mandatory details (First Name, Mobile) in Step 2.');
             return false;
         }
     } else if (targetStep === 2) {
@@ -3077,12 +3077,12 @@ function renderContent() {
             <h2 style="font-size: 18px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-top: 32px; margin-bottom: 12px;"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg> Identity Information</h2>
             
             <div class="grid3" style="margin-bottom: 12px; align-items: center;">
-                ${field('Designation / Status <span style="color: #ef4444">*</span>', `<input type="text" placeholder="Enter Designation" value="${pForm.designation || ''}" onchange="window.updateForm('${currentPromoterKey}.designation', this.value)" />`)}
-                ${field('Director Identification Number <span style="color: #ef4444">*</span>', `<input type="text" placeholder="Enter DIN Number" value="${pForm.din || ''}" onchange="window.updateForm('${currentPromoterKey}.din', this.value)" />`)}
+                ${field('Designation / Status', `<input type="text" placeholder="Enter Designation" value="${pForm.designation || ''}" onchange="window.updateForm('${currentPromoterKey}.designation', this.value)" />`)}
+                ${field('Director Identification Number', `<input type="text" placeholder="Enter DIN Number" value="${pForm.din || ''}" onchange="window.updateForm('${currentPromoterKey}.din', this.value)" />`)}
             </div>
 
             <div class="grid3" style="margin-bottom: 12px;">
-                ${field('PAN <span style="color: #ef4444">*</span>', `<input type="text" placeholder="Enter PAN" value="${pForm.pan || ''}" onchange="window.updateForm('${currentPromoterKey}.pan', this.value)" style="text-transform:uppercase" maxlength="10" pattern="[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}" />`)}
+                ${field('PAN', `<input type="text" placeholder="Enter PAN" value="${pForm.pan || ''}" onchange="window.updateForm('${currentPromoterKey}.pan', this.value)" style="text-transform:uppercase" maxlength="10" pattern="[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}" />`)}
                 ${field('Passport Number (In case of Foreigner)', `<input type="text" placeholder="Enter Passport Number" value="${pForm.passport || ''}" onchange="window.updateForm('${currentPromoterKey}.passport', this.value)" />`)}
             </div>
             </div>
@@ -3317,12 +3317,12 @@ function renderContent() {
         <h2 style="font-size: 18px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-top: 24px; margin-bottom: 12px;"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 6px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg> Identity Information</h2>
         
         <div class="grid3" style="margin-bottom: 12px; align-items: center; gap: 16px;">
-            ${field('Designation / Status <span style="color: #ef4444">*</span>', `<input type="text" placeholder="Enter Designation" value="${aForm.designation || ''}" onchange="window.updateForm(currentAuthSigKey + \'.designation', this.value)" style="" />`)}
-            ${field('Director Identification Number <span style="color: #ef4444">*</span>', `<input type="text" placeholder="Enter DIN Number" value="${aForm.din || ''}" onchange="window.updateForm(currentAuthSigKey + \'.din', this.value)" style="" />`)}
+            ${field('Designation / Status', `<input type="text" placeholder="Enter Designation" value="${aForm.designation || ''}" onchange="window.updateForm(currentAuthSigKey + \'.designation', this.value)" style="" />`)}
+            ${field('Director Identification Number', `<input type="text" placeholder="Enter DIN Number" value="${aForm.din || ''}" onchange="window.updateForm(currentAuthSigKey + \'.din', this.value)" style="" />`)}
         </div>
 
         <div class="grid3" style="margin-bottom: 12px; gap: 16px;">
-            ${field('PAN <span style="color: #ef4444">*</span>', `<input type="text" placeholder="Enter PAN" value="${aForm.pan || ''}" onchange="window.updateForm(currentAuthSigKey + \'.pan', this.value)" style="text-transform:uppercase; " maxlength="10" pattern="[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}" />`)}
+            ${field('PAN', `<input type="text" placeholder="Enter PAN" value="${aForm.pan || ''}" onchange="window.updateForm(currentAuthSigKey + \'.pan', this.value)" style="text-transform:uppercase; " maxlength="10" pattern="[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}" />`)}
             ${field('Passport Number (In case of Foreigner)', `<input type="text" placeholder="Enter Passport Number" value="${aForm.passport || ''}" onchange="window.updateForm(currentAuthSigKey + \'.passport', this.value)" style="" />`)}
         </div>
         </div>

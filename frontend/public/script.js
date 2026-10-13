@@ -1998,7 +1998,18 @@ window.openMultiStateModal = function (appId) {
     }
 
     const modal = document.getElementById('multistate-modal');
-    if (modal) modal.classList.remove('hidden');
+    if (modal) {
+        modal.classList.remove('hidden');
+        const secTokenInput = document.getElementById('msr-secToken');
+        const aplCdInput = document.getElementById('msr-aplCd');
+        if (app.trn) {
+            if (secTokenInput) secTokenInput.value = app.trn;
+            if (aplCdInput) {
+                const match = app.trn.match(/(\d{4,7})TRN/i);
+                if (match) aplCdInput.value = match[1].slice(-4);
+            }
+        }
+    }
 };
 
 window.closeMultiStateModal = function () {
@@ -2018,10 +2029,17 @@ window.launchMultiStateAutomation = function () {
         return;
     }
 
-    const aplCd = document.getElementById('msr-aplCd')?.value || '1219';
+    const appTrn = currentMultiStateApp.trn || '';
+    let derivedAplCd = '1283';
+    if (appTrn) {
+        const m = appTrn.match(/(\d{4,7})TRN/i);
+        if (m) derivedAplCd = m[1].slice(-4);
+    }
+
+    const aplCd = document.getElementById('msr-aplCd')?.value || derivedAplCd;
     const typAR = document.getElementById('msr-typAR')?.value || 'TRP';
     const cobz = document.getElementById('msr-cobz')?.value || 'PRO';
-    const secToken = document.getElementById('msr-secToken')?.value || 'M10260001219TRN';
+    const secToken = document.getElementById('msr-secToken')?.value || appTrn || 'M10260001283TRN';
 
     const multiStateConfig = {
         aplCd,

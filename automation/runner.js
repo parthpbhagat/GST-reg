@@ -179,9 +179,9 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
         try {
             // Race: either next tab becomes active, OR validation error appears
             const result = await Promise.race([
-                // Condition 1: Next tab becomes active (checks both tab headers and tab-specific input fields)
+                // Condition 1: Next tab becomes active (checks active tab class and visible tab-specific input fields)
                 page.waitForFunction((expectedName) => {
-                    const activeTabs = Array.from(document.querySelectorAll('li.active a, li.active span, .nav-tabs li.active, .step-wizard .active, .wizard-step.active, .nav li.active, [data-ng-repeat*="tab"]'));
+                    const activeTabs = Array.from(document.querySelectorAll('li.active, .nav-tabs li.active, .step-wizard .active, .wizard-step.active, .nav li.active, [data-ng-repeat*="tab"].active'));
                     const possibleNames = expectedName.toLowerCase().split('|').map(s => s.trim());
                     for (let tab of activeTabs) {
                         const tabText = tab.innerText ? tab.innerText.toLowerCase() : '';
@@ -189,39 +189,33 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
                             return true;
                         }
                     }
-                    const bodyText = document.body ? document.body.innerText.toLowerCase() : '';
+                    // Specific content element checks that ONLY exist and are visible when that tab is actually rendered
                     if (expectedName.toLowerCase().includes('promoter')) {
-                        if (document.querySelector('#fnm') || document.querySelector('#radiomale') || bodyText.includes('details of partners / directors') || bodyText.includes('promoter / partner details')) {
-                            return true;
-                        }
+                        const el = document.querySelector('#fnm, #pd_mname, #radiomale');
+                        if (el && el.offsetParent !== null) return true;
                     }
                     if (expectedName.toLowerCase().includes('authorized signatory')) {
-                        if (document.querySelector('#same_as_promoter') || document.querySelector('#as_fnm') || bodyText.includes('authorized signatory details')) {
-                            return true;
-                        }
+                        const el = document.querySelector('#same_as_promoter, #as_fnm, #pri_auth');
+                        if (el && el.offsetParent !== null) return true;
                     }
                     if (expectedName.toLowerCase().includes('authorized representative')) {
-                        if (document.querySelector('#rep_type') || document.querySelector('input[name="hasAuthRep"]') || bodyText.includes('authorized representative')) {
-                            return true;
-                        }
+                        const el = document.querySelector('#rep_type, input[name="hasAuthRep"]');
+                        if (el && el.offsetParent !== null) return true;
                     }
                     if (expectedName.toLowerCase().includes('principal place of business')) {
-                        if (document.querySelector('#pncd') || document.querySelector('#bno') || document.querySelector('#bp_buss_poss') || bodyText.includes('principal place of business')) {
-                            return true;
-                        }
+                        const el = document.querySelector('#pncd, #bp_buss_poss, #bp_bdname');
+                        if (el && el.offsetParent !== null) return true;
                     }
                     if (expectedName.toLowerCase().includes('goods and services')) {
-                        if (document.querySelector('#hsn') || document.querySelector('#sac') || bodyText.includes('goods and services')) {
-                            return true;
-                        }
+                        const el = document.querySelector('#gs_hsn_value, #gs_sac_value, #hsn_value');
+                        if (el && el.offsetParent !== null) return true;
                     }
                     if (expectedName.toLowerCase().includes('verification') || expectedName.toLowerCase().includes('aadhaar')) {
-                        if (document.querySelector('#submitbtn') || document.querySelector('#signatory') || bodyText.includes('verification') || bodyText.includes('aadhaar')) {
-                            return true;
-                        }
+                        const el = document.querySelector('#submitbtn, #signatory, input[name="declaration"]');
+                        if (el && el.offsetParent !== null) return true;
                     }
                     return false;
-                }, expectedTabName, { timeout: 60000 }).then(() => ({ status: 'success' })),
+                }, expectedTabName, { timeout: 45000 }).then(() => ({ status: 'success' })),
 
                 // Condition 2: Validation errors appear - detect and report them
                 (async () => {
@@ -300,17 +294,17 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
 async function submitMultiStateCommonInfo(page, data, config, currentTrn) {
     sendUpdate('Submitting Common Info to Multi-State API (submitcommoninfo)...');
 
-    const secToken = (currentTrn && currentTrn.trim()) || (config && config.secToken) || 'M10260001279TRN';
-    let aplCd = (config && config.aplCd);
-    if (!aplCd && secToken) {
+    const secToken = (currentTrn && currentTrn.trim()) || (config && config.secToken && !config.secToken.includes('1219') ? config.secToken : null) || 'M10260001283TRN';
+    let aplCd = null;
+    if (secToken) {
         const match = secToken.match(/(\d{4,7})TRN/i);
         if (match) {
             aplCd = match[1].slice(-4);
-        } else {
-            aplCd = '1279';
         }
     }
-    if (!aplCd) aplCd = '1279';
+    if (!aplCd) {
+        aplCd = (config && config.aplCd && config.aplCd !== '1219' ? config.aplCd : null) || '1283';
+    }
 
     const typAR = (config && config.typAR) || 'TRP';
 
@@ -1303,35 +1297,81 @@ async function run() {
             await page.fill('#bd_cmbz', convertDateToDDMMYYYY(data.dateOfCommencement), { timeout: 3000 }).catch(() => sendUpdate('Date of Commencement is read-only or disabled.'));
         }
 
-        if (data.dateOfLiability) {
-            sendUpdate('Filling Date of Liability...');
-            await page.fill('#lib', convertDateToDDMMYYYY(data.dateOfLiability), { timeout: 3000 }).catch(() => sendUpdate('Date of Liability is read-only or disabled.'));
+        const reasonVal = (data.reasonToObtainRegistration || data.reasonToObtain || 'Voluntary Basis');
+        sendUpdate(`Selecting Reason to Obtain Registration (${reasonVal})...`);
+        try {
+            const rslSelectors = ['#bd_rsl', '#rsl', 'select[name="rsl"]', 'select[name="bd_rsl"]', 'select[data-ng-model*="rsl"]', 'select[data-ng-model*="reason"]', '#reason'];
+            let selected = false;
+
+            for (const sel of rslSelectors) {
+                const loc = page.locator(sel).first();
+                if (await loc.count() > 0) {
+                    try {
+                        await loc.scrollIntoViewIfNeeded().catch(() => {});
+                        await page.waitForTimeout(300);
+                        await loc.selectOption({ label: reasonVal }, { timeout: 3000 });
+                        selected = true;
+                        sendUpdate(`Selected Reason to Obtain Registration: ${reasonVal}`);
+                        break;
+                    } catch (e1) {
+                        const matchedVal = await page.evaluate(({ selector, rText }) => {
+                            const el = document.querySelector(selector);
+                            if (!el) return null;
+                            const opt = Array.from(el.options).find(o => o.text && o.text.toUpperCase().includes(rText.toUpperCase()));
+                            if (opt) {
+                                el.value = opt.value;
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                return opt.text;
+                            }
+                            return null;
+                        }, { selector: sel, rText: reasonVal });
+
+                        if (matchedVal) {
+                            selected = true;
+                            sendUpdate(`Selected Reason: ${matchedVal}`);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!selected) {
+                selected = await page.evaluate((rText) => {
+                    const selects = Array.from(document.querySelectorAll('select'));
+                    for (const sel of selects) {
+                        const opt = Array.from(sel.options).find(o => o.text && o.text.toUpperCase().includes(rText.toUpperCase()));
+                        if (opt) {
+                            sel.value = opt.value;
+                            sel.dispatchEvent(new Event('change', { bubbles: true }));
+                            return true;
+                        }
+                    }
+                    return false;
+                }, reasonVal);
+
+                if (selected) {
+                    sendUpdate(`Selected Reason to Obtain Registration across page select elements.`);
+                } else {
+                    sendUpdate(`Warning: Reason "${reasonVal}" not matched in dropdown options.`);
+                }
+            }
+        } catch (e) {
+            sendUpdate(`Warning: Could not select Reason: ${reasonVal} - ${e.message}`);
         }
 
-        if ((data.reasonToObtainRegistration || data.reasonToObtain)) {
-            sendUpdate('Selecting Reason to Obtain Registration...');
-            const reasonVal = (data.reasonToObtainRegistration || data.reasonToObtain);
+        const dateOfLibVal = data.dateOfLiability || data.dateOfCommencement;
+        if (dateOfLibVal) {
+            sendUpdate('Filling Date of Liability...');
+            await page.waitForTimeout(500);
+            const libInput = page.locator('#lib, input[name="lib"]').first();
             try {
-                const rslLoc = page.locator('#bd_rsl');
-                if (await rslLoc.count() > 0 && await rslLoc.isVisible({ timeout: 1500 })) {
-                    try {
-                        await page.selectOption('#bd_rsl', { label: reasonVal }, { timeout: 2500 });
-                    } catch (e1) {
-                        await page.evaluate((rText) => {
-                            const sel = document.querySelector('#bd_rsl');
-                            if (!sel) return;
-                            const opt = Array.from(sel.options).find(o => o.text && o.text.toUpperCase().includes(rText.toUpperCase()));
-                            if (opt) {
-                                sel.value = opt.value;
-                                sel.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                        }, reasonVal);
-                    }
-                } else {
-                    sendUpdate('Note: Reason to Obtain Registration not present on this screen, skipping.');
+                if (await libInput.count() > 0) {
+                    await libInput.scrollIntoViewIfNeeded().catch(() => {});
+                    await libInput.fill(convertDateToDDMMYYYY(dateOfLibVal), { timeout: 3000 });
+                    sendUpdate('Filled Date of Liability.');
                 }
             } catch (e) {
-                sendUpdate(`Warning: Could not select Reason: ${reasonVal}`);
+                sendUpdate('Date of Liability is read-only or disabled.');
             }
         }
 
@@ -1463,15 +1503,18 @@ async function run() {
             sendUpdate(`Filling Promoter ${promoterIndex} Details...`);
 
             try {
-                if (promoter.firstName) await page.fill('#fnm', promoter.firstName);
-                if (promoter.middleName) await page.fill('#pd_mname', promoter.middleName);
-                if (promoter.lastName) await page.fill('#pd_lname', promoter.lastName);
+                // Wait for the first name input to appear
+                await page.waitForSelector('#fnm', { state: 'visible', timeout: 8000 }).catch(() => {});
 
-                if (promoter.fatherFirstName) await page.fill('#ffname', promoter.fatherFirstName);
-                if (promoter.fatherMiddleName) await page.fill('#pd_fmname', promoter.fatherMiddleName);
-                if (promoter.fatherLastName) await page.fill('#pd_flname', promoter.fatherLastName);
+                if (promoter.firstName) await page.fill('#fnm', promoter.firstName, { timeout: 3000 }).catch(() => {});
+                if (promoter.middleName) await page.fill('#pd_mname', promoter.middleName, { timeout: 3000 }).catch(() => {});
+                if (promoter.lastName) await page.fill('#pd_lname', promoter.lastName, { timeout: 3000 }).catch(() => {});
 
-                if (promoter.dob) await page.fill('#dob', convertDateToDDMMYYYY(promoter.dob));
+                if (promoter.fatherFirstName) await page.fill('#ffname', promoter.fatherFirstName, { timeout: 3000 }).catch(() => {});
+                if (promoter.fatherMiddleName) await page.fill('#pd_fmname', promoter.fatherMiddleName, { timeout: 3000 }).catch(() => {});
+                if (promoter.fatherLastName) await page.fill('#pd_flname', promoter.fatherLastName, { timeout: 3000 }).catch(() => {});
+
+                if (promoter.dob) await page.fill('#dob', convertDateToDDMMYYYY(promoter.dob), { timeout: 3000 }).catch(() => {});
 
                 if (promoter.gender) {
                     try {
@@ -1484,12 +1527,12 @@ async function run() {
                     }
                 }
 
-                if (promoter.mobile) await page.fill('#mbno', promoter.mobile);
-                if (promoter.email) await page.fill('#pd_email', promoter.email);
-                if (promoter.designation) await page.fill('#dg', promoter.designation);
-                if (promoter.din) await page.fill('#din', promoter.din);
-                if (promoter.pan) await page.fill('#pan', promoter.pan);
-                if (promoter.passport) await page.fill('#ppno', promoter.passport);
+                if (promoter.mobile) await page.fill('#mbno', promoter.mobile, { timeout: 3000 }).catch(() => {});
+                if (promoter.email) await page.fill('#pd_email', promoter.email, { timeout: 3000 }).catch(() => {});
+                if (promoter.designation) await page.fill('#dg', promoter.designation, { timeout: 3000 }).catch(() => {});
+                if (promoter.din) await page.fill('#din', promoter.din, { timeout: 3000 }).catch(() => {});
+                if (promoter.pan) await page.fill('#pan', promoter.pan, { timeout: 3000 }).catch(() => {});
+                if (promoter.passport) await page.fill('#ppno', promoter.passport, { timeout: 3000 }).catch(() => {});
 
                 if (promoter.res_country) {
                     try {
@@ -2343,38 +2386,48 @@ async function run() {
                 const hsn = match ? match[0] : rawHsn.toString();
                 sendUpdate(`Filling HSN ${i + 1}/${data.goods_hsn.length}: ${hsn}`);
 
-                const hsnInput = page.locator('#gs_hsn_value').first();
+                const potentialHsnSelectors = ['#gs_hsn_value', '#hsn_value', '#hsn', 'input[placeholder*="Search HSN"]', 'input[placeholder*="HSN"]', 'input[placeholder*="Goods"]', 'input[ng-model*="hsn"]'];
+                let hsnInputLoc = null;
+                for (const sel of potentialHsnSelectors) {
+                    const loc = page.locator(sel).first();
+                    if (await loc.count() > 0) {
+                        hsnInputLoc = loc;
+                        break;
+                    }
+                }
 
-                // Wait for input to be ready
+                if (!hsnInputLoc) {
+                    sendUpdate(`Warning: HSN input field not found on current page. Skipping HSN ${hsn}...`);
+                    continue;
+                }
+
                 try {
-                    await hsnInput.waitFor({ state: 'visible', timeout: 5000 });
-                } catch (e) {
-                    sendUpdate(`Warning: HSN input not visible, retrying...`);
+                    await hsnInputLoc.scrollIntoViewIfNeeded().catch(() => {});
+                    await hsnInputLoc.click({ timeout: 2000 }).catch(async () => {
+                        await hsnInputLoc.evaluate(el => el.focus()).catch(() => {});
+                    });
+                    await hsnInputLoc.fill('').catch(() => {});
+                    await hsnInputLoc.type(hsn, { delay: 10 }).catch(() => {});
+
+                    // Wait for dropdown to appear and click first item
+                    try {
+                        const dropdownItem = page.locator('ul.ui-autocomplete li:visible, .ui-menu-item:visible, ul li:has-text("' + hsn + '")').first();
+                        await dropdownItem.waitFor({ state: 'visible', timeout: 3000 });
+                        await dropdownItem.click({ force: true });
+                    } catch (e) {
+                        sendUpdate(`HSN dropdown item not found, trying keyboard...`);
+                        await hsnInputLoc.focus().catch(() => {});
+                        await page.waitForTimeout(200);
+                        await page.keyboard.press('ArrowDown').catch(() => {});
+                        await page.waitForTimeout(100);
+                        await page.keyboard.press('Enter').catch(() => {});
+                    }
+
                     await page.waitForTimeout(500);
+                    sendUpdate(`HSN ${hsn} added successfully.`);
+                } catch (hsnErr) {
+                    sendUpdate(`Warning: Could not process HSN ${hsn}: ${hsnErr.message}`);
                 }
-
-                // Clear and type the HSN code
-                await hsnInput.click({ timeout: 2000 });
-                await hsnInput.fill('');
-                await hsnInput.type(hsn, { delay: 10 });
-
-                // Wait for dropdown to appear and click first item
-                try {
-                    const dropdownItem = page.locator('ul.ui-autocomplete li:visible, .ui-menu-item:visible').first();
-                    await dropdownItem.waitFor({ state: 'visible', timeout: 5000 });
-                    await dropdownItem.click({ force: true });
-                } catch (e) {
-                    sendUpdate(`HSN dropdown item not found, trying keyboard...`);
-                    await hsnInput.focus();
-                    await page.waitForTimeout(200);
-                    await page.keyboard.press('ArrowDown');
-                    await page.waitForTimeout(100);
-                    await page.keyboard.press('Enter');
-                }
-
-                // Wait for the page to process the selection before next iteration
-                await page.waitForTimeout(500);
-                sendUpdate(`HSN ${hsn} added successfully.`);
             }
         }
 
@@ -2396,56 +2449,49 @@ async function run() {
                 sendUpdate(`Filling SAC ${i + 1}/${data.goods_sac.length}: ${sac}`);
 
                 // Find the SAC input - check multiple possible selectors
-                let sacInputSelector = '#gs_sac_value';
                 const potentialSelectors = ['#gs_sac_value', '#sac_value', '#sac', '#search_sac', '#gs_sac', 'input[placeholder*="Service Classification"]', 'input[placeholder*="SAC"]', '#gs_hsn_value'];
+                let inputLoc = null;
                 for (const sel of potentialSelectors) {
-                    if (await page.locator(sel).count() > 0) {
-                        sacInputSelector = sel;
+                    const loc = page.locator(sel).first();
+                    if (await loc.count() > 0) {
+                        inputLoc = loc;
                         break;
                     }
                 }
 
-                const inputLoc = page.locator(sacInputSelector).first();
-
-                // Wait for the input to be ready/enabled before typing
-                try {
-                    await inputLoc.waitFor({ state: 'visible', timeout: 5000 });
-                } catch (e) {
-                    sendUpdate(`Warning: SAC input not visible, retrying...`);
-                    await page.waitForTimeout(500);
-                }
-
-                // Clear and type the SAC code
-                try {
-                    await inputLoc.click({ timeout: 2000 });
-                    await inputLoc.fill('');
-                    await inputLoc.type(sac, { delay: 10 });
-                } catch (e) {
-                    sendUpdate('Warning: Could not fill SAC input ' + sacInputSelector);
+                if (!inputLoc) {
+                    sendUpdate(`Warning: SAC input field not found on current page. Skipping SAC ${sac}...`);
                     continue;
                 }
 
-                // Wait for dropdown to appear and click the first item
                 try {
-                    const dropdownItem = page.locator('ul.ui-autocomplete li:visible, .ui-menu-item:visible').first();
-                    await dropdownItem.waitFor({ state: 'visible', timeout: 5000 });
-                    await dropdownItem.click({ force: true });
-                } catch (e) {
-                    sendUpdate(`SAC dropdown item not found, trying keyboard...`);
-                    try { await inputLoc.focus({ timeout: 500 }); } catch (err) { }
-                    await page.waitForTimeout(200);
-                    await page.keyboard.press('ArrowDown');
-                    await page.waitForTimeout(100);
-                    await page.keyboard.press('Enter');
-                }
+                    await inputLoc.scrollIntoViewIfNeeded().catch(() => {});
+                    await inputLoc.click({ timeout: 2000 }).catch(async () => {
+                        await inputLoc.evaluate(el => el.focus()).catch(() => {});
+                    });
+                    await inputLoc.fill('').catch(() => {});
+                    await inputLoc.type(sac, { delay: 10 }).catch(() => {});
 
-                // Wait for the page to process the selection before next iteration
-                await page.waitForTimeout(500);
-                sendUpdate(`SAC ${sac} added successfully.`);
+                    try {
+                        const dropdownItem = page.locator('ul.ui-autocomplete li:visible, .ui-menu-item:visible, ul li:has-text("' + sac + '")').first();
+                        await dropdownItem.waitFor({ state: 'visible', timeout: 3000 });
+                        await dropdownItem.click({ force: true });
+                    } catch (e) {
+                        sendUpdate(`SAC dropdown item not found, trying keyboard...`);
+                        await inputLoc.focus().catch(() => {});
+                        await page.waitForTimeout(200);
+                        await page.keyboard.press('ArrowDown').catch(() => {});
+                        await page.waitForTimeout(100);
+                        await page.keyboard.press('Enter').catch(() => {});
+                    }
+
+                    await page.waitForTimeout(500);
+                    sendUpdate(`SAC ${sac} added successfully.`);
+                } catch (e) {
+                    sendUpdate(`Warning: Could not fill SAC input: ${e.message}`);
+                }
             }
         }
-
-
 
         await saveAndContinueToTab(page, 'State Specific', 'button[title="Save & Continue"]');
 

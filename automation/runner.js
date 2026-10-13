@@ -842,10 +842,41 @@ async function run() {
 
             } // End of regular single-state selection else
 
-        await page.fill('#bnm', data.legalName);
-        await page.fill('#pan_card', data.pan);
-        await page.fill('#email', data.email);
-        await page.fill('#mobile', data.mobile);
+        const cleanPan = (data.pan || '').toUpperCase().trim();
+        const cleanName = (data.legalName || '').trim();
+        const cleanEmail = (data.email || '').toLowerCase().trim();
+        const cleanMobile = (data.mobile || '').trim();
+
+        await page.fill('#bnm', cleanName);
+        await page.fill('#pan_card', cleanPan);
+        await page.fill('#email', cleanEmail);
+        await page.fill('#mobile', cleanMobile);
+
+        // Dismiss any initial advisory / "NOTE" modal if visible
+        await page.evaluate(() => {
+            const okBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim().toUpperCase() === 'OK' && b.offsetParent !== null);
+            if (okBtn) okBtn.click();
+        });
+
+        // Intercept network response for sendotp API
+        page.on('response', async (res) => {
+            const url = res.url();
+            if (url.includes('sendotp') || url.includes('api/submit')) {
+                try {
+                    const text = await res.text();
+                    let parsed = null;
+                    try { parsed = JSON.parse(text); } catch(e) {}
+                    if (parsed) {
+                        if (parsed.status_cd === '0' || parsed.error || parsed.err) {
+                            const errMsg = parsed.error?.message || parsed.message || parsed.err || JSON.stringify(parsed);
+                            sendUpdate(`❌ GST Portal OTP Error: ${errMsg}`);
+                        } else if (parsed.status_cd === '1') {
+                            sendUpdate(`✅ GST Portal: OTP dispatched successfully to mobile ${cleanMobile} and email ${cleanEmail}.`);
+                        }
+                    }
+                } catch(e) {}
+            }
+        });
 
         let initialCaptchaSuccess = false;
         while (!initialCaptchaSuccess) {
@@ -870,8 +901,14 @@ async function run() {
                 });
             });
 
-            sendUpdate('Verifying Captcha/OTP...');
+            sendUpdate('Verifying Captcha and requesting OTP from GST portal...');
             await page.fill('#captcha', captchaText);
+
+            // Dismiss any leftover modal blocking Proceed
+            await page.evaluate(() => {
+                const okBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim().toUpperCase() === 'OK' && b.offsetParent !== null);
+                if (okBtn) okBtn.click();
+            });
 
             // Click Proceed button
             const proceedBtn = page.locator('button', { hasText: 'Proceed' }).last();
@@ -880,27 +917,80 @@ async function run() {
             // Phase 2: OTP Verification
             sendUpdate('Waiting for OTP verification screen...');
             try {
-                // Wait for success or clear
+                // Wait for success, error, existing TRN modal, or captcha clear
                 await page.waitForFunction(() => {
                     const otpEl = document.querySelector('#mobile_otp');
-                    const captchaEl = document.querySelector('#captcha');
                     if (otpEl && otpEl.offsetParent !== null) return true;
+
+                    const captchaEl = document.querySelector('#captcha');
                     if (captchaEl && captchaEl.value === '') return true;
+
+                    const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
+                    if (modal && modal.offsetParent !== null) return true;
+
+                    const err = document.querySelector('.alert-danger, .error-msg');
+                    if (err && err.offsetParent !== null && err.innerText.trim().length > 3) return true;
+
                     return false;
                 }, { timeout: 30000 });
 
-                const isCleared = await page.evaluate(() => {
-                    const captchaEl = document.querySelector('#captcha');
-                    return captchaEl && captchaEl.value === '';
+                // Check if existing application modal appeared and handle it
+                const existingModalHandled = await page.evaluate(() => {
+                    const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
+                    if (modal && modal.offsetParent !== null && /existing/i.test(modal.innerText || '')) {
+                        const proceed = Array.from(modal.querySelectorAll('button, input[type="button"], a.btn')).find(b => /proceed|continue|yes|ok/i.test(b.innerText || b.value || ''));
+                        if (proceed) {
+                            proceed.click();
+                            return true;
+                        }
+                    }
+                    return false;
                 });
+                if (existingModalHandled) {
+                    sendUpdate('Existing application found on portal for this PAN. Confirmed Proceed on modal...');
+                    await page.waitForTimeout(3000);
+                }
 
-                if (isCleared) {
-                    sendUpdate('Invalid Captcha. Retrying...');
-                    await page.waitForTimeout(1000);
-                } else {
+                // Check for portal error banners
+                const portalErrors = await page.evaluate(() => {
+                    const errs = [];
+                    document.querySelectorAll('.alert-danger, .error-msg, span.text-danger, .has-error .help-block').forEach(el => {
+                        const t = el.innerText ? el.innerText.trim() : '';
+                        if (t && el.offsetParent !== null && !t.includes('Separate OTP') && !t.includes('OTP will be sent')) {
+                            errs.push(t);
+                        }
+                    });
+                    return [...new Set(errs)];
+                });
+                if (portalErrors.length > 0) {
+                    portalErrors.forEach(err => sendUpdate(`❌ GST Portal Warning: ${err}`));
+                }
+
+                const isOtpScreen = await page.locator('#mobile_otp').isVisible().catch(() => false);
+                if (isOtpScreen) {
+                    sendUpdate(`OTP screen is active! GST portal has dispatched OTPs to Mobile: ${cleanMobile} and Email: ${cleanEmail}.`);
                     initialCaptchaSuccess = true;
+                } else {
+                    const isCleared = await page.evaluate(() => {
+                        const captchaEl = document.querySelector('#captcha');
+                        return captchaEl && captchaEl.value === '';
+                    });
+
+                    if (isCleared) {
+                        sendUpdate('Invalid Captcha. Retrying...');
+                        await page.waitForTimeout(1000);
+                    } else {
+                        // If still on form after 3 seconds, check if OTP screen appeared
+                        await page.waitForTimeout(3000);
+                        if (await page.locator('#mobile_otp').isVisible().catch(() => false)) {
+                            sendUpdate(`OTP screen is active! GST portal has dispatched OTPs to Mobile: ${cleanMobile} and Email: ${cleanEmail}.`);
+                            initialCaptchaSuccess = true;
+                        }
+                    }
                 }
             } catch (e) {
+                const pageText = await page.evaluate(() => document.body ? document.body.innerText.substring(0, 200) : '');
+                sendUpdate(`Error: Timed out waiting for OTP screen. Portal page status: ${pageText}`);
                 throw new Error("Timeout waiting for OTP verification screen to proceed.");
             }
         }

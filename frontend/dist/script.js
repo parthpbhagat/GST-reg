@@ -1533,32 +1533,32 @@ window.exitAdmin = function () {
     navigateTo('/form');
 };
 
-let allApps = [];
-
-function formatStateWiseTrnsHtml(app) {
+let allApps = [];function formatStateWiseTrnsHtml(app) {
     const mainTrn = app.trn || (app.data && app.data.masterTrn) || '';
     const stateTrns = (app.data && app.data.stateTrns) ? app.data.stateTrns : null;
 
-    if (!mainTrn && !stateTrns) return '<span style="color:#94a3b8;">-</span>';
+    if (!mainTrn && (!stateTrns || Object.keys(stateTrns).length === 0)) {
+        return '<span style="color: #94a3b8; font-size: 13px; font-weight: 500;">—</span>';
+    }
 
-    let html = '';
+    let html = '<div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start;">';
     if (mainTrn) {
-        html += `<div style="font-weight: 600; color: #0f172a; display: flex; align-items: center; gap: 4px;"><span>${mainTrn}</span></div>`;
+        html += `<span style="display: inline-flex; align-items: center; gap: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 700; font-size: 11.5px; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 2px 7px; border-radius: 5px; white-space: nowrap;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> ${mainTrn}</span>`;
     }
 
     if (stateTrns && typeof stateTrns === 'object' && Object.keys(stateTrns).length > 0) {
-        html += '<div style="margin-top: 4px; display: flex; flex-direction: column; gap: 2px;">';
+        html += '<div style="display: flex; flex-wrap: wrap; gap: 3px; max-width: 260px;">';
         for (const [st, sTrn] of Object.entries(stateTrns)) {
-            // Find state name if code
             let stLabel = st;
             if (window.STATE_CODE_MAP) {
                 const found = Object.entries(window.STATE_CODE_MAP).find(([k, v]) => v === st);
                 if (found) stLabel = found[0];
             }
-            html += `<span style="font-size: 11px; color: #0284c7; background: #e0f2fe; padding: 1px 6px; border-radius: 4px; display: inline-block;"><strong>${stLabel}:</strong> ${sTrn}</span>`;
+            html += `<span style="font-size: 10.5px; font-weight: 600; color: #0369a1; background: #e0f2fe; border: 1px solid #bae6fd; padding: 1px 6px; border-radius: 4px; display: inline-block; white-space: nowrap;"><strong>${stLabel}:</strong> ${sTrn}</span>`;
         }
         html += '</div>';
     }
+    html += '</div>';
 
     return html;
 }
@@ -1597,8 +1597,67 @@ window.createNewApplication = function () {
     if (typeof setStep === 'function') setStep(0);
 };
 
-window.renderAdminDashboard = async function () {
+window.dashboardStatusFilter = window.dashboardStatusFilter || 'ALL';
+
+window.setDashboardFilter = function (status) {
+    window.dashboardStatusFilter = status;
+    window.applyDashboardFilter();
+};
+
+window.applyDashboardFilter = function () {
+    const activeStatus = window.dashboardStatusFilter || 'ALL';
+    const searchInput = document.getElementById('dash-search-input');
+    const query = (searchInput ? searchInput.value : '').trim().toLowerCase();
+    const rows = document.querySelectorAll('.dash-table-row');
+    let visible = 0;
+
+    rows.forEach(row => {
+        const rowStatus = row.getAttribute('data-status') || '';
+        const rowSearch = row.getAttribute('data-search') || '';
+
+        const matchStatus = (activeStatus === 'ALL' || rowStatus.toLowerCase() === activeStatus.toLowerCase());
+        const matchSearch = (!query || rowSearch.includes(query));
+
+        if (matchStatus && matchSearch) {
+            row.style.display = '';
+            visible++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    const countEl = document.getElementById('dash-visible-count');
+    if (countEl) {
+        countEl.innerText = `Showing ${visible} of ${rows.length} applications`;
+    }
+
+    const noResRow = document.getElementById('dash-no-results-row');
+    if (noResRow) {
+        noResRow.style.display = (visible === 0 && rows.length > 0) ? '' : 'none';
+    }
+
+    document.querySelectorAll('.dash-filter-chip').forEach(chip => {
+        const chipFilter = chip.getAttribute('data-filter');
+        if (chipFilter === activeStatus) {
+            chip.classList.add('active');
+        } else {
+            chip.classList.remove('active');
+        }
+    });
+
+    document.querySelectorAll('.dash-stat-card').forEach(card => {
+        const cardFilter = card.getAttribute('data-filter');
+        if (cardFilter === activeStatus) {
+            card.classList.add('active');
+        } else {
+            card.classList.remove('active');
+        }
+    });
+};
+
+window.renderAdminDashboard = async function (refetch = true) {
     const container = document.getElementById('admin-dashboard-container');
+    if (!container) return;
 
     if (currentPreviewAppId) {
         const app = allApps.find(a => a.appId === currentPreviewAppId);
@@ -1607,46 +1666,57 @@ window.renderAdminDashboard = async function () {
         const isUserAdmin = (localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz') || 
                             (document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com');
 
-        let actionButtons = '';
-        if (isUserAdmin) {
-            actionButtons = `
-                <button class="btn accent" style="background: #2563eb; border-color: #2563eb; color: white; font-weight: 600; margin-right: 5px;" onclick="registerApplication('${app.appId}')" title="Run Regular Single-State GST Automation">⚡ Register (Only Registration)</button>
-                <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-right: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
-                <button class="btn accent" style="background: #16a34a; border-color: #16a34a; color: white; margin-right: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit / Submit</button>
-                <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-right: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate</button>`;
-            if (app.status === 'Pending') {
-                actionButtons += `<button class="btn accent" style="background: #22c55e; border-color: #22c55e; margin-right: 5px;" onclick="updateAppStatus('${app.appId}', 'Accepted')">Accept</button>
-                         <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-right: 5px;" onclick="updateAppStatus('${app.appId}', 'Rejected')">Reject</button>`;
-            }
-            actionButtons += `<button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-right: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>
-                             <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white;" onclick="deleteApplication('${app.appId}')">🗑️ Delete Application</button>`;
-        } else {
-            actionButtons = `
-                <button class="btn accent" style="background: #2563eb; border-color: #2563eb; color: white; font-weight: 600;" onclick="registerApplication('${app.appId}')" title="Run Regular Single-State GST Automation">⚡ Register (Only Registration)</button>
-                <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
-                <button class="btn accent" style="background: #16a34a; border-color: #16a34a; color: white; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit / Submit</button>
-                <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate</button>
-                <button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>
-                <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">🗑️ Delete Application</button>
+        let statusClass = 'pending';
+        if (app.status === 'Accepted') statusClass = 'accepted';
+        else if (app.status === 'Registered') statusClass = 'registered';
+        else if (app.status === 'Rejected') statusClass = 'rejected';
+
+        let actionButtons = `
+            <button class="dash-btn dash-btn-primary" onclick="registerApplication('${app.appId}')" title="Run Regular Single-State GST Automation">⚡ Register</button>
+            <button class="dash-btn dash-btn-sky" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
+            <button class="dash-btn dash-btn-green-subtle" onclick="editApplication('${app.appId}')" title="Edit / Submit Application">✏️ Edit / Submit</button>
+            <button class="dash-btn dash-btn-purple-subtle" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate</button>
+        `;
+
+        if (isUserAdmin && app.status === 'Pending') {
+            actionButtons += `
+                <button class="dash-btn" style="background: #16a34a; color: white; border-color: #16a34a;" onclick="updateAppStatus('${app.appId}', 'Accepted')">✓ Accept</button>
+                <button class="dash-btn" style="background: #dc2626; color: white; border-color: #dc2626;" onclick="updateAppStatus('${app.appId}', 'Rejected')">✕ Reject</button>
             `;
         }
 
-        let html = `<div class="card" style="margin-bottom: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <h2 style="margin: 0;">Previewing Application: ${app.appId}</h2>
-                    <div style="display: flex; gap: 10px;">${actionButtons}</div>
+        actionButtons += `
+            <button class="dash-btn dash-btn-indigo-subtle" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">📄 Declaration Form</button>
+            <button class="dash-btn dash-btn-danger-subtle" onclick="deleteApplication('${app.appId}')">🗑️ Delete</button>
+        `;
+
+        let html = `
+        <div class="dash-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 14px; border-bottom: 1px solid #e2e8f0; padding-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <button class="dash-btn dash-btn-ghost" onclick="currentPreviewAppId = null; renderAdminDashboard(false);" style="height: 34px; padding: 0 12px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 4px;"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back to List
+                    </button>
+                    <div style="height: 20px; width: 1px; background: #cbd5e1;"></div>
+                    <span class="dash-app-id" style="font-size: 14px; padding: 4px 10px;">${app.appId}</span>
+                    <span class="dash-status ${statusClass}"><span class="dash-status-dot"></span>${app.status}</span>
                 </div>
-                <button class="btn ghost" onclick="currentPreviewAppId = null; renderAdminDashboard();">Back to List</button>
-            </div>
-            <div style="margin-bottom: 20px;">
-                <strong>Status:</strong> <span style="padding: 4px 8px; border-radius: 4px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span>
-                <div style="margin-top: 10px; padding: 10px 14px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px;">
-                    <strong style="color: #166534; font-size: 13px;">Generated TRN Details:</strong>
-                    <div style="margin-top: 4px;">${formatStateWiseTrnsHtml(app)}</div>
+                <div class="dash-actions" style="flex-wrap: wrap;">
+                    ${actionButtons}
                 </div>
             </div>
-            <div style="background: #f8fafc; padding: 15px; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 20px; overflow-y: visible;">
+
+            <div style="margin-bottom: 20px; padding: 14px 18px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                <div>
+                    <div style="color: #166534; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Generated TRN Details</div>
+                    <div style="margin-top: 6px;">${formatStateWiseTrnsHtml(app)}</div>
+                </div>
+                <div style="font-size: 12px; color: #15803d; font-weight: 500;">
+                    Submission Date: ${new Date(app.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </div>
+            </div>
+
+            <div style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: inset 0 1px 2px rgba(0,0,0,0.02); overflow-y: visible;">
                 ${window.generateSummary(app.data)}
             </div>
         </div>`;
@@ -1654,85 +1724,224 @@ window.renderAdminDashboard = async function () {
         return;
     }
 
-    if (typeof window.showLoader === 'function') window.showLoader();
-    try {
-        const res = await fetch(`${API_BASE_URL}/api/applications`, { headers: { "Authorization": "Bearer " + (await window.getFreshToken()) } });
-        allApps = await res.json();
-        if (!Array.isArray(allApps)) { throw new Error(allApps.error || 'Invalid response from server'); }
-    } catch (e) {
-        console.error(e);
-        const tk = await window.getFreshToken();
-        if (!tk || tk === 'null' || e.message.includes('response')) {
-            alert('Your session has expired or you are not logged in. Please log in.');
-            navigateTo('/form');
-        } else {
-            container.innerHTML = `<p>Error loading applications from backend. Details: ${e.message || e}</p>`;
+    if (refetch || !Array.isArray(allApps) || allApps.length === 0) {
+        if (typeof window.showLoader === 'function') window.showLoader();
+        try {
+            const res = await fetch(`${API_BASE_URL}/api/applications`, { headers: { "Authorization": "Bearer " + (await window.getFreshToken()) } });
+            allApps = await res.json();
+            if (!Array.isArray(allApps)) { throw new Error(allApps.error || 'Invalid response from server'); }
+        } catch (e) {
+            console.error(e);
+            const tk = await window.getFreshToken();
+            if (!tk || tk === 'null' || (e.message && e.message.includes('response'))) {
+                alert('Your session has expired or you are not logged in. Please log in.');
+                navigateTo('/form');
+            } else {
+                container.innerHTML = `<p style="padding: 20px; color: #ef4444;">Error loading applications from backend. Details: ${e.message || e}</p>`;
+            }
+            if (typeof window.hideLoader === 'function') window.hideLoader();
+            return;
         }
         if (typeof window.hideLoader === 'function') window.hideLoader();
-        return;
     }
-    if (typeof window.hideLoader === 'function') window.hideLoader();
 
-    let html = `<div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
-            <div>
-                <h2 style="margin: 0;">${(localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz' || document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com') ? 'Admin Dashboard - Applications' : 'My Applications'}</h2>
-                <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">${(localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz' || document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com') ? 'Review, edit, accept, or reject applicant submissions.' : 'Manage, edit, update, or delete your submitted applications.'}</p>
+    const isUserAdmin = (localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz') || 
+                        (document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com');
+
+    const totalApps = allApps.length;
+    const pendingCount = allApps.filter(a => a.status === 'Pending').length;
+    const acceptedCount = allApps.filter(a => a.status === 'Accepted').length;
+    const registeredCount = allApps.filter(a => a.status === 'Registered').length;
+    const rejectedCount = allApps.filter(a => a.status === 'Rejected').length;
+
+    let html = `
+    <div class="dash-card">
+        <!-- Top Header Row -->
+        <div class="dash-header-row">
+            <div class="dash-title-group">
+                <div class="dash-icon-box">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="7" height="9" rx="1"></rect>
+                        <rect x="14" y="3" width="7" height="5" rx="1"></rect>
+                        <rect x="14" y="12" width="7" height="9" rx="1"></rect>
+                        <rect x="3" y="16" width="7" height="5" rx="1"></rect>
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="dash-title">${isUserAdmin ? 'Admin Dashboard - Applications' : 'My Applications'}</h2>
+                    <p class="dash-subtitle">${isUserAdmin ? 'Review, track status, edit, or launch GST automation pipelines.' : 'Manage, track status, edit, or launch GST automation for your submissions.'}</p>
+                </div>
             </div>
-            <div style="display: flex; gap: 10px; align-items: center;">
-                <button class="btn accent" style="font-size: 14px; padding: 8px 16px; background: #16a34a; border-color: #16a34a; color: white; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;" onclick="createNewApplication()" title="Fill and submit a new GST application">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Submit Application
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <button class="btn" style="font-size: 13.5px; padding: 7px 14px; background: #ffffff; border: 1px solid #cbd5e1; color: #334155; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border-radius: 8px; transition: all 0.2s;" onclick="renderAdminDashboard(true)" title="Refresh application list">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg> Refresh
                 </button>
-                <button class="btn" style="font-size: 14px; padding: 8px 16px; background: #3b82f6; border-color: #3b82f6; color: white; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;" onclick="navigateTo('/form')">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg> Home
+                <button class="btn accent" style="font-size: 13.5px; padding: 7px 16px; background: #16a34a; border: 1px solid #15803d; color: white; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border-radius: 8px; box-shadow: 0 2px 6px rgba(22, 163, 74, 0.25); transition: all 0.2s;" onclick="createNewApplication()" title="Fill and submit a new GST application">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Submit Application
+                </button>
+                <button class="btn" style="font-size: 13.5px; padding: 7px 14px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border-radius: 8px; transition: all 0.2s;" onclick="navigateTo('/form')" title="Return to applicant form">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg> Home
                 </button>
             </div>
         </div>
-        ${allApps.length === 0 ? `
-        <div style="padding: 30px; text-align: center; background: #f8fafc; border-radius: 8px; border: 1px dashed #cbd5e1; margin-top: 20px;">
-            <p style="color: #64748b; font-size: 15px; margin-bottom: 15px;">No applications submitted yet.</p>
-            <button class="btn accent" style="font-size: 14px; padding: 10px 20px; background: #16a34a; border-color: #16a34a; color: white; font-weight: 600; cursor: pointer;" onclick="createNewApplication()">
+
+        <!-- KPI Metric Cards Grid -->
+        <div class="dash-stats-grid">
+            <div class="dash-stat-card ${window.dashboardStatusFilter === 'ALL' ? 'active' : ''}" data-filter="ALL" onclick="setDashboardFilter('ALL')">
+                <div class="dash-stat-icon-wrap" style="background: #eff6ff; color: #2563eb;">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                </div>
+                <div>
+                    <div class="dash-stat-value">${totalApps}</div>
+                    <div class="dash-stat-label">Total Submissions</div>
+                </div>
+            </div>
+
+            <div class="dash-stat-card ${window.dashboardStatusFilter === 'Pending' ? 'active' : ''}" data-filter="Pending" onclick="setDashboardFilter('Pending')">
+                <div class="dash-stat-icon-wrap" style="background: #fffbeb; color: #d97706;">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                </div>
+                <div>
+                    <div class="dash-stat-value">${pendingCount}</div>
+                    <div class="dash-stat-label">Pending Review</div>
+                </div>
+            </div>
+
+            <div class="dash-stat-card ${window.dashboardStatusFilter === 'Accepted' ? 'active' : ''}" data-filter="Accepted" onclick="setDashboardFilter('Accepted')">
+                <div class="dash-stat-icon-wrap" style="background: #ecfdf5; color: #059669;">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                </div>
+                <div>
+                    <div class="dash-stat-value">${acceptedCount}</div>
+                    <div class="dash-stat-label">Accepted</div>
+                </div>
+            </div>
+
+            <div class="dash-stat-card ${window.dashboardStatusFilter === 'Registered' ? 'active' : ''}" data-filter="Registered" onclick="setDashboardFilter('Registered')">
+                <div class="dash-stat-icon-wrap" style="background: #e0f2fe; color: #0284c7;">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                </div>
+                <div>
+                    <div class="dash-stat-value">${registeredCount}</div>
+                    <div class="dash-stat-label">TRN Registered</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search and Filter Toolbar -->
+        <div class="dash-toolbar">
+            <div class="dash-search-box">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.2" style="position: absolute; left: 11px; top: 50%; transform: translateY(-50%); pointer-events: none;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input id="dash-search-input" class="dash-search-input" type="text" placeholder="Search by App ID, Name, Email, or TRN..." oninput="applyDashboardFilter()">
+            </div>
+
+            <div class="dash-filter-chips">
+                <button class="dash-filter-chip ${window.dashboardStatusFilter === 'ALL' ? 'active' : ''}" data-filter="ALL" onclick="setDashboardFilter('ALL')">
+                    All <span class="chip-count">${totalApps}</span>
+                </button>
+                <button class="dash-filter-chip ${window.dashboardStatusFilter === 'Pending' ? 'active' : ''}" data-filter="Pending" onclick="setDashboardFilter('Pending')">
+                    Pending <span class="chip-count">${pendingCount}</span>
+                </button>
+                <button class="dash-filter-chip ${window.dashboardStatusFilter === 'Accepted' ? 'active' : ''}" data-filter="Accepted" onclick="setDashboardFilter('Accepted')">
+                    Accepted <span class="chip-count">${acceptedCount}</span>
+                </button>
+                <button class="dash-filter-chip ${window.dashboardStatusFilter === 'Registered' ? 'active' : ''}" data-filter="Registered" onclick="setDashboardFilter('Registered')">
+                    Registered <span class="chip-count">${registeredCount}</span>
+                </button>
+                ${rejectedCount > 0 ? `
+                <button class="dash-filter-chip ${window.dashboardStatusFilter === 'Rejected' ? 'active' : ''}" data-filter="Rejected" onclick="setDashboardFilter('Rejected')">
+                    Rejected <span class="chip-count">${rejectedCount}</span>
+                </button>` : ''}
+            </div>
+
+            <div id="dash-visible-count" style="font-size: 12px; color: #64748b; font-weight: 500; white-space: nowrap;">
+                Showing ${totalApps} applications
+            </div>
+        </div>
+
+        <!-- Applications Table -->
+        ${totalApps === 0 ? `
+        <div style="padding: 40px 20px; text-align: center; background: #f8fafc; border-radius: 12px; border: 1px dashed #cbd5e1; margin-top: 10px;">
+            <div style="width: 56px; height: 56px; border-radius: 50%; background: #e2e8f0; display: grid; place-items: center; margin: 0 auto 14px auto; color: #64748b;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="9"></line><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="11" y2="17"></line></svg>
+            </div>
+            <h3 style="font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 6px 0;">No applications found</h3>
+            <p style="color: #64748b; font-size: 13.5px; margin: 0 0 18px 0;">You haven't submitted any GST applications yet.</p>
+            <button class="btn accent" style="font-size: 14px; padding: 9px 20px; background: #16a34a; border-color: #16a34a; color: white; font-weight: 600; cursor: pointer; border-radius: 8px;" onclick="createNewApplication()">
                 ➕ Submit Application
             </button>
         </div>` : `
-        <table style="width: 100%; border-collapse: collapse; margin-top: 20px; text-align: left;">
-            <thead>
-                <tr style="border-bottom: 2px solid var(--border-color);">
-                    <th style="padding: 10px;">App ID</th>
-                    <th style="padding: 10px;">Date</th>
-                    <th style="padding: 10px;">Legal Name</th>
-                    <th style="padding: 10px;">User Email</th>
-                    <th style="padding: 10px;">TRN</th>
-                    <th style="padding: 10px;">Status</th>
-                    <th style="padding: 10px;">Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${allApps.map(app => `
-                    <tr style="border-bottom: 1px solid var(--border-color);">
-                        <td style="padding: 10px;">${app.appId}</td>
-                        <td style="padding: 10px;">${new Date(app.date).toLocaleDateString()}</td>
-                        <td style="padding: 10px;">${app.data.legalName || 'N/A'}</td>
-                        <td style="padding: 10px; color: #64748b; font-size: 13px;">${app.userEmail || '-'}</td>
-                        <td style="padding: 10px; font-weight: 500; color: #0f172a;">${formatStateWiseTrnsHtml(app)}</td>
-                        <td style="padding: 10px;"><span style="padding: 2px 6px; border-radius: 4px; font-size: 12px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span></td>
-                        <td style="padding: 10px;">
-                            <button class="btn" style="padding: 4px 10px; font-size: 13px;" onclick="previewApplication('${app.appId}')">Preview</button>
-                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #2563eb; border: none; margin-left: 5px; font-weight: 600;" onclick="registerApplication('${app.appId}')" title="Run Regular Single-State GST Automation">⚡ Register</button>
-                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #0ea5e9; border: none; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
-                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #8b5cf6; border: none; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate application for Multi-State Registration">📋 Duplicate</button>
-                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #3b82f6; border: none; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit / Submit</button>
-                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #6366f1; border: none; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Declaration Form</button>
-                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #ef4444; border: none; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">Delete</button>
+        <div class="dash-table-wrap">
+            <table class="dash-table">
+                <thead>
+                    <tr>
+                        <th style="width: 120px;">App ID</th>
+                        <th style="width: 110px;">Date</th>
+                        <th style="min-width: 220px;">Applicant</th>
+                        <th style="min-width: 170px;">TRN Details</th>
+                        <th style="width: 120px;">Status</th>
+                        <th style="text-align: right; min-width: 440px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${allApps.map(app => {
+                        let statusClass = 'pending';
+                        if (app.status === 'Accepted') statusClass = 'accepted';
+                        else if (app.status === 'Registered') statusClass = 'registered';
+                        else if (app.status === 'Rejected') statusClass = 'rejected';
+
+                        const searchableText = `${app.appId} ${app.data?.legalName || ''} ${app.userEmail || ''} ${app.trn || ''} ${JSON.stringify(app.data?.stateTrns || '')}`.toLowerCase();
+
+                        return `
+                        <tr class="dash-table-row" data-status="${app.status}" data-search="${searchableText}">
+                            <td>
+                                <span class="dash-app-id">${app.appId}</span>
+                            </td>
+                            <td>
+                                <span style="font-size: 13px; font-weight: 500; color: #475569; white-space: nowrap;">${new Date(app.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                            </td>
+                            <td>
+                                <div style="max-width: 230px;">
+                                    <div class="dash-applicant-name" title="${app.data.legalName || 'N/A'}">${app.data.legalName || 'N/A'}</div>
+                                    <div class="dash-applicant-email" title="${app.userEmail || '-'}">${app.userEmail || '-'}</div>
+                                </div>
+                            </td>
+                            <td>
+                                ${formatStateWiseTrnsHtml(app)}
+                            </td>
+                            <td>
+                                <span class="dash-status ${statusClass}">
+                                    <span class="dash-status-dot"></span>${app.status}
+                                </span>
+                            </td>
+                            <td style="text-align: right;">
+                                <div class="dash-actions" style="justify-content: flex-end;">
+                                    <button class="dash-btn dash-btn-primary" onclick="registerApplication('${app.appId}')" title="Run Regular Single-State GST Automation">⚡ Register</button>
+                                    <button class="dash-btn dash-btn-sky" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
+                                    <button class="dash-btn dash-btn-ghost" onclick="previewApplication('${app.appId}')" title="Preview Application">👁️ View</button>
+                                    <button class="dash-btn dash-btn-green-subtle" onclick="editApplication('${app.appId}')" title="Edit / Submit Application">✏️ Edit</button>
+                                    <button class="dash-btn dash-btn-purple-subtle" onclick="duplicateApplication('${app.appId}')" title="Duplicate Application">📋 Copy</button>
+                                    <button class="dash-btn dash-btn-indigo-subtle" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')" title="Declaration Form">📄 Form</button>
+                                    <button class="dash-btn dash-btn-danger-subtle" onclick="deleteApplication('${app.appId}')" title="Delete Application">🗑️</button>
+                                </div>
+                            </td>
+                        </tr>
+                        `;
+                    }).join('')}
+                    <tr id="dash-no-results-row" style="display: none;">
+                        <td colspan="6" style="padding: 30px; text-align: center; color: #64748b; font-size: 14px;">
+                            No applications match your search or filter criteria.
                         </td>
                     </tr>
-                `).join('')}
-            </tbody>
-        </table>
+                </tbody>
+            </table>
+        </div>
         `}
     </div>`;
     container.innerHTML = html;
+    window.applyDashboardFilter();
 };
+
 
 window.previewApplication = function (id) {
     currentPreviewAppId = id;

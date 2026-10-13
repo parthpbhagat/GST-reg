@@ -70,11 +70,26 @@ async function handleLocalityWarning(page) {
     }
 }
 
-async function clickAndHandleMapError(page, selector, clickOptions = {}, maxRetries = 5) {
+async function clickAndHandleMapError(page, selector, clickOptions = {}, maxRetries = 3) {
     let attempts = 0;
     while (attempts < maxRetries) {
-        await page.click(selector, clickOptions);
-        await page.waitForTimeout(2000);
+        try {
+            await page.click(selector, { timeout: 3000, ...clickOptions });
+        } catch (clickErr) {
+            // Attempt evaluate click if Playwright strict click timed out
+            const clicked = await page.evaluate((sel) => {
+                const el = document.querySelector(sel);
+                if (el && el.offsetParent !== null) {
+                    el.click();
+                    return true;
+                }
+                return false;
+            }, selector);
+            if (!clicked) {
+                throw clickErr;
+            }
+        }
+        await page.waitForTimeout(1500);
 
         // Check if map error popup appeared (Error Code: REG-MP-408)
         const mapErrorText = await page.locator('text=/REG-MP-408/i').count();
@@ -100,22 +115,73 @@ async function clickAndHandleMapError(page, selector, clickOptions = {}, maxRetr
 
 async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
     sendUpdate(`Clicking Save & Continue...`);
-    try {
-        await clickAndHandleMapError(page, clickSelector || 'button[title="Save & Continue"]');
-    } catch (e) {
-        sendUpdate(`Warning: Could not click Save & Continue using standard selector. Attempting fallback...`);
-        await page.click('button:has-text("Save & Continue")').catch(() => {});
+    let buttonClicked = false;
+
+    // Try primary selector first
+    if (clickSelector) {
+        try {
+            await clickAndHandleMapError(page, clickSelector);
+            buttonClicked = true;
+        } catch (e) { }
+    }
+
+    // Robust fallbacks if primary click did not succeed
+    if (!buttonClicked) {
+        const fallbackSelectors = [
+            'button[title="Save & Continue"]',
+            'button[title*="Save"]',
+            'button:has-text("Save & Continue")',
+            'button:has-text("SAVE & CONTINUE")',
+            'button:has-text("Save and Continue")',
+            'button[data-ng-click*="save"]',
+            '#newRegForm button.btn.btn-primary:has-text("Save & Continue")',
+            'button[type="submit"].btn-primary',
+            'button.btn-primary:has-text("Save")'
+        ];
+
+        for (const sel of fallbackSelectors) {
+            try {
+                const loc = page.locator(sel).first();
+                if (await loc.count() > 0 && await loc.isVisible({ timeout: 1000 })) {
+                    await loc.scrollIntoViewIfNeeded().catch(() => {});
+                    await loc.click({ timeout: 2000 });
+                    buttonClicked = true;
+                    break;
+                }
+            } catch (e) {}
+        }
+
+        if (!buttonClicked) {
+            // Direct DOM evaluate click across all visible buttons
+            buttonClicked = await page.evaluate(() => {
+                const btns = Array.from(document.querySelectorAll('button, a.btn, input[type="submit"], input[type="button"]'));
+                const saveBtn = btns.find(b => {
+                    if (b.offsetParent === null) return false;
+                    const t = (b.innerText || b.value || b.getAttribute('title') || '').toUpperCase();
+                    return t.includes('SAVE') && (t.includes('CONTINUE') || t.includes('&'));
+                }) || btns.find(b => {
+                    if (b.offsetParent === null) return false;
+                    const t = (b.innerText || b.value || b.getAttribute('title') || '').toUpperCase();
+                    return t.includes('SAVE');
+                });
+                if (saveBtn) {
+                    saveBtn.click();
+                    return true;
+                }
+                return false;
+            });
+        }
     }
 
     if (expectedTabName) {
         sendUpdate(`Waiting for '${expectedTabName}' tab...`);
         let isFinished = false;
         try {
-            // Race: either the next tab becomes active, OR a validation error appears within 8 seconds
+            // Race: either next tab becomes active, OR validation error appears
             const result = await Promise.race([
-                // Condition 1: Next tab becomes active
+                // Condition 1: Next tab becomes active (checks both tab headers and tab-specific input fields)
                 page.waitForFunction((expectedName) => {
-                    const activeTabs = Array.from(document.querySelectorAll('li.active a, li.active span, .nav-tabs li.active, .step-wizard .active, .wizard-step.active'));
+                    const activeTabs = Array.from(document.querySelectorAll('li.active a, li.active span, .nav-tabs li.active, .step-wizard .active, .wizard-step.active, .nav li.active, [data-ng-repeat*="tab"]'));
                     const possibleNames = expectedName.toLowerCase().split('|').map(s => s.trim());
                     for (let tab of activeTabs) {
                         const tabText = tab.innerText ? tab.innerText.toLowerCase() : '';
@@ -123,13 +189,44 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
                             return true;
                         }
                     }
+                    const bodyText = document.body ? document.body.innerText.toLowerCase() : '';
+                    if (expectedName.toLowerCase().includes('promoter')) {
+                        if (document.querySelector('#fnm') || document.querySelector('#radiomale') || bodyText.includes('details of partners / directors') || bodyText.includes('promoter / partner details')) {
+                            return true;
+                        }
+                    }
+                    if (expectedName.toLowerCase().includes('authorized signatory')) {
+                        if (document.querySelector('#same_as_promoter') || document.querySelector('#as_fnm') || bodyText.includes('authorized signatory details')) {
+                            return true;
+                        }
+                    }
+                    if (expectedName.toLowerCase().includes('authorized representative')) {
+                        if (document.querySelector('#rep_type') || document.querySelector('input[name="hasAuthRep"]') || bodyText.includes('authorized representative')) {
+                            return true;
+                        }
+                    }
+                    if (expectedName.toLowerCase().includes('principal place of business')) {
+                        if (document.querySelector('#pncd') || document.querySelector('#bno') || document.querySelector('#bp_buss_poss') || bodyText.includes('principal place of business')) {
+                            return true;
+                        }
+                    }
+                    if (expectedName.toLowerCase().includes('goods and services')) {
+                        if (document.querySelector('#hsn') || document.querySelector('#sac') || bodyText.includes('goods and services')) {
+                            return true;
+                        }
+                    }
+                    if (expectedName.toLowerCase().includes('verification') || expectedName.toLowerCase().includes('aadhaar')) {
+                        if (document.querySelector('#submitbtn') || document.querySelector('#signatory') || bodyText.includes('verification') || bodyText.includes('aadhaar')) {
+                            return true;
+                        }
+                    }
                     return false;
-                }, expectedTabName, { timeout: 600000 }).then(() => ({ status: 'success' })),
+                }, expectedTabName, { timeout: 60000 }).then(() => ({ status: 'success' })),
 
                 // Condition 2: Validation errors appear - detect and report them
                 (async () => {
                     while (!isFinished) {
-                        await new Promise(r => setTimeout(r, 5000)); // wait 5s for page to respond
+                        await new Promise(r => setTimeout(r, 4000));
                         if (isFinished) break;
                         const errors = await page.evaluate(() => {
                             const selectors = [
@@ -152,7 +249,7 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
                             return { status: 'validation_error', errors };
                         }
                     }
-                    return new Promise(() => {}); // never resolve
+                    return new Promise(() => {});
                 })(),
                 
                 // Condition 3: Proactively handle Locality popup blocking navigation
@@ -176,11 +273,11 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
                             }
                         } catch(e) {}
                     }
-                    return new Promise(() => {}); // never resolve
+                    return new Promise(() => {});
                 })()
             ]);
             
-            isFinished = true; // Signal background conditions to stop
+            isFinished = true;
 
             if (result && result.status === 'validation_error') {
                 sendUpdate(`VALIDATION ERRORS on '${expectedTabName}' tab:`);
@@ -200,14 +297,51 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
 
 
 // Helper to construct and submit Multi-State Registration Common Info payload
-async function submitMultiStateCommonInfo(page, data, config) {
+async function submitMultiStateCommonInfo(page, data, config, currentTrn) {
     sendUpdate('Submitting Common Info to Multi-State API (submitcommoninfo)...');
 
-    const aplCd = (config && config.aplCd) || '1219';
+    const secToken = (currentTrn && currentTrn.trim()) || (config && config.secToken) || 'M10260001279TRN';
+    let aplCd = (config && config.aplCd);
+    if (!aplCd && secToken) {
+        const match = secToken.match(/(\d{4,7})TRN/i);
+        if (match) {
+            aplCd = match[1].slice(-4);
+        } else {
+            aplCd = '1279';
+        }
+    }
+    if (!aplCd) aplCd = '1279';
+
     const typAR = (config && config.typAR) || 'TRP';
-    const cobz = (config && config.cobz) || 'PRO';
-    const secToken = (config && config.secToken) || 'M10260001219TRN';
-    const stCds = (config && config.stCds && config.stCds.length > 0) ? config.stCds : ['24', '27'];
+
+    let cobz = (config && config.cobz);
+    if (!cobz && data.businessConstitution) {
+        const cMap = {
+            'proprietorship': 'PRO',
+            'sole proprietorship': 'PRO',
+            'partnership': 'PAR',
+            'private limited': 'PVT',
+            'public limited': 'PUB',
+            'limited liability partnership': 'LLP',
+            'llp': 'LLP',
+            'hindu undivided family': 'HUF',
+            'huf': 'HUF',
+            'trust': 'TRU',
+            'society': 'SOC'
+        };
+        const normalized = data.businessConstitution.toLowerCase().trim();
+        for (const [k, v] of Object.entries(cMap)) {
+            if (normalized.includes(k)) {
+                cobz = v;
+                break;
+            }
+        }
+    }
+    if (!cobz) cobz = 'PRO';
+
+    const stCds = (config && config.stCds && config.stCds.length > 0)
+        ? config.stCds
+        : (data.selectedStates && data.selectedStates.length > 0 ? data.selectedStates : ['24', '27']);
 
     // Format dates to DD/MM/YYYY
     function formatToDDMMYYYY(dStr) {
@@ -953,7 +1087,7 @@ async function run() {
         if (automationMode === 'multistate') {
             sendUpdate('Running Multi-State Common Info Registration Step...');
             try {
-                await submitMultiStateCommonInfo(page, data, multiStateConfig);
+                await submitMultiStateCommonInfo(page, data, multiStateConfig, trnText);
             } catch (msErr) {
                 sendUpdate(`Multi-State API note: ${msErr.message}`);
             }
@@ -969,7 +1103,22 @@ async function run() {
         if (data.businessConstitution) {
             sendUpdate('Selecting Business Constitution...');
             try {
-                await page.selectOption('#bd_ConstBuss', { label: data.businessConstitution });
+                const constLoc = page.locator('#bd_ConstBuss');
+                if (await constLoc.count() > 0 && await constLoc.isVisible({ timeout: 1500 })) {
+                    await constLoc.selectOption({ label: data.businessConstitution }, { timeout: 2500 }).catch(async () => {
+                        await page.evaluate((cText) => {
+                            const sel = document.querySelector('#bd_ConstBuss');
+                            if (!sel) return;
+                            const opt = Array.from(sel.options).find(o => o.text && o.text.toUpperCase().includes(cText.toUpperCase()));
+                            if (opt) {
+                                sel.value = opt.value;
+                                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }, data.businessConstitution);
+                    });
+                } else {
+                    sendUpdate('Note: Business Constitution is auto-filled or read-only.');
+                }
             } catch (e) {
                 sendUpdate(`Warning: Could not select Business Constitution: ${data.businessConstitution}`);
             }
@@ -978,27 +1127,48 @@ async function run() {
         if (data.businessDistrict) {
             sendUpdate('Selecting Business District...');
             try {
-                await page.selectOption('#dst', { label: data.businessDistrict });
+                const distLoc = page.locator('#dst, #applnDistr, #bd_dist, #district').first();
+                if (await distLoc.count() > 0 && await distLoc.isVisible({ timeout: 1500 })) {
+                    await distLoc.selectOption({ label: data.businessDistrict }, { timeout: 2000 }).catch(async () => {
+                        await page.evaluate((dName) => {
+                            const sel = document.querySelector('#dst, #applnDistr, #bd_dist, #district');
+                            if (!sel) return;
+                            const opt = Array.from(sel.options).find(o => o.text && o.text.toUpperCase().includes(dName.toUpperCase()));
+                            if (opt) {
+                                sel.value = opt.value;
+                                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }, data.businessDistrict);
+                    });
+                    sendUpdate(`Business District processed: ${data.businessDistrict}`);
+                } else {
+                    sendUpdate('Note: Business District field not present on this screen (Multi-State or auto-assigned), skipping.');
+                }
             } catch (e) {
-                sendUpdate(`Warning: Could not select Business District: ${data.businessDistrict}`);
+                sendUpdate(`Note: Could not select Business District: ${data.businessDistrict}`);
             }
         }
 
         const selectDropdownRobust = async (selector, text) => {
             if (!text) return;
             try {
-                // Wait up to 10s for the dropdown to actually fetch and populate its options
-                await page.waitForFunction(`document.querySelector('${selector}') && document.querySelector('${selector}').options.length > 1`, null, { timeout: 10000 }).catch(() => { });
+                const isVisible = await page.evaluate((sel) => {
+                    const el = document.querySelector(sel);
+                    return !!el && el.offsetParent !== null;
+                }, selector);
 
-                // Try exact label match (fast timeout)
+                if (!isVisible) {
+                    return;
+                }
+
+                await page.waitForFunction(`document.querySelector('${selector}') && document.querySelector('${selector}').options.length > 1`, null, { timeout: 3000 }).catch(() => { });
+
                 await page.selectOption(selector, { label: text }, { timeout: 2000 });
             } catch (e1) {
                 try {
-                    // Try exact value match (fast timeout)
                     await page.selectOption(selector, text, { timeout: 2000 });
                 } catch (e2) {
                     try {
-                        // Fallback: Partial text match (e.g., if option is "GANDHINAGAR (12)")
                         const options = await page.$$eval(`${selector} option`, opts => opts.map(o => ({ value: o.value, text: o.innerText })));
                         const match = options.find(o => o.text && o.text.toUpperCase().includes(text.toUpperCase()));
                         if (match && match.value) {
@@ -1007,8 +1177,7 @@ async function run() {
                     } catch (e3) { }
                 }
             }
-            // Wait for the next dependent dropdown to start fetching
-            await page.waitForTimeout(1500);
+            await page.waitForTimeout(500);
         };
 
         if (data.ppob_stateJurisdiction) await selectDropdownRobust('#stj', data.ppob_stateJurisdiction);
@@ -1021,17 +1190,22 @@ async function run() {
             const isYes = (typeof data.rule14A === 'string' && data.rule14A.toLowerCase() === 'yes') || data.rule14A === true || data.rule14A === 'Y';
             const radioValue = isYes ? 'Y' : 'N';
             try {
-                await page.check(`input[name="bd_optCat"][value="${radioValue}"]`);
-                if (isYes) {
-                    try {
-                        const checkbox = page.locator('#optCat_declaration');
-                        if (await checkbox.count() > 0) {
-                            await checkbox.check();
-                            sendUpdate('Checked optCat_declaration for Rule 14A');
+                const radioLoc = page.locator(`input[name="bd_optCat"][value="${radioValue}"]`);
+                if (await radioLoc.count() > 0 && await radioLoc.isVisible({ timeout: 1500 })) {
+                    await radioLoc.check({ timeout: 2000 });
+                    if (isYes) {
+                        try {
+                            const checkbox = page.locator('#optCat_declaration');
+                            if (await checkbox.count() > 0 && await checkbox.isVisible({ timeout: 1500 })) {
+                                await checkbox.check({ timeout: 2000 });
+                                sendUpdate('Checked optCat_declaration for Rule 14A');
+                            }
+                        } catch (e2) {
+                            sendUpdate('Warning: Could not check optCat_declaration');
                         }
-                    } catch (e2) {
-                        sendUpdate('Warning: Could not check optCat_declaration');
                     }
+                } else {
+                    sendUpdate('Note: Rule 14A option not present on this screen, skipping.');
                 }
             } catch (e) {
                 sendUpdate('Warning: Could not select Rule 14A');
@@ -1136,10 +1310,28 @@ async function run() {
 
         if ((data.reasonToObtainRegistration || data.reasonToObtain)) {
             sendUpdate('Selecting Reason to Obtain Registration...');
+            const reasonVal = (data.reasonToObtainRegistration || data.reasonToObtain);
             try {
-                await page.selectOption('#bd_rsl', { label: (data.reasonToObtainRegistration || data.reasonToObtain) });
+                const rslLoc = page.locator('#bd_rsl');
+                if (await rslLoc.count() > 0 && await rslLoc.isVisible({ timeout: 1500 })) {
+                    try {
+                        await page.selectOption('#bd_rsl', { label: reasonVal }, { timeout: 2500 });
+                    } catch (e1) {
+                        await page.evaluate((rText) => {
+                            const sel = document.querySelector('#bd_rsl');
+                            if (!sel) return;
+                            const opt = Array.from(sel.options).find(o => o.text && o.text.toUpperCase().includes(rText.toUpperCase()));
+                            if (opt) {
+                                sel.value = opt.value;
+                                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }, reasonVal);
+                    }
+                } else {
+                    sendUpdate('Note: Reason to Obtain Registration not present on this screen, skipping.');
+                }
             } catch (e) {
-                sendUpdate(`Warning: Could not select Reason: ${(data.reasonToObtainRegistration || data.reasonToObtain)}`);
+                sendUpdate(`Warning: Could not select Reason: ${reasonVal}`);
             }
         }
 
@@ -1260,7 +1452,7 @@ async function run() {
         }
 
         await page.waitForTimeout(2000);
-        await saveAndContinueToTab(page, 'Promoter', '#newRegForm button.btn.btn-primary:has-text("Save & Continue")');
+        await saveAndContinueToTab(page, 'Promoter', 'button[title="Save & Continue"]');
 
         // ============================================
         // PROMOTER / PARTNER DETAILS - MULTIPLE PROMOTERS

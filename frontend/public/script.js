@@ -2312,6 +2312,14 @@ window.startAutomationPipeline = async function (id, mode = 'regular', multiStat
                 badge.style.color = '#facc15';
                 document.getElementById('trn-otp-card').classList.remove('hidden');
                 document.getElementById('trn-otp-input').focus();
+            } else if (status.startsWith('WAITING_FOR_WARNING_RESPONSE') || status.includes('PORTAL WARNING DETECTED')) {
+                const card = document.getElementById('warning-card');
+                if (card) {
+                    card.classList.remove('hidden');
+                    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+                badge.innerText = 'WARNING: ACTION REQUIRED';
+                badge.style.color = '#f97316';
             } else if (status === 'COMPLETED') {
                 setPipelineActiveStep(5);
                 badge.innerText = 'REGISTRATION SUCCESS';

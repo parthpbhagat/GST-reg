@@ -1901,7 +1901,7 @@ async function run() {
 
             if (authSig.res_country) {
                 try {
-                    await page.selectOption('#cnty', { label: authSig.res_country });
+                    await page.selectOption('#cnty', { label: authSig.res_country }, { timeout: 3000 });
                 } catch (e) {
                     sendUpdate('Warning: Could not select Auth Sig country');
                 }
@@ -1940,7 +1940,7 @@ async function run() {
             if (authSig.authSigProofType) {
                 try {
                     await page.waitForSelector('#as_up_type', { state: 'visible', timeout: 5000 });
-                    await page.selectOption('#as_up_type', { label: authSig.authSigProofType });
+                    await page.selectOption('#as_up_type', { label: authSig.authSigProofType }, { timeout: 3000 });
                 } catch (e) {
                     sendUpdate('Warning: Could not select authSigProofType');
                 }
@@ -2068,21 +2068,32 @@ async function run() {
             let hasPureAuthSigs = false;
             const promoterEmails = new Set();
             const promoterNames = new Set();
+            const promoterPans = new Set();
             for (let i = 1; i <= 10; i++) {
                 const p = data[`p${i}`];
                 if (p) {
                     if (p.email) promoterEmails.add(p.email.toLowerCase().trim());
                     const fullName = `${p.firstName||''} ${p.lastName||''}`.toLowerCase().trim();
                     if (fullName) promoterNames.add(fullName);
+                    if (p.pan) promoterPans.add(p.pan.toUpperCase().trim());
                 }
             }
             for (let i = 1; i <= 10; i++) {
                 const a = data[`a${i}`];
-                if (a && Object.keys(a).length > 0) {
-                    const aEmail = (a.email || '').toLowerCase().trim();
+                if (a && typeof a === 'object') {
                     const aName = `${a.firstName||''} ${a.lastName||''}`.toLowerCase().trim();
-                    // Only pure if email and name don't match any promoter
-                    const isDuplicate = (aEmail && promoterEmails.has(aEmail)) || (aName && promoterNames.has(aName));
+                    const aEmail = (a.email || '').toLowerCase().trim();
+                    const aPan = (a.pan || '').toUpperCase().trim();
+                    const aMobile = (a.mobile || '').trim();
+
+                    // Must have actual person identity
+                    const hasValidIdentity = Boolean(aName || aEmail || aPan || aMobile);
+                    if (!hasValidIdentity) continue;
+
+                    // Only pure if identity doesn't match any promoter
+                    const isDuplicate = (aEmail && promoterEmails.has(aEmail)) || 
+                                        (aName && promoterNames.has(aName)) ||
+                                        (aPan && promoterPans.has(aPan));
                     if (!isDuplicate) {
                         hasPureAuthSigs = true;
                         break;
@@ -2120,7 +2131,7 @@ async function run() {
                             return false;
                         }, pData.authSigProofType);
                         if (!selectSuccess) {
-                            await page.selectOption('#as_up_type', { label: pData.authSigProofType });
+                            await page.selectOption('#as_up_type', { label: pData.authSigProofType }, { timeout: 3000 });
                         }
                         await page.waitForTimeout(500);
                     } catch (e) {
@@ -2222,7 +2233,7 @@ async function run() {
                         sendUpdate('Selecting Authorized Signatory Proof Type...');
                         try {
                             await page.waitForSelector('#as_up_type', { state: 'visible', timeout: 5000 });
-                            await page.selectOption('#as_up_type', { label: pData.authSigProofType });
+                            await page.selectOption('#as_up_type', { label: pData.authSigProofType }, { timeout: 3000 });
                             await page.waitForTimeout(500);
                         } catch (e) {
                             sendUpdate('Warning: Could not select authSigProofType');

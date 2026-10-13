@@ -508,7 +508,20 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
                 const base64 = line.replace('SCREENSHOT:', '');
                 io.to(appId).emit('automation_screenshot', { appId, image: base64 });
             } else if (line.startsWith('WAITING_FOR_WARNING_RESPONSE')) {
-                io.to(appId).emit('automation_warning');
+                let warningPayload = {
+                    title: 'Address Warning',
+                    message: 'Locality/Sub-Locality is not matching with the Pin-Code. Do you want to save the details?',
+                    buttons: ['YES', 'NO']
+                };
+                if (line.includes(':')) {
+                    const raw = line.substring(line.indexOf(':') + 1).trim();
+                    try {
+                        warningPayload = JSON.parse(raw);
+                    } catch (e) {
+                        warningPayload.message = raw;
+                    }
+                }
+                io.to(appId).emit('automation_warning', warningPayload);
             } else if (line) {
                 console.log(`[Runner Log]: ${line}`);
             }

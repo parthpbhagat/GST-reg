@@ -46,28 +46,167 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error(`[Runner Error]: UNHANDLED REJECTION: ${reason ? (reason.stack || reason.message || reason) : reason}`);
 });
 
-async function handleLocalityWarning(page) {
+let isHandlingWarning = false;
+
+async function detectPortalWarning(page) {
     try {
-        const warningEl = await page.waitForSelector('text=Locality/Sub-Locality is not matching', { state: 'visible', timeout: 3000 }).catch(() => null);
-        if (warningEl) {
-            sendUpdate('Handling Locality/Sub-Locality mismatch warning (automatically clicking YES)...');
-            
-            // Try specific selector first, then text based fallback
-            const yesBtn = page.getByRole('button', { name: 'YES', exact: true }).first();
-            if (await yesBtn.isVisible({ timeout: 2000 })) {
-                await yesBtn.evaluate(b => b.click()).catch(() => yesBtn.click({ force: true }));
-            } else {
-                // Fallbacks if getByRole fails
-                await page.click('button:has-text("YES")').catch(() => {});
+        return await page.evaluate(() => {
+            // Check Bootstrap/Angular modals and dialogs
+            const dialogs = Array.from(document.querySelectorAll('.modal, .modal-dialog, div[role="dialog"], .sweet-alert'));
+            for (const d of dialogs) {
+                const style = window.getComputedStyle(d);
+                if (style.display === 'none' || style.visibility === 'hidden') continue;
+                if (d.offsetParent === null && !d.classList.contains('in') && !d.classList.contains('show')) continue;
+
+                const text = (d.innerText || '').trim();
+                if (/warning|mismatch|locality|do you want to save|pin-code/i.test(text)) {
+                    const titleEl = d.querySelector('.modal-title, h4, h3, h5, .modal-header');
+                    const title = (titleEl ? titleEl.innerText.trim() : 'Warning') || 'Address Warning';
+
+                    let message = '';
+                    const bodyEl = d.querySelector('.modal-body, p');
+                    if (bodyEl && bodyEl.innerText.trim()) {
+                        message = bodyEl.innerText.trim();
+                    } else {
+                        const lines = text.split('\n').map(l => l.trim()).filter(l => l && !/^(yes|no|ok|cancel|close|continue)$/i.test(l));
+                        message = lines.slice(1).join(' ') || lines[0] || text;
+                    }
+
+                    const buttons = Array.from(d.querySelectorAll('button, input[type="button"], a.btn'))
+                        .map(b => (b.innerText || b.value || b.textContent || '').trim())
+                        .filter(t => t.length > 0 && t.length < 20);
+
+                    return {
+                        detected: true,
+                        title,
+                        message,
+                        buttons: buttons.length > 0 ? buttons : ['YES', 'NO']
+                    };
+                }
             }
-            
-            await page.waitForTimeout(2000);
-        }
+
+            // Direct body text check for locality mismatch
+            const body = document.body ? document.body.innerText : '';
+            if (body.includes('Locality/Sub-Locality is not matching')) {
+                return {
+                    detected: true,
+                    title: 'Address Warning',
+                    message: 'Locality/Sub-Locality is not matching with the Pin-Code. Do you want to save the details?',
+                    buttons: ['YES', 'NO']
+                };
+            }
+
+            return null;
+        });
     } catch (e) {
-        if (e.message && !e.message.includes('Timeout')) {
-            console.log(`[Runner Log]: Error in handleLocalityWarning: ${e.message}`);
-        }
+        return null;
     }
+}
+
+async function handlePortalWarning(page, maxWaitMs = 1500) {
+    if (isHandlingWarning) return false;
+    isHandlingWarning = true;
+    try {
+        if (maxWaitMs > 0) {
+            await page.waitForTimeout(maxWaitMs);
+        }
+
+        const warningInfo = await detectPortalWarning(page);
+        if (!warningInfo || !warningInfo.detected) {
+            return false;
+        }
+
+        const warningTitle = warningInfo.title || 'Address Warning';
+        const warningMsg = warningInfo.message || 'Locality/Sub-Locality is not matching with the Pin-Code. Do you want to save the details?';
+        const warningButtons = warningInfo.buttons && warningInfo.buttons.length > 0 ? warningInfo.buttons : ['YES', 'NO'];
+
+        // 1. Log clearly in live console / terminal
+        sendUpdate(`⚠️ PORTAL WARNING DETECTED: ${warningMsg}`);
+        sendUpdate(`👉 MANUAL ACTION REQUIRED: Please click ${warningButtons.join(' or ')} button in the warning box to proceed...`);
+
+        // 2. Notify backend & frontend to show the warning card with interactive buttons
+        console.log(`WAITING_FOR_WARNING_RESPONSE:${JSON.stringify({
+            title: warningTitle,
+            message: warningMsg,
+            buttons: warningButtons
+        })}`);
+
+        // 3. Pause automation and wait for user's manual button click from UI (via stdin)
+        const userChoice = await new Promise((resolve) => {
+            process.stdin.resume();
+            const onData = (chunk) => {
+                const lines = chunk.toString().split(/[\r\n]+/);
+                for (let line of lines) {
+                    const clean = line.trim().toLowerCase();
+                    if (clean) {
+                        process.stdin.removeListener('data', onData);
+                        resolve(clean);
+                        return;
+                    }
+                }
+            };
+            process.stdin.on('data', onData);
+        });
+
+        sendUpdate(`✅ User manually selected '${userChoice.toUpperCase()}'. Applying to GST portal dialog...`);
+
+        // 4. Click that button on the portal dialog with evaluate + dispatchEvent
+        const clicked = await page.evaluate((choice) => {
+            const target = choice.trim().toLowerCase();
+            const containers = Array.from(document.querySelectorAll('.modal, .modal-dialog, div[role="dialog"], .sweet-alert, body'));
+            for (const container of containers) {
+                if (container !== document.body && container.offsetParent === null) continue;
+                const btns = Array.from(container.querySelectorAll('button, input[type="button"], a.btn'));
+                for (const b of btns) {
+                    const txt = (b.innerText || b.value || b.textContent || '').trim().toLowerCase();
+                    if (txt === target || (target === 'yes' && (txt === 'yes' || txt.startsWith('yes'))) || (target === 'no' && (txt === 'no' || txt.startsWith('no')))) {
+                        b.focus();
+                        b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                        b.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                        b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                        b.click();
+                        if (window.angular) {
+                            try {
+                                const scope = angular.element(b).scope();
+                                const ngClick = b.getAttribute('ng-click') || b.getAttribute('data-ng-click');
+                                if (scope && ngClick) {
+                                    scope.$eval(ngClick);
+                                    scope.$apply();
+                                }
+                            } catch(e) {}
+                        }
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }, userChoice);
+
+        // Fallback with Playwright locator if evaluate didn't find button
+        if (!clicked) {
+            const regex = new RegExp(`^\\s*${userChoice}\\s*$`, 'i');
+            const loc = page.locator('button, a.btn, input[type="button"]').filter({ hasText: regex }).last();
+            if (await loc.isVisible({ timeout: 1500 }).catch(() => false)) {
+                await loc.click({ force: true }).catch(() => {});
+            } else {
+                await page.click(`button:has-text("${userChoice.toUpperCase()}")`).catch(() => {});
+            }
+        }
+
+        // 5. Wait for the dialog to disappear
+        await page.waitForTimeout(2000);
+        sendUpdate(`'${userChoice.toUpperCase()}' processed successfully. Resuming automation...`);
+        return true;
+    } catch (e) {
+        console.error(`[Runner Log]: Warning handler exception: ${e.message}`);
+        return false;
+    } finally {
+        isHandlingWarning = false;
+    }
+}
+
+async function handleLocalityWarning(page) {
+    return await handlePortalWarning(page, 500);
 }
 
 async function clickAndHandleMapError(page, selector, clickOptions = {}, maxRetries = 3) {
@@ -181,6 +320,11 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
             const result = await Promise.race([
                 // Condition 1: Next tab becomes active (checks active tab class and visible tab-specific input fields)
                 page.waitForFunction((expectedName) => {
+                    // If a warning modal is active, the tab transition has not finished yet!
+                    const warningPresent = Array.from(document.querySelectorAll('.modal, .modal-dialog, div[role="dialog"]'))
+                        .some(m => m.offsetParent !== null && /warning|mismatch|locality|do you want to save/i.test(m.innerText || ''));
+                    if (warningPresent) return false;
+
                     const activeTabs = Array.from(document.querySelectorAll('li.active, .nav-tabs li.active, .step-wizard .active, .wizard-step.active, .nav li.active, [data-ng-repeat*="tab"].active'));
                     const possibleNames = expectedName.toLowerCase().split('|').map(s => s.trim());
                     for (let tab of activeTabs) {
@@ -195,7 +339,7 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
                         if (el && el.offsetParent !== null) return true;
                     }
                     if (expectedName.toLowerCase().includes('authorized signatory')) {
-                        const el = document.querySelector('#same_as_promoter, #as_fnm, #pri_auth');
+                        const el = document.querySelector('#same_as_promoter, #as_fnm, #as_up_type, #as_upload_sign');
                         if (el && el.offsetParent !== null) return true;
                     }
                     if (expectedName.toLowerCase().includes('authorized representative')) {
@@ -246,24 +390,15 @@ async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
                     return new Promise(() => {});
                 })(),
                 
-                // Condition 3: Proactively handle Locality popup blocking navigation
+                // Condition 3: Proactively handle any portal warning popup blocking navigation
                 (async () => {
                     while (!isFinished) {
-                        await new Promise(r => setTimeout(r, 2000));
+                        await new Promise(r => setTimeout(r, 1500));
                         if (isFinished) break;
                         try {
-                            const warningEl = await page.$('text=Locality/Sub-Locality is not matching');
-                            if (warningEl) {
-                                const isVis = await warningEl.isVisible();
-                                if (isVis) {
-                                    sendUpdate('Handling Locality/Sub-Locality mismatch warning (automatically clicking YES)...');
-                                    const yesBtn = page.getByRole('button', { name: 'YES', exact: true }).first();
-                                    if (await yesBtn.isVisible({ timeout: 1000 })) {
-                                        await yesBtn.evaluate(b => b.click()).catch(() => yesBtn.click({ force: true }));
-                                    } else {
-                                        await page.click('button:has-text("YES")').catch(() => {});
-                                    }
-                                }
+                            const warningInfo = await detectPortalWarning(page);
+                            if (warningInfo && warningInfo.detected && !isHandlingWarning) {
+                                await handlePortalWarning(page, 0);
                             }
                         } catch(e) {}
                     }

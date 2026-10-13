@@ -210,7 +210,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-D7VMyLFD.css">
+  <link rel="stylesheet" crossorigin href="/assets/index-mCmcyBhF.css">
 </head>
 <body>
     <!-- Global Loader -->
@@ -452,11 +452,11 @@
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
                             </div>
                             <div>
-                                <h4 style="color: #fff; font-size: 16px; margin: 0;">Address Warning</h4>
-                                <p style="color: #cbd5e1; font-size: 13px; margin: 0;">Locality/Sub-Locality is not matching with the Pin-Code. Do you want to save the details?</p>
+                                <h4 id="warning-card-title" style="color: #fff; font-size: 16px; margin: 0;">Address Warning</h4>
+                                <p id="warning-card-message" style="color: #cbd5e1; font-size: 13px; margin: 0;">Locality/Sub-Locality is not matching with the Pin-Code. Do you want to save the details?</p>
                             </div>
                         </div>
-                        <div style="display: flex; gap: 12px;">
+                        <div id="warning-card-buttons" style="display: flex; gap: 12px;">
                             <button class="btn accent" style="padding: 10px 24px; flex: 1; background: #22c55e; border-color: #22c55e;" onclick="submitWarningResponse('yes')">YES</button>
                             <button class="btn" style="padding: 10px 24px; flex: 1; background: #ef4444; border-color: #ef4444; color: white;" onclick="submitWarningResponse('no')">NO</button>
                         </div>

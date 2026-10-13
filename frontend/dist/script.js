@@ -883,128 +883,128 @@ function renderSidebar() {
     }
 }
 
-function validateStep(targetStep) {
-    const f = window.form || {};
-
-    if (targetStep === 0) {
-        if (!f.pan || !f.pan.trim()) {
-            alert('Please enter PAN in Business Details (Step 1).');
-            return false;
-        }
-        if (!f.legalName || !f.legalName.trim()) {
-            alert('Please enter Legal Name in Business Details (Step 1).');
-            return false;
-        }
-        if (!f.state || !f.state.trim()) {
-            alert('Please select State in Business Details (Step 1).');
-            return false;
-        }
-        if (!f.district || !f.district.trim()) {
-            alert('Please select District in Business Details (Step 1).');
-            return false;
-        }
-        if (!f.reasonToObtainRegistration || !f.reasonToObtainRegistration.trim()) {
-            alert('Please select Reason to Obtain Registration in Business Details (Step 1).');
-            return false;
-        }
-        if (!f.dateOfCommencement) {
-            alert('Please enter Date of Commencement of Business in Business Details (Step 1).');
-            return false;
-        }
-        if (!f.dateOfLiability) {
-            alert('Please enter Date on which liability arises in Business Details (Step 1).');
-            return false;
-        }
-    } else if (targetStep === 1) {
-        const promoterKeys = Object.keys(f).filter(k => k.match(/^p\d+$/));
-        let validPromoterFound = false;
-        for (const k of promoterKeys) {
-            const p = f[k];
-            if (p && p.firstName && p.firstName.trim() && p.mobile && p.mobile.trim()) {
-                validPromoterFound = true;
-                break;
-            }
-        }
-        if (!validPromoterFound) {
-            alert('Please add at least one Promoter / Partner with mandatory details (First Name, Mobile) in Step 2.');
-            return false;
-        }
-    } else if (targetStep === 2) {
-        let hasPrimary = false;
-        for (const k in f) {
-            if ((k.match(/^a\d+$/) || k.match(/^p\d+$/)) && f[k] && f[k].primary === true) {
-                if (f[k].firstName && f[k].firstName.trim()) {
-                    hasPrimary = true;
-                    break;
-                }
-            }
-        }
-        if (!hasPrimary) {
-            alert('Please designate at least one Primary Authorized Signatory with valid details in Step 3.');
-            return false;
-        }
-    } else if (targetStep === 4) {
-        if (!f.ppob_pincode || !f.ppob_pincode.trim()) {
-            alert('Please enter PIN Code for Principal Place of Business in Step 5.');
-            return false;
-        }
-        if (!f.ppob_state || !f.ppob_state.trim()) {
-            alert('Please select State for Principal Place of Business in Step 5.');
-            return false;
-        }
-        if (!f.ppob_district || !f.ppob_district.trim()) {
-            alert('Please select District for Principal Place of Business in Step 5.');
-            return false;
-        }
-        if (!f.ppob_city || !f.ppob_city.trim()) {
-            alert('Please enter City / Town for Principal Place of Business in Step 5.');
-            return false;
-        }
-        if (!f.ppob_natureOfPossession || !f.ppob_natureOfPossession.trim()) {
-            alert('Please select Nature of Possession of Premises in Step 5.');
-            return false;
-        }
-        const hasNature = f.ppob_natureOfBusiness && Object.values(f.ppob_natureOfBusiness).some(v => v === true);
-        if (!hasNature) {
-            alert('Please select at least one Nature of Business Activity in Step 5.');
-            return false;
-        }
-    }
-    return true;
-}
-
-window.validateFullForm = function() {
-    for (let s = 0; s <= 4; s++) {
-        if (s === 3) continue; // Authorized representative is optional
-        if (!validateStep(s)) {
-            setStep(s);
-            return false;
-        }
-    }
-    return true;
-};
-
-function setStep(newStep) {
-    if (newStep > step) {
-        for (let s = step; s < newStep; s++) {
-            if (!validateStep(s)) return;
-        }
-    }
-
-    if (newStep === 2) {
-        let hasPromoterAuthSig = false;
-        for (let k in window.form) {
-            if (k.match(/^p\d+$/) && window.form[k].alsoAuthorizedSignatory) {
-                hasPromoterAuthSig = true;
-                break;
-            }
-        }
-        if (hasPromoterAuthSig) {
-            isAuthSigListView = true;
-            window.isViewingPromoter = false;
-        }
-    }
-
+function validateStep(targetStep) {
+    const f = window.form || {};
+
+    if (targetStep === 0) {
+        if (!f.pan || !f.pan.trim()) {
+            alert('Please enter PAN in Business Details (Step 1).');
+            return false;
+        }
+        if (!f.legalName || !f.legalName.trim()) {
+            alert('Please enter Legal Name in Business Details (Step 1).');
+            return false;
+        }
+        if (!f.state || !f.state.trim()) {
+            alert('Please select State in Business Details (Step 1).');
+            return false;
+        }
+        if (!f.district || !f.district.trim()) {
+            alert('Please select District in Business Details (Step 1).');
+            return false;
+        }
+        if (!f.reasonToObtainRegistration || !f.reasonToObtainRegistration.trim()) {
+            alert('Please select Reason to Obtain Registration in Business Details (Step 1).');
+            return false;
+        }
+        if (!f.dateOfCommencement) {
+            alert('Please enter Date of Commencement of Business in Business Details (Step 1).');
+            return false;
+        }
+        if (!f.dateOfLiability) {
+            alert('Please enter Date on which liability arises in Business Details (Step 1).');
+            return false;
+        }
+    } else if (targetStep === 1) {
+        const promoterKeys = Object.keys(f).filter(k => k.match(/^p\d+$/));
+        let validPromoterFound = false;
+        for (const k of promoterKeys) {
+            const p = f[k];
+            if (p && p.firstName && p.firstName.trim() && p.mobile && p.mobile.trim()) {
+                validPromoterFound = true;
+                break;
+            }
+        }
+        if (!validPromoterFound) {
+            alert('Please add at least one Promoter / Partner with mandatory details (First Name, Mobile) in Step 2.');
+            return false;
+        }
+    } else if (targetStep === 2) {
+        let hasPrimary = false;
+        for (const k in f) {
+            if ((k.match(/^a\d+$/) || k.match(/^p\d+$/)) && f[k] && f[k].primary === true) {
+                if (f[k].firstName && f[k].firstName.trim()) {
+                    hasPrimary = true;
+                    break;
+                }
+            }
+        }
+        if (!hasPrimary) {
+            alert('Please designate at least one Primary Authorized Signatory with valid details in Step 3.');
+            return false;
+        }
+    } else if (targetStep === 4) {
+        if (!f.ppob_pincode || !f.ppob_pincode.trim()) {
+            alert('Please enter PIN Code for Principal Place of Business in Step 5.');
+            return false;
+        }
+        if (!f.ppob_state || !f.ppob_state.trim()) {
+            alert('Please select State for Principal Place of Business in Step 5.');
+            return false;
+        }
+        if (!f.ppob_district || !f.ppob_district.trim()) {
+            alert('Please select District for Principal Place of Business in Step 5.');
+            return false;
+        }
+        if (!f.ppob_city || !f.ppob_city.trim()) {
+            alert('Please enter City / Town for Principal Place of Business in Step 5.');
+            return false;
+        }
+        if (!f.ppob_natureOfPossession || !f.ppob_natureOfPossession.trim()) {
+            alert('Please select Nature of Possession of Premises in Step 5.');
+            return false;
+        }
+        const hasNature = f.ppob_natureOfBusiness && Object.values(f.ppob_natureOfBusiness).some(v => v === true);
+        if (!hasNature) {
+            alert('Please select at least one Nature of Business Activity in Step 5.');
+            return false;
+        }
+    }
+    return true;
+}
+
+window.validateFullForm = function() {
+    for (let s = 0; s <= 4; s++) {
+        if (s === 3) continue; // Authorized representative is optional
+        if (!validateStep(s)) {
+            setStep(s);
+            return false;
+        }
+    }
+    return true;
+};
+
+function setStep(newStep) {
+    if (newStep > step) {
+        for (let s = step; s < newStep; s++) {
+            if (!validateStep(s)) return;
+        }
+    }
+
+    if (newStep === 2) {
+        let hasPromoterAuthSig = false;
+        for (let k in window.form) {
+            if (k.match(/^p\d+$/) && window.form[k].alsoAuthorizedSignatory) {
+                hasPromoterAuthSig = true;
+                break;
+            }
+        }
+        if (hasPromoterAuthSig) {
+            isAuthSigListView = true;
+            window.isViewingPromoter = false;
+        }
+    }
+
     step = newStep;
     const header = document.querySelector('header.top');
     if (header) {
@@ -1172,12 +1172,12 @@ window.updateForm = function (key, value) {
     }
 }
 
-window.showPreview = function () {
-    if (!window.validateFullForm()) {
-        return;
-    }
-    isPreview = true;
-    renderContent();
+window.showPreview = function () {
+    if (!window.validateFullForm()) {
+        return;
+    }
+    isPreview = true;
+    renderContent();
 };
 
 window.addGoodsItem = function () {
@@ -1220,17 +1220,17 @@ window.removeServicesItem = function (index) {
     }
 };
 
-window.submitApplication = async function () {
-    if (typeof window.validateFullForm === 'function' && !window.validateFullForm()) {
-        return;
-    }
-    const btn = (window.event && window.event.target) || document.querySelector('button[onclick*="submitApplication"]');
-    const originalText = btn ? btn.innerText : 'Submit Application';
-    try {
-        console.log("Submitting application...");
-        if (btn) {
-            btn.disabled = true;
-            btn.innerText = 'Submitting Application... Please wait...';
+window.submitApplication = async function () {
+    if (typeof window.validateFullForm === 'function' && !window.validateFullForm()) {
+        return;
+    }
+    const btn = (window.event && window.event.target) || document.querySelector('button[onclick*="submitApplication"]');
+    const originalText = btn ? btn.innerText : 'Submit Application';
+    try {
+        console.log("Submitting application...");
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = 'Submitting Application... Please wait...';
         }
 
         const appId = form._appId || 'APP-' + Math.floor(100000 + Math.random() * 900000);
@@ -1563,6 +1563,39 @@ function formatStateWiseTrnsHtml(app) {
     return html;
 }
 
+window.createNewApplication = function () {
+    if (typeof window.clearAutosave === 'function') {
+        window.clearAutosave();
+    } else {
+        localStorage.removeItem('gst_autosave');
+    }
+    if (window.form) {
+        delete window.form._appId;
+        delete window.form._originalStatus;
+    }
+    window.form = {
+        goods_hsn: [], goods_sac: [],
+        taxpayerType: "", legalName: "", tradeName: "", pan: "", email: "", mobile: "", state: "", district: "",
+        businessConstitution: "", dateOfCommencement: "", dateOfLiability: "", reasonToObtainRegistration: "", businessDistrict: "",
+        rule14A: "",
+        existingRegistrationType: "", existingRegistrationNo: "", existingRegistrationDate: "",
+        proofOfConstitutionType: "", proofOfConstitutionFile: "", documentForTradeNameFile: "",
+        ppob_building: "", ppob_flatNo: "", ppob_floor: "", ppob_street: "", ppob_locality: "", ppob_city: "",
+        ppob_state: "", ppob_district: "", ppob_pincode: "", ppob_country: "India", ppob_landmark: "", ppob_latitude: "", ppob_longitude: "",
+        ppob_stateJurisdiction: "", ppob_commissionerate: "", ppob_division: "", ppob_range: "",
+        ppob_email: "", ppob_stdCode: "", ppob_telephone: "", ppob_mobile: "", ppob_faxStdCode: "", ppob_fax: "",
+        ppob_natureOfPossession: "", ppob_doc: "", ppob_docFile: "",
+        ppob_natureOfBusiness: { bondedWarehouse: false, factoryManufacturing: false, leasingBusiness: false, retailBusiness: false, worksContract: false, eouStpEhtp: false, import: false, officeSaleOffice: false, warehouseDepot: false, others: false, export: false, supplierOfServices: false, recipientOfGoodsOrServices: false, wholesaleBusiness: false },
+        p1: JSON.parse(JSON.stringify(window.defaultPromoter)),
+        a1: JSON.parse(JSON.stringify(window.defaultAuthSig)),
+        stateSpecific_electricityBoard: "", stateSpecific_electricityConsumerNo: "",
+        stateSpecific_ptEcNo: "", stateSpecific_ptRcNo: "",
+        stateSpecific_exciseLicenseNo: "", stateSpecific_exciseLicenseHolder: ""
+    };
+    if (typeof isPreview !== 'undefined') isPreview = false;
+    navigateTo('/form');
+    if (typeof setStep === 'function') setStep(0);
+};
 
 window.renderAdminDashboard = async function () {
     const container = document.getElementById('admin-dashboard-container');
@@ -1576,7 +1609,7 @@ window.renderAdminDashboard = async function () {
 
         let actionButtons = '';
         if (isUserAdmin) {
-            actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-right: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
+            actionButtons = `<button class="btn accent" style="background: #16a34a; border-color: #16a34a; color: white; margin-right: 5px; font-weight: 600;" onclick="editApplication('${app.appId}')">📝 Submit / Edit Application</button>
                              <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-right: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>`;
             if (app.status === 'Pending') {
                 actionButtons += `<button class="btn accent" style="background: #22c55e; border-color: #22c55e;" onclick="updateAppStatus('${app.appId}', 'Accepted')">Accept</button>
@@ -1585,17 +1618,17 @@ window.renderAdminDashboard = async function () {
                 actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6;" onclick="registerApplication('${app.appId}')">Register Automatically</button>
                          <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
                          <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>
-                         <button class="btn accent" style="margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
+                         <button class="btn accent" style="background: #16a34a; border-color: #16a34a; color: white; margin-left: 5px;" onclick="editApplication('${app.appId}')">📝 Submit / Edit Application</button>
                          <button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>`;
             } else if (app.status === 'Rejected') {
-                actionButtons = `<button class="btn accent" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
+                actionButtons = `<button class="btn accent" style="background: #16a34a; border-color: #16a34a; color: white;" onclick="editApplication('${app.appId}')">📝 Submit / Edit Application</button>
                          <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')">📋 Duplicate / Multi-State</button>`;
             }
         } else {
             actionButtons = `
-                <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
+                <button class="btn accent" style="background: #16a34a; border-color: #16a34a; color: white; font-weight: 600;" onclick="editApplication('${app.appId}')">📝 Submit / Edit Application</button>
+                <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
                 <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>
-                <button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
                 <button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>
                 <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">🗑️ Delete Application</button>
             `;
@@ -1644,16 +1677,27 @@ window.renderAdminDashboard = async function () {
     if (typeof window.hideLoader === 'function') window.hideLoader();
 
     let html = `<div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
             <div>
                 <h2 style="margin: 0;">${(localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz' || document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com') ? 'Admin Dashboard - Applications' : 'My Applications'}</h2>
                 <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">${(localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz' || document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com') ? 'Review, edit, accept, or reject applicant submissions.' : 'Manage, edit, update, or delete your submitted applications.'}</p>
             </div>
-            <button class="btn accent" style="font-size: 14px; padding: 8px 16px; background: #3b82f6; border-color: #3b82f6; color: white;" onclick="navigateTo('/form')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg> Home
-            </button>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button class="btn accent" style="font-size: 14px; padding: 8px 16px; background: #16a34a; border-color: #16a34a; color: white; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;" onclick="createNewApplication()" title="Fill and submit a new GST application">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Submit Application
+                </button>
+                <button class="btn" style="font-size: 14px; padding: 8px 16px; background: #3b82f6; border-color: #3b82f6; color: white; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;" onclick="navigateTo('/form')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg> Home
+                </button>
+            </div>
         </div>
-        ${allApps.length === 0 ? '<p>No applications submitted yet.</p>' : `
+        ${allApps.length === 0 ? `
+        <div style="padding: 30px; text-align: center; background: #f8fafc; border-radius: 8px; border: 1px dashed #cbd5e1; margin-top: 20px;">
+            <p style="color: #64748b; font-size: 15px; margin-bottom: 15px;">No applications submitted yet.</p>
+            <button class="btn accent" style="font-size: 14px; padding: 10px 20px; background: #16a34a; border-color: #16a34a; color: white; font-weight: 600; cursor: pointer;" onclick="createNewApplication()">
+                ➕ Submit Application
+            </button>
+        </div>` : `
         <table style="width: 100%; border-collapse: collapse; margin-top: 20px; text-align: left;">
             <thead>
                 <tr style="border-bottom: 2px solid var(--border-color);">
@@ -1679,7 +1723,7 @@ window.renderAdminDashboard = async function () {
                             <button class="btn" style="padding: 4px 10px; font-size: 13px;" onclick="previewApplication('${app.appId}')">Preview</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #0ea5e9; border: none; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #8b5cf6; border: none; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate application for Multi-State Registration">📋 Duplicate</button>
-                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #3b82f6; border: none; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit</button>
+                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #3b82f6; border: none; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit / Submit</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #6366f1; border: none; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Declaration Form</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #ef4444; border: none; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">Delete</button>
                         </td>

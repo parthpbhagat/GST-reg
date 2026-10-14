@@ -580,6 +580,20 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
             if (line.startsWith('STATUS:')) {
                 const statusMsg = line.replace('STATUS:', '');
                 io.to(appId).emit('automation_update', { status: statusMsg });
+                if (statusMsg.startsWith('PORTAL_ERROR:')) {
+                    try {
+                        const parsed = JSON.parse(statusMsg.replace('PORTAL_ERROR:', ''));
+                        io.to(appId).emit('automation_portal_error', parsed);
+                    } catch (e) {}
+                }
+            } else if (line.startsWith('PORTAL_ERROR:')) {
+                const errDataStr = line.replace('PORTAL_ERROR:', '');
+                try {
+                    const errData = JSON.parse(errDataStr);
+                    io.to(appId).emit('automation_portal_error', errData);
+                } catch (e) {
+                    io.to(appId).emit('automation_portal_error', { message: errDataStr, appId });
+                }
             } else if (line.startsWith('CAPTCHA_IMAGE:')) {
                 const imageSrc = line.replace('CAPTCHA_IMAGE:', '');
                 io.to(appId).emit('automation_captcha_image', imageSrc);

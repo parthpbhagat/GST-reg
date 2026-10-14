@@ -785,7 +785,7 @@ window.form = {
     goods_hsn: [], goods_sac: [],
     taxpayerType: "", legalName: "", tradeName: "", pan: "", email: "", mobile: "", state: "", district: "",
     businessConstitution: "", dateOfCommencement: "", dateOfLiability: "", reasonToObtainRegistration: "", businessDistrict: "",
-    rule14A: "",
+    rule14A: "No",
     existingRegistrationType: "", existingRegistrationNo: "", existingRegistrationDate: "",
     proofOfConstitutionType: "", proofOfConstitutionFile: "", documentForTradeNameFile: "",
     ppob_building: "", ppob_flatNo: "", ppob_floor: "", ppob_street: "", ppob_locality: "", ppob_city: "",
@@ -897,6 +897,9 @@ function validateStep(targetStep) {
     const f = window.form || {};
 
     if (targetStep === 0) {
+        if (!f.rule14A || !f.rule14A.trim()) {
+            f.rule14A = 'No';
+        }
         if (!f.pan || !f.pan.trim()) {
             alert('Please enter PAN in Business Details (Step 1).');
             return false;
@@ -2301,11 +2304,30 @@ window.startAutomationPipeline = async function (id, mode = 'regular', multiStat
     if (!socket) {
         socket = io(`${API_BASE_URL}`);
         socket.on('automation_update', async (msg) => {
-            const status = msg.status;
+            const status = msg.status || '';
             addTerminalLog(status);
 
             const badge = document.getElementById('auto-status-badge');
             badge.innerText = status.length > 20 ? status.substring(0, 20) + '...' : status;
+
+            if (status.includes('PORTAL_ERROR:')) {
+                try {
+                    const jsonStr = status.substring(status.indexOf('PORTAL_ERROR:') + 13).trim();
+                    const parsed = JSON.parse(jsonStr);
+                    window.showPipelineErrorModal(parsed);
+                } catch(e) {}
+            } else if (status.includes('GST Portal validation blocked:') || status.includes('GST Portal message:')) {
+                const msgText = status.replace(/.*?GST Portal (?:validation blocked|message):\s*/i, '').trim();
+                const mapped = window.mapPortalError ? window.mapPortalError(msgText) : { step: 0, field: 'rule14A', stepName: 'Business Details', label: 'Option for registration under Rule 14A' };
+                window.showPipelineErrorModal({
+                    message: msgText,
+                    field: mapped.field,
+                    step: mapped.step,
+                    stepName: mapped.stepName,
+                    label: mapped.label,
+                    appId: activeAutomationAppId
+                });
+            }
 
             if (status.includes('Navigating')) setPipelineActiveStep(2);
             if (status.includes('payload')) setPipelineActiveStep(3);
@@ -2422,6 +2444,11 @@ window.startAutomationPipeline = async function (id, mode = 'regular', multiStat
             badge.innerText = 'ADDRESS WARNING';
             badge.style.color = '#f97316';
             document.getElementById('warning-card').classList.remove('hidden');
+        });
+
+        socket.on('automation_portal_error', (data) => {
+            console.log('Received automation_portal_error:', data);
+            window.showPipelineErrorModal(data);
         });
     }
     socket.emit('join_application', id);
@@ -2592,14 +2619,214 @@ window.closeAutomationModal = async function () {
 
     // reset badge
     const badge = document.getElementById('auto-status-badge');
-    badge.style.color = '#60a5fa';
-    badge.classList.add('pulse-badge');
+    if (badge) {
+        badge.style.color = '#60a5fa';
+        badge.classList.remove('pulse-error-badge');
+        badge.classList.add('pulse-badge');
+    }
 
     // reset UI for next automation
     const term = document.querySelector('.terminal-window');
     if (term) term.classList.remove('hidden');
     const trnCard = document.getElementById('trn-success-card');
     if (trnCard) trnCard.classList.add('hidden');
+    const errCard = document.getElementById('pipeline-error-card');
+    if (errCard) errCard.classList.add('hidden');
+    const errModal = document.getElementById('pipeline-error-modal');
+    if (errModal) errModal.classList.add('hidden');
+    const activeBanner = document.getElementById('active-field-error-notice');
+    if (activeBanner) activeBanner.remove();
+};
+
+window.currentAutomationError = null;
+
+window.mapPortalError = function (msg) {
+    const text = (msg || '').toLowerCase();
+    if (text.includes('14a') || text.includes('rule 14') || text.includes('rule14')) {
+        return { field: 'rule14A', step: 0, stepName: 'Business Details', label: 'Option for registration under Rule 14A' };
+    }
+    if (text.includes('pan') || text.includes('permanent account number')) {
+        return { field: 'pan', step: 0, stepName: 'Business Details', label: 'PAN Number' };
+    }
+    if (text.includes('legal name') || text.includes('trade name')) {
+        return { field: 'tradeName', step: 0, stepName: 'Business Details', label: 'Trade Name / Legal Name' };
+    }
+    if (text.includes('constitution')) {
+        return { field: 'businessConstitution', step: 0, stepName: 'Business Details', label: 'Constitution of Business' };
+    }
+    if (text.includes('commencement')) {
+        return { field: 'dateOfCommencement', step: 0, stepName: 'Business Details', label: 'Date of Commencement of Business' };
+    }
+    if (text.includes('liability')) {
+        return { field: 'dateOfLiability', step: 0, stepName: 'Business Details', label: 'Date on which liability to register arises' };
+    }
+    if (text.includes('reason')) {
+        return { field: 'reasonToObtainRegistration', step: 0, stepName: 'Business Details', label: 'Reason to Obtain Registration' };
+    }
+    if (text.includes('district') || text.includes('state')) {
+        return { field: 'district', step: 0, stepName: 'Business Details', label: 'State / District' };
+    }
+    if (text.includes('promoter') || text.includes('partner') || text.includes('director') || text.includes('father') || text.includes('dob')) {
+        return { field: 'p1_firstName', step: 1, stepName: 'Promoter / Partners', label: 'Promoter / Partner Details' };
+    }
+    if (text.includes('signatory') || text.includes('authorized signatory')) {
+        return { field: 'a1_firstName', step: 2, stepName: 'Authorized Signatory', label: 'Authorized Signatory Details' };
+    }
+    if (text.includes('pincode') || text.includes('pin code')) {
+        return { field: 'ppob_pincode', step: 4, stepName: 'Principal Place of Business', label: 'PIN Code' };
+    }
+    if (text.includes('possession') || text.includes('premise')) {
+        return { field: 'ppob_natureOfPossession', step: 4, stepName: 'Principal Place of Business', label: 'Nature of Possession of Premises' };
+    }
+    if (text.includes('principal place') || text.includes('address') || text.includes('building') || text.includes('flat') || text.includes('floor')) {
+        return { field: 'ppob_building', step: 4, stepName: 'Principal Place of Business', label: 'Principal Place of Business' };
+    }
+    if (text.includes('electricity') || text.includes('consumer')) {
+        return { field: 'stateSpecific_electricityConsumerNo', step: 7, stepName: 'State Specific Information', label: 'Electricity Consumer Number' };
+    }
+    if (text.includes('hsn') || text.includes('sac') || text.includes('goods') || text.includes('service')) {
+        return { field: 'goods_hsn', step: 6, stepName: 'Goods and Services', label: 'HSN / SAC Code' };
+    }
+    if (text.includes('aadhaar')) {
+        return { field: 'aadhaarAuth', step: 8, stepName: 'Aadhaar Authentication', label: 'Aadhaar Authentication' };
+    }
+    if (text.includes('verification') || text.includes('declaration') || text.includes('place')) {
+        return { field: 'verification_place', step: 9, stepName: 'Verification', label: 'Verification Place' };
+    }
+    return { field: 'rule14A', step: 0, stepName: 'Business Details', label: 'Option for registration under Rule 14A' };
+};
+
+window.showPipelineErrorModal = function (errData) {
+    if (!errData) return;
+    window.currentAutomationError = errData;
+
+    // Hide intermediate OTP / Action cards to prevent user confusion
+    const evcCard = document.getElementById('evc-otp-card');
+    if (evcCard) evcCard.classList.add('hidden');
+    const otpCard = document.getElementById('otp-card');
+    if (otpCard) otpCard.classList.add('hidden');
+    const trnOtpCard = document.getElementById('trn-otp-card');
+    if (trnOtpCard) trnOtpCard.classList.add('hidden');
+    const captchaCard = document.getElementById('captcha-card');
+    if (captchaCard) captchaCard.classList.add('hidden');
+    const warningCard = document.getElementById('warning-card');
+    if (warningCard) warningCard.classList.add('hidden');
+
+    // Update status badge
+    const badge = document.getElementById('auto-status-badge');
+    if (badge) {
+        badge.innerText = 'ERROR: GST PORTAL BLOCKED';
+        badge.classList.remove('pulse-badge');
+        badge.classList.add('pulse-error-badge');
+    }
+
+    // Populate error card in pipeline view
+    const errCard = document.getElementById('pipeline-error-card');
+    if (errCard) {
+        errCard.classList.remove('hidden');
+        const badgeEl = document.getElementById('pipeline-error-step-badge');
+        if (badgeEl) badgeEl.innerText = `${errData.stepName || 'Step 1'} (Step ${(errData.step || 0) + 1})`;
+        const msgEl = document.getElementById('pipeline-error-message-text');
+        if (msgEl) msgEl.innerText = errData.message || 'Validation error from GST portal';
+    }
+
+    // Populate full error modal popup
+    const errModal = document.getElementById('pipeline-error-modal');
+    if (errModal) {
+        errModal.classList.remove('hidden');
+        const badgeEl = document.getElementById('modal-error-step-badge');
+        if (badgeEl) badgeEl.innerText = `${errData.stepName || 'Step 1'} (Step ${(errData.step || 0) + 1})`;
+        const msgEl = document.getElementById('modal-error-message-text');
+        if (msgEl) msgEl.innerText = errData.message || 'Validation error from GST portal';
+    }
+};
+
+window.exitPipelineAndFixError = async function (errData) {
+    const errorInfo = errData || window.currentAutomationError || { step: 0, field: 'rule14A', message: 'Option for registration under Rule 14A' };
+    const targetAppId = (typeof activeAutomationAppId !== 'undefined' && activeAutomationAppId) ? activeAutomationAppId : (window.form && window.form._appId);
+
+    // Hide error modal & card
+    const errModal = document.getElementById('pipeline-error-modal');
+    if (errModal) errModal.classList.add('hidden');
+    const errCard = document.getElementById('pipeline-error-card');
+    if (errCard) errCard.classList.add('hidden');
+
+    // Terminate running automation backend child process
+    if (typeof activeAutomationAppId !== 'undefined' && activeAutomationAppId) {
+        try {
+            fetch(`${API_BASE_URL}/api/automation/stop`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await window.getFreshToken()) },
+                body: JSON.stringify({ appId: activeAutomationAppId })
+            }).catch(() => {});
+        } catch (e) {}
+    }
+
+    // Load application for editing silently without disruptive alert
+    if (targetAppId) {
+        window.editApplication(targetAppId, false);
+    } else {
+        navigateTo('/form');
+    }
+
+    // Jump directly to the erroneous step
+    const targetStep = (typeof errorInfo.step === 'number') ? errorInfo.step : 0;
+    setStep(targetStep);
+
+    // After DOM renders, scroll to element and add pulsing highlight + inline notice
+    setTimeout(() => {
+        try {
+            const fieldId = errorInfo.field;
+            let targetElement = null;
+
+            if (fieldId) {
+                targetElement = document.getElementById(fieldId) ||
+                                document.getElementById(`field-container-${fieldId}`) ||
+                                document.getElementById(`${fieldId}_No`) ||
+                                document.getElementById(`${fieldId}_Yes`) ||
+                                document.querySelector(`[name="${fieldId}"]`) ||
+                                document.querySelector(`input[id*="${fieldId}" i], select[id*="${fieldId}" i]`);
+            }
+
+            if (!targetElement && errorInfo.label) {
+                const labels = Array.from(document.querySelectorAll('label, .field'));
+                targetElement = labels.find(l => (l.innerText || '').toLowerCase().includes(errorInfo.label.toLowerCase()));
+            }
+
+            if (targetElement) {
+                targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                const highlightEl = targetElement.closest('.field') || targetElement;
+                highlightEl.classList.add('error-field-highlight');
+
+                const prevBanner = document.getElementById('active-field-error-notice');
+                if (prevBanner) prevBanner.remove();
+
+                const banner = document.createElement('div');
+                banner.id = 'active-field-error-notice';
+                banner.innerHTML = `
+                    <div style="font-size: 22px;">⚠️</div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 700; font-size: 14px; color: #991b1b;">GST Portal Error: ${errorInfo.message || 'Validation error'}</div>
+                        <div style="font-size: 12px; color: #b91c1c; margin-top: 3px; font-weight: 500;">
+                            કૃપા કરીને આ વિગત સાચી ભરો / પસંદ કરો અને ઉપર અથવા નીચે <strong>"Save / Update Application"</strong> બટન પર ક્લિક કરો.
+                        </div>
+                    </div>
+                    <button type="button" class="btn ghost" style="padding: 2px 6px; font-size: 14px; color: #991b1b;" onclick="this.parentElement.remove()">✕</button>
+                `;
+                highlightEl.parentElement.insertBefore(banner, highlightEl);
+
+                if (typeof targetElement.focus === 'function') {
+                    targetElement.focus();
+                } else {
+                    const inp = highlightEl.querySelector('input, select');
+                    if (inp) inp.focus();
+                }
+            }
+        } catch (scrollErr) {
+            console.error('Error navigating to erroneous field:', scrollErr);
+        }
+    }, 350);
 };
 
 window.copyTrn = function () {
@@ -2611,7 +2838,7 @@ window.copyTrn = function () {
     }
 };
 
-window.editApplication = function (id) {
+window.editApplication = function (id, showAlert = true) {
     const app = allApps.find(a => a.appId === id);
     if (!app) {
         alert('Application not found');
@@ -2621,7 +2848,7 @@ window.editApplication = function (id) {
         goods_hsn: [], goods_sac: [],
         taxpayerType: '', legalName: '', tradeName: '', pan: '', email: '', mobile: '', state: '', district: '',
         businessConstitution: '', dateOfCommencement: '', dateOfLiability: '', reasonToObtainRegistration: '', businessDistrict: '',
-        rule14A: '',
+        rule14A: 'No',
         existingRegistrationType: '', existingRegistrationNo: '', existingRegistrationDate: '',
         proofOfConstitutionType: '', proofOfConstitutionFile: '', documentForTradeNameFile: '',
         ppob_building: '', ppob_flatNo: '', ppob_floor: '', ppob_street: '', ppob_locality: '', ppob_city: '',
@@ -2638,6 +2865,7 @@ window.editApplication = function (id) {
     };
     const loadedData = JSON.parse(JSON.stringify(app.data || {}));
     window.form = Object.assign({}, defaultForm, loadedData);
+    window.form.rule14A = (loadedData.rule14A && loadedData.rule14A.trim()) ? loadedData.rule14A : 'No';
     if (loadedData.p1) window.form.p1 = Object.assign({}, defaultForm.p1, loadedData.p1);
     if (loadedData.a1) window.form.a1 = Object.assign({}, defaultForm.a1, loadedData.a1);
     for (let i = 2; i <= 10; i++) {
@@ -2657,7 +2885,9 @@ window.editApplication = function (id) {
     // Navigate to form without logging out!
     navigateTo('/form');
     setStep(0);
-    alert(`Application ${app.appId} loaded for editing! You can modify any fields and click "Save / Update Application" to save your updates.`);
+    if (showAlert) {
+        alert(`Application ${app.appId} loaded for editing! You can modify any fields and click "Save / Update Application" to save your updates.`);
+    }
 };
 
 window.cancelEditApplication = function () {
@@ -3102,14 +3332,14 @@ function renderContent() {
                 </div>
                 ${!['Public Sector Undertaking', 'Statutory Body', 'Government Department', 'Local Authority'].includes(form.businessConstitution) ? `
                 <div style="margin-top: 12px;">
-                    <div class="field" style="background: #f8fafc; padding: 10px 14px; border-radius: 4px; border: 1px solid #e2e8f0; border-left: 3px solid #cbd5e1;">
+                    <div class="field" id="field-container-rule14A" style="background: #f8fafc; padding: 10px 14px; border-radius: 4px; border: 1px solid #e2e8f0; border-left: 3px solid #cbd5e1;">
                         <label style="display: block; margin-bottom: 10px; color: #334155; font-size: 13px; font-weight: 600; text-transform: uppercase;">Option for registration under Rule 14A <span style="color: #ef4444">*</span></label>
                         <div style="display: flex; gap: 16px;">
                             <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; color: #334155; cursor: pointer;">
-                                <input type="radio" name="rule14A" value="Yes" ${form.rule14A === 'Yes' ? 'checked' : ''} onchange="updateForm('rule14A', this.value)" style="accent-color: #22c55e;" /> YES
+                                <input type="radio" id="rule14A_Yes" name="rule14A" value="Yes" ${form.rule14A === 'Yes' ? 'checked' : ''} onchange="updateForm('rule14A', this.value)" style="accent-color: #22c55e;" /> YES
                             </label>
                             <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; color: #334155; cursor: pointer;">
-                                <input type="radio" name="rule14A" value="No" ${form.rule14A === 'No' ? 'checked' : ''} onchange="updateForm('rule14A', this.value)" style="accent-color: #22c55e;" /> NO
+                                <input type="radio" id="rule14A_No" name="rule14A" value="No" ${(form.rule14A === 'No' || !form.rule14A) ? 'checked' : ''} onchange="updateForm('rule14A', this.value)" style="accent-color: #22c55e;" /> NO
                             </label>
                         </div>
                     </div>

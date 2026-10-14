@@ -26,6 +26,77 @@ function sendUpdate(status) {
     console.log(`STATUS:${status}`);
 }
 
+function mapPortalError(msg) {
+    const text = (msg || '').toLowerCase();
+    if (text.includes('14a') || text.includes('rule 14') || text.includes('rule14')) {
+        return { field: 'rule14A', step: 0, stepName: 'Business Details', label: 'Option for registration under Rule 14A' };
+    }
+    if (text.includes('pan') || text.includes('permanent account number')) {
+        return { field: 'pan', step: 0, stepName: 'Business Details', label: 'PAN Number' };
+    }
+    if (text.includes('legal name') || text.includes('trade name')) {
+        return { field: 'tradeName', step: 0, stepName: 'Business Details', label: 'Trade Name / Legal Name' };
+    }
+    if (text.includes('constitution')) {
+        return { field: 'businessConstitution', step: 0, stepName: 'Business Details', label: 'Constitution of Business' };
+    }
+    if (text.includes('commencement')) {
+        return { field: 'dateOfCommencement', step: 0, stepName: 'Business Details', label: 'Date of Commencement of Business' };
+    }
+    if (text.includes('liability')) {
+        return { field: 'dateOfLiability', step: 0, stepName: 'Business Details', label: 'Date on which liability to register arises' };
+    }
+    if (text.includes('reason')) {
+        return { field: 'reasonToObtainRegistration', step: 0, stepName: 'Business Details', label: 'Reason to Obtain Registration' };
+    }
+    if (text.includes('district') || text.includes('state')) {
+        return { field: 'district', step: 0, stepName: 'Business Details', label: 'State / District' };
+    }
+    if (text.includes('promoter') || text.includes('partner') || text.includes('director') || text.includes('father') || text.includes('dob')) {
+        return { field: 'p1_firstName', step: 1, stepName: 'Promoter / Partners', label: 'Promoter / Partner Details' };
+    }
+    if (text.includes('signatory') || text.includes('authorized signatory')) {
+        return { field: 'a1_firstName', step: 2, stepName: 'Authorized Signatory', label: 'Authorized Signatory Details' };
+    }
+    if (text.includes('pincode') || text.includes('pin code')) {
+        return { field: 'ppob_pincode', step: 4, stepName: 'Principal Place of Business', label: 'PIN Code' };
+    }
+    if (text.includes('possession') || text.includes('premise')) {
+        return { field: 'ppob_natureOfPossession', step: 4, stepName: 'Principal Place of Business', label: 'Nature of Possession of Premises' };
+    }
+    if (text.includes('principal place') || text.includes('address') || text.includes('building') || text.includes('flat') || text.includes('floor')) {
+        return { field: 'ppob_building', step: 4, stepName: 'Principal Place of Business', label: 'Principal Place of Business' };
+    }
+    if (text.includes('electricity') || text.includes('consumer')) {
+        return { field: 'stateSpecific_electricityConsumerNo', step: 7, stepName: 'State Specific Information', label: 'Electricity Consumer Number' };
+    }
+    if (text.includes('hsn') || text.includes('sac') || text.includes('goods') || text.includes('service')) {
+        return { field: 'goods_hsn', step: 6, stepName: 'Goods and Services', label: 'HSN / SAC Code' };
+    }
+    if (text.includes('aadhaar')) {
+        return { field: 'aadhaarAuth', step: 8, stepName: 'Aadhaar Authentication', label: 'Aadhaar Authentication' };
+    }
+    if (text.includes('verification') || text.includes('declaration') || text.includes('place')) {
+        return { field: 'verification_place', step: 9, stepName: 'Verification', label: 'Verification Place' };
+    }
+    return { field: 'rule14A', step: 0, stepName: 'Business Details', label: 'Business Details' };
+}
+
+function sendPortalError(msg, defaultStep = 0, defaultField = 'rule14A', defaultStepName = 'Business Details', defaultLabel = 'Business Details') {
+    const mapped = mapPortalError(msg);
+    const payload = {
+        message: msg,
+        field: mapped.field || defaultField,
+        step: typeof mapped.step === 'number' ? mapped.step : defaultStep,
+        stepName: mapped.stepName || defaultStepName,
+        label: mapped.label || defaultLabel,
+        appId: appId
+    };
+    console.log('PORTAL_ERROR:' + JSON.stringify(payload));
+    sendUpdate(`PORTAL_ERROR:${JSON.stringify(payload)}`);
+    return payload;
+}
+
 let globalPage = null;
 let isExiting = false;
 setInterval(async () => {
@@ -609,9 +680,12 @@ async function run() {
         // =========================================================================
         sendUpdate('[પગલું ૪: EVC OTP મોકલવો] Verification સ્ક્રીન પર જઈને EVC OTP વિનંતી કરવી...');
 
-        // 1. First, make sure we do not leave any accidental toggles on Business Details
-        await page.evaluate(() => {
-            const labels = Array.from(document.querySelectorAll('label, div, p'));
+        // 1. First, make sure we do not leave any accidental toggles on Business Details and set Rule 14A
+        await page.evaluate((r14Val) => {
+            const val = (r14Val || 'No').trim().toLowerCase();
+            const wantYes = val === 'yes' || val === 'y';
+
+            const labels = Array.from(document.querySelectorAll('label, div, p, span'));
             const casualLabel = labels.find(l => /casual taxable person/i.test(l.innerText || ''));
             if (casualLabel) {
                 const toggle = casualLabel.closest('div')?.querySelector('input[type="checkbox"], input[type="radio"]');
@@ -622,7 +696,48 @@ async function run() {
                 const toggle = compLabel.closest('div')?.querySelector('input[type="checkbox"], input[type="radio"]');
                 if (toggle && toggle.checked) toggle.click();
             }
-        });
+
+            // Option for registration under Rule 14A
+            const r14Label = labels.find(l => /rule\s*14\s*a/i.test(l.innerText || ''));
+            if (r14Label) {
+                const container = r14Label.closest('.form-group, .row, div, tr') || r14Label.parentElement;
+                if (container) {
+                    const radios = Array.from(container.querySelectorAll('input[type="radio"]'));
+                    for (const r of radios) {
+                        const lbl = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || r.value || '').toLowerCase();
+                        if (wantYes && (lbl.includes('yes') || r.value === 'Y' || r.value === 'Yes')) {
+                            if (!r.checked) {
+                                r.click();
+                                r.checked = true;
+                                r.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        } else if (!wantYes && (lbl.includes('no') || r.value === 'N' || r.value === 'No')) {
+                            if (!r.checked) {
+                                r.click();
+                                r.checked = true;
+                                r.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (window.angular) {
+                try {
+                    const radios = Array.from(document.querySelectorAll('input[ng-model*="14" i], input[ng-model*="rule" i]'));
+                    for (const r of radios) {
+                        const lbl = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || r.value || '').toLowerCase();
+                        if ((wantYes && (lbl.includes('yes') || r.value === 'Y')) || (!wantYes && (lbl.includes('no') || r.value === 'N'))) {
+                            if (!r.checked) {
+                                r.click();
+                                r.checked = true;
+                                r.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }
+                    }
+                } catch(e) {}
+            }
+        }, data.rule14A || 'No');
 
         // 2. Navigate directly to Verification tab
         sendUpdate('Switching to Verification tab...');
@@ -640,6 +755,19 @@ async function run() {
             if (isOnVerification) {
                 sendUpdate('Verified: Successfully reached Verification tab.');
                 break;
+            }
+
+            // Check if portal blocked navigation with a validation error
+            const portalError = await page.evaluate(() => {
+                const err = document.querySelector('.alert-danger, .toast-error, .has-error, .help-block.text-danger, div[role="alert"]');
+                if (err && err.innerText && err.innerText.trim().length > 3) {
+                    return err.innerText.trim();
+                }
+                return null;
+            });
+            if (portalError && attempt >= 1) {
+                sendPortalError(portalError);
+                throw new Error(`GST Portal validation blocked: ${portalError}`);
             }
 
             // Click the Verification tab in the wizard
@@ -844,7 +972,10 @@ async function run() {
                 sendUpdate('✅ EVC OTP modal detected! GST Portal has dispatched the OTP to your Mobile and Email.');
                 break;
             } else if (modalCheck.state === 'portal_error') {
-                sendUpdate(`GST Portal message: ${modalCheck.errorText}`);
+                const errText = modalCheck.errorText;
+                sendUpdate(`GST Portal validation blocked: ${errText}`);
+                sendPortalError(errText);
+                throw new Error(`GST Portal validation error: ${errText}`);
             }
 
             // If 6 seconds elapsed without any modal, retry clicking the EVC button
@@ -862,7 +993,13 @@ async function run() {
         }
 
         if (!evcModalReady) {
-            sendUpdate('Warning: EVC OTP modal did not appear. Please inspect the Live Browser Preview to verify the state on GST Portal.');
+            const trailingErr = await page.evaluate(() => {
+                const e = document.querySelector('.alert-danger, .toast-error, .has-error, div[role="alert"], .help-block');
+                return e && e.innerText ? e.innerText.trim() : null;
+            });
+            const finalMsg = trailingErr || 'EVC OTP modal did not appear from GST Portal. Please inspect application details.';
+            sendPortalError(finalMsg);
+            throw new Error(`GST Portal validation failed: ${finalMsg}`);
         }
 
         // =========================================================================

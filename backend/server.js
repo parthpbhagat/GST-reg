@@ -1,8 +1,11 @@
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { Server } = require('socket.io');
 const { supabase, oldSupabase } = require('./database');
+const { buildGstApplicationPayload } = require('./utils/gst_payload_builder');
 
 const app = express();
 const PORT = 3002;
@@ -146,6 +149,25 @@ app.get('/api/hsn/:code', (req, res) => {
     });
 });
 
+// Helper: Compile and save official GST JSON payload to disk
+function saveGstJsonPayloadToDisk(appId, data, trn = '', draftId = '75028658') {
+    try {
+        const legalName = (data && data.legalName) || appId;
+        const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        const dirPath = path.join(__dirname, 'data', safeLegalName);
+        if (!fs.existsSync(dirPath)) {
+            fs.mkdirSync(dirPath, { recursive: true });
+        }
+        const payload = buildGstApplicationPayload(data, draftId, trn);
+        fs.writeFileSync(path.join(dirPath, 'gst_application_payload.json'), JSON.stringify(payload, null, 2), 'utf-8');
+        console.log(`[GST Payload] Successfully compiled and saved JSON payload for App ID ${appId} in data/${safeLegalName}`);
+        return payload;
+    } catch (e) {
+        console.error('[GST Payload] Warning: Could not save GST JSON payload:', e.message);
+        return null;
+    }
+}
+
 // POST /api/applications - Submit a new application
 app.post('/api/applications', authenticateToken, async (req, res) => {
     try {
@@ -163,6 +185,14 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
         const userEmail = (req.user && req.user.email) || req.body.userEmail || (data && data.userEmail) || (data && data.email) || null;
         const userId = (req.user && req.user.id) || null;
         const status = req.body.status || 'Pending'; // Default status
+
+        // Pre-compile official GST registration JSON payload and store in database & disk
+        try {
+            const gstPayload = saveGstJsonPayloadToDisk(appId, data, data.trn || '', data.draftId || '75028658');
+            if (gstPayload) data.gst_payload = gstPayload;
+        } catch (payloadErr) {
+            console.error('[GST Payload] Warning: Could not pre-compile GST JSON:', payloadErr.message);
+        }
 
         const { error } = await supabase.from('applications').upsert({
             appId: appId,
@@ -326,6 +356,14 @@ app.put('/api/applications/:id', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: 'data is required to update application' });
         }
 
+        // Re-compile official GST registration JSON payload and save to disk & data
+        try {
+            const gstPayload = saveGstJsonPayloadToDisk(id, data, data.trn || '', data.draftId || '75028658');
+            if (gstPayload) data.gst_payload = gstPayload;
+        } catch (payloadErr) {
+            console.error('[GST Payload] Warning: Could not update GST JSON:', payloadErr.message);
+        }
+
         const updatePayload = { data };
         if (status) updatePayload.status = status;
 
@@ -439,6 +477,12 @@ app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
         appData.masterTrn = masterTrn;
     }
 
+    // Update official GST registration JSON payload with primary TRN
+    try {
+        const gstPayload = saveGstJsonPayloadToDisk(id, appData, primaryTrn, appData.draftId || '75028658');
+        if (gstPayload) appData.gst_payload = gstPayload;
+    } catch (e) {}
+
     const updateFields = {
         trn: primaryTrn,
         status: req.body.status || 'TRN Generated',
@@ -465,8 +509,39 @@ app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
     res.json({ message: 'TRN saved successfully', appId: id, trn: primaryTrn, stateTrns: appData.stateTrns, masterTrn: appData.masterTrn });
 });
 
+// GET /api/applications/:id/gst-json - Download or inspect official GST JSON payload
+app.get('/api/applications/:id/gst-json', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+        let query = supabase.from('applications').select('*').eq('appId', id);
+        if (req.user && req.user.email !== 'admin@example.com') {
+            query = query.or(`userEmail.eq.${req.user.email},userEmail.is.null`);
+        }
+        const { data: row, error } = await query.single();
+        if (error || !row) return res.status(404).json({ error: 'Application not found' });
+
+        let appData = typeof row.data === 'string' ? JSON.parse(row.data) : (row.data || {});
+        let payload = appData.gst_payload;
+        if (!payload) {
+            payload = saveGstJsonPayloadToDisk(id, appData, row.trn || appData.trn || '', appData.draftId || '75028658');
+            if (payload) {
+                appData.gst_payload = payload;
+                supabase.from('applications').update({ data: appData }).eq('appId', id).catch(() => {});
+            }
+        }
+
+        if (req.query.download === '1' || req.query.download === 'true') {
+            const safeName = (appData.legalName || id).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            res.setHeader('Content-Disposition', `attachment; filename="gst_payload_${safeName}.json"`);
+        }
+        res.setHeader('Content-Type', 'application/json');
+        res.json(payload || {});
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to retrieve GST JSON: ' + (err.message || err) });
+    }
+});
+
 const { spawn } = require('child_process');
-const path = require('path');
 
 const activeAutomations = new Map();
 

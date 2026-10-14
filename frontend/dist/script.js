@@ -1612,6 +1612,7 @@ window.renderAdminDashboard = async function () {
             actionButtons = `
                 <button class="btn accent" style="background: #2563eb; border-color: #2563eb; color: white; font-weight: 600; margin-right: 5px;" onclick="registerApplication('${app.appId}')" title="Run Regular Single-State GST Automation">⚡ Register (Only Registration)</button>
                 <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-right: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
+                <button class="btn accent" style="background: #0284c7; border-color: #0284c7; color: white; margin-right: 5px;" onclick="downloadGstJson('${app.appId}')" title="Download Official GST Portal JSON Payload">📄 GST Portal JSON</button>
                 <button class="btn accent" style="background: #16a34a; border-color: #16a34a; color: white; margin-right: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit / Submit</button>
                 <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-right: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate</button>`;
             if (app.status === 'Pending') {
@@ -1624,6 +1625,7 @@ window.renderAdminDashboard = async function () {
             actionButtons = `
                 <button class="btn accent" style="background: #2563eb; border-color: #2563eb; color: white; font-weight: 600;" onclick="registerApplication('${app.appId}')" title="Run Regular Single-State GST Automation">⚡ Register (Only Registration)</button>
                 <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
+                <button class="btn accent" style="background: #0284c7; border-color: #0284c7; color: white; margin-left: 5px;" onclick="downloadGstJson('${app.appId}')" title="Download Official GST Portal JSON Payload">📄 GST Portal JSON</button>
                 <button class="btn accent" style="background: #16a34a; border-color: #16a34a; color: white; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit / Submit</button>
                 <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate</button>
                 <button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>
@@ -1721,6 +1723,7 @@ window.renderAdminDashboard = async function () {
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #2563eb; border: none; margin-left: 5px; font-weight: 600;" onclick="registerApplication('${app.appId}')" title="Run Regular Single-State GST Automation">⚡ Register</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #0ea5e9; border: none; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #8b5cf6; border: none; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate application for Multi-State Registration">📋 Duplicate</button>
+                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #0284c7; border: none; margin-left: 5px;" onclick="downloadGstJson('${app.appId}')" title="Download Official GST Portal JSON Payload">📄 JSON</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #3b82f6; border: none; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit / Submit</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #6366f1; border: none; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Declaration Form</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #ef4444; border: none; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">Delete</button>
@@ -1732,6 +1735,35 @@ window.renderAdminDashboard = async function () {
         `}
     </div>`;
     container.innerHTML = html;
+};
+
+window.downloadGstJson = async function (id) {
+    try {
+        if (typeof window.showLoader === 'function') window.showLoader();
+        const token = await window.getFreshToken();
+        const res = await fetch(`${API_BASE_URL}/api/applications/${id}/gst-json`, {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (typeof window.hideLoader === 'function') window.hideLoader();
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || 'Failed to fetch GST JSON');
+        }
+        const json = await res.json();
+        const jsonStr = JSON.stringify(json, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `gst_application_${id}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        if (typeof window.hideLoader === 'function') window.hideLoader();
+        alert('Could not download GST JSON: ' + e.message);
+    }
 };
 
 window.previewApplication = function (id) {

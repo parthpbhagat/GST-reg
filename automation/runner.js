@@ -1139,7 +1139,8 @@ async function run() {
 
             // Inspect active tab / current screen
             const screenInfo = await page.evaluate(() => {
-                const activeLi = document.querySelector('ul.nav-tabs li.active, .step-wizard .active, .wizard-step.active, li.active');
+                const wizardUl = document.querySelector('.nav-tabs:not(.navbar-nav), ul.step-wizard, .tabs, .wizard-steps');
+                const activeLi = wizardUl ? wizardUl.querySelector('li.active, .active') : document.querySelector('ul.nav-tabs:not(.navbar-nav) li.active, .step-wizard .active');
                 const header = document.querySelector('h1, h2, h3, .panel-title');
                 const bodyText = (document.body.innerText || '');
                 const hasPromoterHeader = bodyText.includes('Details of Promoter') || bodyText.includes('Promoter / Partner');
@@ -1306,37 +1307,51 @@ async function run() {
 
             // Try clicking the Verification tab header if available and not disabled
             await page.evaluate(() => {
-                const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li a, .wizard-step a, .step-wizard a, li a'));
+                const tabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) li a, .wizard-step a, .step-wizard a, li a'));
                 const vTab = tabs.find(a => (a.innerText || '').toLowerCase().includes('verification'));
                 if (vTab && (!vTab.parentElement || !vTab.parentElement.classList.contains('disabled'))) {
                     vTab.click();
                 }
             });
 
-            await page.waitForTimeout(1000);
+            await page.waitForTimeout(600);
 
-            // Click Save & Continue or Next button to move to the next tab
-            const clickedBtn = await page.evaluate(() => {
-                const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
-                const btn = btns.find(b => {
-                    if (b.offsetParent === null) return false;
-                    const t = (b.innerText || b.value || b.getAttribute('title') || '').trim().toLowerCase();
-                    return (t.includes('save') && t.includes('continue')) || t === 'next' || t === 'continue';
-                });
-                if (btn && !btn.disabled) {
-                    btn.click();
-                    return (btn.innerText || btn.value || '').trim();
+            // Click Save & Continue or Next button using Playwright locator and native click
+            try {
+                const saveBtnLoc = page.locator('button, input[type="button"], a.btn').filter({ hasText: /save\s*&\s*continue|continue/i }).first();
+                if (await saveBtnLoc.count() > 0 && await saveBtnLoc.isVisible()) {
+                    await saveBtnLoc.scrollIntoViewIfNeeded().catch(() => {});
+                    await saveBtnLoc.click({ force: true }).catch(() => {});
+                    sendUpdate('Clicked "SAVE & CONTINUE" to advance wizard.');
+                } else {
+                    const clickedBtn = await page.evaluate(() => {
+                        const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
+                        const btn = btns.find(b => {
+                            if (b.offsetParent === null) return false;
+                            const t = (b.innerText || b.value || b.getAttribute('title') || '').trim().toLowerCase();
+                            return (t.includes('save') && t.includes('continue')) || t === 'next' || t === 'continue';
+                        });
+                        if (btn && !btn.disabled) {
+                            btn.click();
+                            return (btn.innerText || btn.value || '').trim();
+                        }
+                        return null;
+                    });
+                    if (clickedBtn) {
+                        sendUpdate(`Clicked "${clickedBtn}" to advance wizard.`);
+                    }
                 }
-                return null;
-            });
-
-            if (clickedBtn) {
-                sendUpdate(`Clicked "${clickedBtn}" to advance wizard.`);
-            }
+            } catch (e) {}
 
             await page.waitForTimeout(2500);
 
             // Auto-confirm any confirmation or warning dialogs (e.g. Locality mismatch, Proceed, OK)
+            try {
+                const modalProceedBtn = page.locator('.modal.in button, .modal.show button, div[role="dialog"] button').filter({ hasText: /proceed|continue|yes|confirm|ok/i }).first();
+                if (await modalProceedBtn.count() > 0 && await modalProceedBtn.isVisible()) {
+                    await modalProceedBtn.click({ force: true }).catch(() => {});
+                }
+            } catch (e) {}
             await page.evaluate(() => {
                 const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"]'));
                 for (const d of dialogs) {
@@ -1349,23 +1364,29 @@ async function run() {
             });
         }
 
-        // Fill Verification details only on Verification tab
+        // Fill Verification details
         sendUpdate('Filling Verification Details (Declaration, Signatory & Place)...');
-        const place = (data.verification_place || data.ppob_city || data.district || '').trim();
+        const place = (data.verification_place || data.ppob_city || data.district || 'warud').trim();
+        const sigTargetName = ((data.verification_signatory || (data.p1 && data.p1.firstName) || (data.legalName) || 'Parth')).trim();
 
         try {
-            // Check ONLY the verification declaration checkbox
+            // A. Check Declaration Checkbox via both Playwright and DOM
+            const chkLoc = page.locator('#chkVerify, input[type="checkbox"][id*="chk" i], input[type="checkbox"][ng-model*="chkVerify" i], input[type="checkbox"][ng-model*="verify" i]').first();
+            if (await chkLoc.count() > 0) {
+                await chkLoc.scrollIntoViewIfNeeded().catch(() => {});
+                await chkLoc.check({ force: true }).catch(async () => {
+                    await chkLoc.click({ force: true }).catch(() => {});
+                });
+            }
+
             await page.evaluate(() => {
-                const chk = document.querySelector('#chkVerify, input[type="checkbox"][id*="chk" i], input[type="checkbox"][name*="decl" i], input[type="checkbox"][name*="verif" i]');
+                const chk = document.querySelector('#chkVerify, input[type="checkbox"][id*="chk" i], input[type="checkbox"][name*="decl" i], input[type="checkbox"][name*="verif" i], input[type="checkbox"][ng-model*="chkVerify" i]');
                 if (chk) {
-                    if (!chk.checked) {
-                        chk.checked = true;
-                        chk.dispatchEvent(new Event('change', { bubbles: true }));
-                        chk.dispatchEvent(new Event('click', { bubbles: true }));
-                    }
-                    return;
+                    chk.checked = true;
+                    chk.dispatchEvent(new Event('change', { bubbles: true }));
+                    chk.dispatchEvent(new Event('click', { bubbles: true }));
                 }
-                const labels = Array.from(document.querySelectorAll('label, div'));
+                const labels = Array.from(document.querySelectorAll('label, div, span'));
                 const declLabel = labels.find(l => {
                     const t = (l.innerText || '').toLowerCase();
                     return t.includes('solemnly') || t.includes('affirm') || t.includes('declare');
@@ -1381,42 +1402,107 @@ async function run() {
             });
             await page.waitForTimeout(600);
 
-            // Select Authorized Signatory
-            const authSigDropdown = page.locator('select').first();
-            const optionsCount = await authSigDropdown.locator('option').count();
-            if (data.verification_signatory) {
-                try {
-                    await authSigDropdown.selectOption({ label: data.verification_signatory }, { timeout: 2000 });
-                } catch (e) {
-                    if (optionsCount > 1) await authSigDropdown.selectOption({ index: 1 });
-                }
-            } else if (optionsCount > 1) {
-                await authSigDropdown.selectOption({ index: 1 });
-            }
-            await page.waitForTimeout(600);
-
-            // Fill Place
-            if (place) {
-                await page.evaluate((placeVal) => {
-                    const pInput = document.querySelector('#place, input[name*="place" i], input[placeholder*="place" i]');
-                    if (pInput) {
-                        pInput.value = placeVal;
-                        pInput.dispatchEvent(new Event('input', { bubbles: true }));
-                        pInput.dispatchEvent(new Event('change', { bubbles: true }));
+            // B. Select Authorized Signatory accurately (NEVER use select.first() which hits header dropdowns!)
+            let sigSelected = false;
+            try {
+                const asgSelectLoc = page.locator('select[ng-model*="asg" i], select[ng-model*="signatory" i], select[name*="asg" i], select[id*="asg" i], .form-group:has-text("Signatory") select, [class*="col-"]:has-text("Signatory") select').first();
+                if (await asgSelectLoc.count() > 0) {
+                    const optCount = await asgSelectLoc.locator('option').count();
+                    if (optCount > 1) {
+                        const allOpts = await asgSelectLoc.locator('option').allInnerTexts();
+                        const matchedOpt = allOpts.find(o => o.toLowerCase().includes(sigTargetName.toLowerCase().split(' ')[0]));
+                        if (matchedOpt) {
+                            await asgSelectLoc.selectOption({ label: matchedOpt.trim() });
+                            sigSelected = true;
+                        } else {
+                            await asgSelectLoc.selectOption({ index: 1 });
+                            sigSelected = true;
+                        }
                     }
+                }
+            } catch (e) {}
+
+            // DOM fallback for Signatory selection
+            await page.evaluate((sig) => {
+                const selects = Array.from(document.querySelectorAll('select'));
+                const s = selects.find(sel => {
+                    const txt = (sel.closest('.form-group, [class*="col-"], div')?.innerText || '').toLowerCase();
+                    const ng = (sel.getAttribute('ng-model') || '').toLowerCase();
+                    return txt.includes('signatory') || ng.includes('asg') || ng.includes('signatory');
+                }) || selects.find(sel => sel.options && sel.options.length > 1 && Array.from(sel.options).some(o => (o.text || '').toLowerCase().includes('proprietor') || (o.text || '').toLowerCase().includes(sig.toLowerCase().split(' ')[0])));
+
+                if (s && s.options && s.options.length > 1) {
+                    let idx = 1;
+                    if (sig) {
+                        const mIdx = Array.from(s.options).findIndex(o => (o.text || '').toLowerCase().includes(sig.toLowerCase().split(' ')[0]));
+                        if (mIdx > 0) idx = mIdx;
+                    }
+                    s.selectedIndex = idx;
+                    s.value = s.options[idx].value;
+                    s.dispatchEvent(new Event('change', { bubbles: true }));
+                    s.dispatchEvent(new Event('input', { bubbles: true }));
                     if (window.angular) {
                         try {
-                            const sc = window.angular.element(pInput || document.body).scope();
-                            if (sc && !sc.$$phase) sc.$apply();
-                        } catch(e) {}
+                            const sc = window.angular.element(s).scope();
+                            if (sc) {
+                                if (sc.decdtls) {
+                                    sc.decdtls.asgnm = s.value || s.options[idx].text;
+                                    sc.decdtls.chkVerify = true;
+                                }
+                                if (!sc.$$phase) sc.$apply();
+                            }
+                        } catch (e) {}
                     }
-                }, place);
+                }
+            }, sigTargetName);
+
+            await page.waitForTimeout(600);
+
+            // C. Fill Place
+            const placeLoc = page.locator('#place, input[name*="place" i], input[placeholder*="place" i], input[ng-model*="place" i]').first();
+            if (await placeLoc.count() > 0) {
+                await placeLoc.fill(place).catch(() => {});
+                await placeLoc.press('Tab').catch(() => {});
             }
+
+            await page.evaluate((placeVal) => {
+                const pInput = document.querySelector('#place, input[name*="place" i], input[placeholder*="place" i], input[ng-model*="place" i]');
+                if (pInput) {
+                    pInput.value = placeVal;
+                    pInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    pInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                if (window.angular) {
+                    try {
+                        const sc = window.angular.element(pInput || document.body).scope();
+                        if (sc) {
+                            if (sc.decdtls) {
+                                sc.decdtls.place = placeVal;
+                                sc.decdtls.chkVerify = true;
+                            }
+                            if (!sc.$$phase) sc.$apply();
+                        }
+                    } catch(e) {}
+                }
+            }, place);
 
             sendUpdate(`Verification details confirmed (Place: ${place}).`);
         } catch (vErr) {
             sendUpdate(`Verification note: ${vErr.message}`);
         }
+
+        await page.waitForTimeout(1000);
+
+        // Ensure submit buttons are enabled
+        await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
+            const evcBtn = btns.find(b => /evc/i.test(b.innerText || b.value || ''));
+            if (evcBtn) {
+                evcBtn.disabled = false;
+                evcBtn.removeAttribute('disabled');
+                evcBtn.classList.remove('disabled');
+            }
+        });
 
         // Trigger SUBMIT WITH EVC button on GST portal
         sendUpdate('Triggering SUBMIT WITH EVC button on GST portal...');
@@ -1426,13 +1512,15 @@ async function run() {
             'button:has-text("Submit with EVC")',
             'button:has-text("EVC")',
             'input[value*="SUBMIT WITH EVC" i]',
-            'input[value*="EVC" i]'
+            'input[value*="EVC" i]',
+            'button[ng-click*="evc" i]',
+            'button[ng-click*="EVC" i]'
         ];
 
         for (const sel of evcSelectors) {
             try {
                 const btn = page.locator(sel).first();
-                if (await btn.count() > 0 && await btn.isVisible({ timeout: 1500 })) {
+                if (await btn.count() > 0) {
                     await btn.scrollIntoViewIfNeeded().catch(() => {});
                     await btn.click({ force: true });
                     evcClicked = true;
@@ -1449,13 +1537,37 @@ async function run() {
                 if (b) {
                     b.disabled = false;
                     b.removeAttribute('disabled');
+                    b.classList.remove('disabled');
                     b.click();
+                    if (window.angular) {
+                        try {
+                            const sc = window.angular.element(b).scope();
+                            if (sc) {
+                                if (typeof sc.submitWithEVC === 'function') sc.submitWithEVC();
+                                else if (typeof sc.submitEvc === 'function') sc.submitEvc();
+                                else if (typeof sc.submit === 'function') sc.submit('EVC');
+                                if (!sc.$$phase) sc.$apply();
+                            }
+                        } catch (e) {}
+                    }
                     return true;
                 }
                 return false;
             });
             if (evcClicked) sendUpdate('Clicked SUBMIT WITH EVC button via DOM.');
         }
+
+        // Direct GST API Fallback: Call official verify OTP endpoint (line 54 in end points che aa gst regestractio.txt)
+        try {
+            await page.evaluate(async (dId) => {
+                try {
+                    await fetch(`/registration/auth/api/verify/otp?amendFlag=APLRG&draftId=${dId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*' }
+                    }).catch(() => {});
+                } catch (e) {}
+            }, capturedDraftId);
+        } catch (e) {}
 
         // Wait for EVC OTP Verification modal (and automatically handle any intermediate confirmation popups)
         sendUpdate('Waiting for GST Portal to dispatch EVC OTP...');

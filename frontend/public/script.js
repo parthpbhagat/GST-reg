@@ -1621,7 +1621,7 @@ window.renderAdminDashboard = async function () {
         let html = `<div class="card" style="margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <div style="display: flex; align-items: center; gap: 15px;">
-                    <h2 style="margin: 0;">Previewing Application: ${(app.trn || (app.data && (app.data.draftId || app.data.gstAppId)) || app.appId)}</h2>
+                    <h2 style="margin: 0;">Previewing Application: ${app.appId}</h2>
                     <div style="display: flex; gap: 10px;">${actionButtons}</div>
                 </div>
                 <button class="btn ghost" onclick="currentPreviewAppId = null; renderAdminDashboard();">Back to List</button>
@@ -1695,7 +1695,7 @@ window.renderAdminDashboard = async function () {
             <tbody>
                 ${allApps.map(app => `
                     <tr style="border-bottom: 1px solid var(--border-color);">
-                        <td style="padding: 10px; font-weight: 600;">${(app.trn || (app.data && (app.data.draftId || app.data.gstAppId)) || app.appId)}</td>
+                        <td style="padding: 10px; font-weight: 600;">${app.appId}</td>
                         <td style="padding: 10px;">${new Date(app.date).toLocaleDateString()}</td>
                         <td style="padding: 10px;">${app.data.legalName || 'N/A'}</td>
                         <td style="padding: 10px; color: #64748b; font-size: 13px;">${app.userEmail || '-'}</td>

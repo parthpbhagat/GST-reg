@@ -2695,6 +2695,18 @@ window.mapPortalError = function (msg) {
     if (text.includes('verification') || text.includes('declaration') || text.includes('place')) {
         return { field: 'verification_place', step: 9, stepName: 'Verification', label: 'Verification Place' };
     }
+    if (text.includes('file') || text.includes('pdf') || text.includes('jpeg') || text.includes('jpg') || text.includes('size') || text.includes('1 mb') || text.includes('format') || text.includes('upload') || text.includes('document')) {
+        if (text.includes('photograph') || text.includes('photo')) {
+            return { field: 'promoterPhotoFile', step: 1, stepName: 'Promoter / Partners', label: 'Promoter Photograph' };
+        }
+        if (text.includes('constitution')) {
+            return { field: 'proofOfConstitutionFile', step: 0, stepName: 'Business Details', label: 'Proof of Constitution Document' };
+        }
+        if (text.includes('signatory') || text.includes('authorisation') || text.includes('authorization') || text.includes('loa')) {
+            return { field: 'authSigProofFile', step: 2, stepName: 'Authorized Signatory', label: 'Proof of Authorized Signatory' };
+        }
+        return { field: 'ppob_docFile', step: 4, stepName: 'Principal Place of Business', label: 'Principal Place Document' };
+    }
     return { field: 'businessConstitution', step: 0, stepName: 'Business Details', label: 'Constitution of Business' };
 };
 

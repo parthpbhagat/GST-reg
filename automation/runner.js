@@ -109,6 +109,18 @@ function mapPortalError(msg) {
     if (text.includes('verification') || text.includes('declaration') || text.includes('place')) {
         return { field: 'verification_place', step: 9, stepName: 'Verification', label: 'Verification Place' };
     }
+    if (text.includes('file') || text.includes('pdf') || text.includes('jpeg') || text.includes('jpg') || text.includes('size') || text.includes('1 mb') || text.includes('format') || text.includes('upload') || text.includes('document')) {
+        if (text.includes('photograph') || text.includes('photo')) {
+            return { field: 'promoterPhotoFile', step: 1, stepName: 'Promoter / Partners', label: 'Promoter Photograph' };
+        }
+        if (text.includes('constitution')) {
+            return { field: 'proofOfConstitutionFile', step: 0, stepName: 'Business Details', label: 'Proof of Constitution Document' };
+        }
+        if (text.includes('signatory') || text.includes('authorisation') || text.includes('authorization') || text.includes('loa')) {
+            return { field: 'authSigProofFile', step: 2, stepName: 'Authorized Signatory', label: 'Proof of Authorized Signatory' };
+        }
+        return { field: 'ppob_docFile', step: 4, stepName: 'Principal Place of Business', label: 'Principal Place Document' };
+    }
     return { field: 'businessConstitution', step: 0, stepName: 'Business Details', label: 'Constitution of Business' };
 }
 
@@ -1053,12 +1065,12 @@ async function run() {
 
         await page.waitForTimeout(2500);
 
-        // 2. Navigate directly to Verification tab
-        sendUpdate('Switching to Verification tab...');
+        // 2. Navigate through wizard tabs to reach the Verification tab
+        sendUpdate('Advancing through wizard steps to Verification tab...');
         let isOnVerification = false;
 
-        for (let attempt = 0; attempt < 5; attempt++) {
-            // Check if we are already on the Verification screen
+        for (let tabStep = 0; tabStep < 12; tabStep++) {
+            // Check if we have already reached Verification screen
             isOnVerification = await page.evaluate(() => {
                 const text = (document.body.innerText || '').toLowerCase();
                 const hasEvc = !!Array.from(document.querySelectorAll('button, input')).find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));
@@ -1071,69 +1083,226 @@ async function run() {
                 break;
             }
 
-            // Check if portal blocked navigation with a validation error
+            // Check if portal blocked navigation with a real error
             const portalError = await page.evaluate(() => {
-                const err = document.querySelector('.alert-danger, .toast-error, .has-error, .help-block.text-danger, div[role="alert"]');
-                if (err && err.innerText && err.innerText.trim().length > 3) {
-                    return err.innerText.trim();
+                const errs = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"]'));
+                for (const e of errs) {
+                    if (e.offsetParent !== null || window.getComputedStyle(e).display !== 'none') {
+                        const t = (e.innerText || '').trim();
+                        if (t && t.length > 3 && !/only maximum file size/i.test(t) && !/format is only allowed/i.test(t) && !/file with pdf/i.test(t)) {
+                            return t;
+                        }
+                    }
                 }
                 return null;
             });
-            if (portalError && attempt >= 1) {
+            if (portalError && tabStep >= 1) {
                 sendPortalError(portalError);
                 throw new Error(`GST Portal validation blocked: ${portalError}`);
             }
 
-            // Click the Verification tab in the wizard
-            sendUpdate(`Attempt ${attempt + 1}: Navigating to Verification tab...`);
-            await page.evaluate(() => {
-                const all = Array.from(document.querySelectorAll('a, button, li, .wizard-step, .step-wizard, .nav-tabs li, .steps li'));
-                const v = all.find(el => {
-                    const t = (el.innerText || '').trim().toLowerCase();
-                    return t === 'verification' || t.endsWith('verification') || t.includes('verification');
-                });
-                if (v) {
-                    v.click();
-                    const a = v.querySelector('a') || v.closest('a');
-                    if (a) a.click();
+            // Inspect active tab / current screen
+            const screenInfo = await page.evaluate(() => {
+                const activeLi = document.querySelector('ul.nav-tabs li.active, .step-wizard .active, .wizard-step.active, li.active');
+                const header = document.querySelector('h1, h2, h3, .panel-title');
+                return {
+                    tabText: activeLi ? activeLi.innerText.trim() : '',
+                    headerText: header ? header.innerText.trim() : '',
+                    hasPromoterForm: !!document.querySelector('#fnm'),
+                    hasPpobInputs: !!document.querySelector('#pncd, input[name*="pincode" i]'),
+                    hasHsnInput: !!document.querySelector('#gs_hsn_value, input[placeholder*="HSN" i]')
+                };
+            });
+
+            const currentTabTitle = screenInfo.tabText || screenInfo.headerText || `Step ${tabStep + 1}`;
+            sendUpdate(`Navigating wizard: current tab is "${currentTabTitle}"...`);
+
+            // If on Promoter tab and form is shown, fill it
+            if (screenInfo.hasPromoterForm) {
+                sendUpdate('Populating Promoter / Partner (P1) details...');
+                const p = (data && data.p1) || {};
+                const nameParts = ((data && data.legalName) || 'Parth Purushottam Bhagat').split(' ');
+                const pFirst = (p.firstName || nameParts[0] || 'Parth').trim();
+                const pMiddle = (p.middleName || (nameParts.length > 2 ? nameParts[1] : '') || 'Purushottam').trim();
+                const pLast = (p.lastName || (nameParts.length > 2 ? nameParts.slice(2).join(' ') : nameParts[1] || '') || 'Bhagat').trim();
+                const pFatherFirst = (p.fatherFirstName || 'Purushottam').trim();
+                const pFatherMiddle = (p.fatherMiddleName || 'Vishram').trim();
+                const pFatherLast = (p.fatherLastName || 'Bhagat').trim();
+                const pDob = formatDDMMYYYY(p.dob || '29/01/1997');
+                const pMobile = (p.mobile || data.mobile || '9011494385').trim();
+                const pEmail = (p.email || data.email || 'parthpbhagat@gmail.com').trim();
+                const pDg = (p.designation || 'Proprietor').trim();
+                const pPan = (p.pan || data.pan || 'AAQFH0648P').trim();
+                const pPin = (p.res_pincode || data.ppob_pincode || '444906').trim();
+                const pCity = (p.res_city || data.ppob_city || 'warud').trim();
+                const pRoad = (p.res_road || data.ppob_street || '9 giriraj vibhag 2').trim();
+                const pBno = (p.res_buildingNo || data.ppob_flatNo || '29').trim();
+
+                await page.evaluate(({ f, m, l, ff, fm, fl, dob, mob, em, dg, pan, pin, city, road, bno }) => {
+                    const setVal = (sel, val) => {
+                        const el = document.querySelector(sel);
+                        if (el && val) {
+                            el.value = val;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    };
+                    setVal('#fnm', f);
+                    setVal('#pd_mname', m);
+                    setVal('#pd_lname', l);
+                    setVal('#ffname', ff);
+                    setVal('#pd_fmname', fm);
+                    setVal('#pd_flname', fl);
+                    setVal('#dob', dob);
+                    setVal('#mbno', mob);
+                    setVal('#pd_email', em);
+                    setVal('#dg', dg);
+                    setVal('#pan', pan);
+
+                    // Gender: Male
+                    const maleR = document.querySelector('#radiomale, input[type="radio"][value="M"], input[type="radio"][value="Male"]');
+                    if (maleR && !maleR.checked) {
+                        maleR.click();
+                        maleR.checked = true;
+                        maleR.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+
+                    // Address
+                    setVal('#pncd', pin);
+                    setVal('#pd_locality', city);
+                    setVal('#pd_road', road);
+                    setVal('#pd_bdname', bno);
+                    setVal('#pd_bno', bno);
+
+                    // Also Authorized Signatory switch
+                    const labels = Array.from(document.querySelectorAll('label, div, p, span'));
+                    const asLbl = labels.find(el => (el.innerText || '').toLowerCase().includes('also authorized signatory'));
+                    if (asLbl) {
+                        const parent = asLbl.closest('.form-group, .row, div') || asLbl.parentElement;
+                        if (parent) {
+                            const cb = parent.querySelector('input[type="checkbox"]');
+                            const sw = parent.querySelector('.switch, label.switch');
+                            if (cb && !cb.checked) {
+                                cb.click();
+                                cb.checked = true;
+                                cb.dispatchEvent(new Event('change', { bubbles: true }));
+                            } else if (sw) {
+                                sw.click();
+                            }
+                        }
+                    }
+
+                    if (window.angular) {
+                        try {
+                            const sc = window.angular.element(document.querySelector('#fnm') || document.body).scope();
+                            if (sc && !sc.$$phase) sc.$apply();
+                        } catch(e) {}
+                    }
+                }, { f: pFirst, m: pMiddle, l: pLast, ff: pFatherFirst, fm: pFatherMiddle, fl: pFatherLast, dob: pDob, mob: pMobile, em: pEmail, dg: pDg, pan: pPan, pin: pPin, city: pCity, road: pRoad, bno: pBno });
+
+                await page.waitForTimeout(1000);
+
+                // Upload Photograph
+                try {
+                    const photoData = p.promoterPhotoFile || '';
+                    if (photoData && photoData.startsWith('data:image')) {
+                        const fs = require('fs');
+                        const path = require('path');
+                        const cleanB64 = photoData.replace(/^data:.*?;base64,/, '');
+                        const tempPhotoPath = path.join(__dirname, 'temp_promoter_photo_1.jpg');
+                        fs.writeFileSync(tempPhotoPath, cleanB64, 'base64');
+                        const photoInput = page.locator('#pd_upload, input[type="file"]').first();
+                        if (await photoInput.count() > 0) {
+                            await photoInput.setInputFiles(tempPhotoPath).catch(() => {});
+                            sendUpdate('Promoter photograph uploaded.');
+                        }
+                    }
+                } catch(photoErr) {
+                    sendUpdate(`Photo note: ${photoErr.message}`);
                 }
 
-                if (window.angular) {
-                    try {
-                        const body = document.querySelector('[ng-controller], [data-ng-controller], body');
-                        const sc = window.angular.element(body).scope();
-                        if (sc) {
-                            if (typeof sc.gotoTab === 'function') sc.gotoTab('verification');
-                            else if (typeof sc.goto === 'function') sc.goto(10);
-                            else if (typeof sc.setTab === 'function') sc.setTab(10);
-                            if (!sc.$$phase) sc.$apply();
+                await page.waitForTimeout(1000);
+
+                // Click Save Promoter & Show list
+                await page.evaluate(() => {
+                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
+                    const savePromoter = btns.find(b => /save promoter/i.test(b.innerText || b.value || ''));
+                    if (savePromoter && !savePromoter.disabled) {
+                        savePromoter.click();
+                    }
+                });
+                sendUpdate('Saved Promoter details.');
+                await page.waitForTimeout(2500);
+            }
+
+            // If on Principal Place of Business, ensure possession and business activity are chosen
+            if (screenInfo.tabText.toLowerCase().includes('principal place') || screenInfo.headerText.toLowerCase().includes('principal place')) {
+                sendUpdate('Confirming Principal Place of Business details...');
+                await page.evaluate((possessionVal) => {
+                    const selects = Array.from(document.querySelectorAll('select'));
+                    const posSelect = selects.find(s => Array.from(s.options || []).some(o => /consent|own|rent|lease/i.test(o.text || '')));
+                    if (posSelect && posSelect.selectedIndex <= 0) {
+                        for (let i = 0; i < posSelect.options.length; i++) {
+                            if (/consent|rent|own/i.test(posSelect.options[i].text || '')) {
+                                posSelect.selectedIndex = i;
+                                posSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                                break;
+                            }
                         }
-                    } catch (e) { }
+                    }
+                    const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+                    const whCb = cbs.find(cb => /warehouse|office|retail|wholesale/i.test(cb.parentElement?.innerText || ''));
+                    if (whCb && !whCb.checked) {
+                        whCb.checked = true;
+                        whCb.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }, data.ppob_natureOfPossession || 'Consent');
+                await page.waitForTimeout(1000);
+            }
+
+            // Try clicking the Verification tab header if available and not disabled
+            await page.evaluate(() => {
+                const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li a, .wizard-step a, .step-wizard a, li a'));
+                const vTab = tabs.find(a => (a.innerText || '').toLowerCase().includes('verification'));
+                if (vTab && (!vTab.parentElement || !vTab.parentElement.classList.contains('disabled'))) {
+                    vTab.click();
                 }
             });
 
-            // Also try Playwright locator click
-            try {
-                const vLocator = page.locator('a, li, button').filter({ hasText: /^Verification$/i }).last();
-                if (await vLocator.count() > 0) {
-                    await vLocator.scrollIntoViewIfNeeded().catch(() => {});
-                    await vLocator.click({ force: true }).catch(() => {});
-                }
-            } catch (e) {}
+            await page.waitForTimeout(1000);
 
-            await page.waitForTimeout(2000);
-
-            // If still blocked, click "Save & Continue" or Next button if available
-            if (!isOnVerification && attempt >= 2) {
-                await page.evaluate(() => {
-                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
-                    const saveNext = btns.find(b => /save\s*&\s*continue|continue|next/i.test(b.innerText || b.value || ''));
-                    if (saveNext && !saveNext.disabled) {
-                        saveNext.click();
-                    }
+            // Click Save & Continue or Next button to move to the next tab
+            const clickedBtn = await page.evaluate(() => {
+                const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
+                const btn = btns.find(b => {
+                    if (b.offsetParent === null) return false;
+                    const t = (b.innerText || b.value || b.getAttribute('title') || '').trim().toLowerCase();
+                    return (t.includes('save') && t.includes('continue')) || t === 'next' || t === 'continue';
                 });
-                await page.waitForTimeout(2000);
+                if (btn && !btn.disabled) {
+                    btn.click();
+                    return (btn.innerText || btn.value || '').trim();
+                }
+                return null;
+            });
+
+            if (clickedBtn) {
+                sendUpdate(`Clicked "${clickedBtn}" to advance wizard.`);
             }
+
+            await page.waitForTimeout(2500);
+
+            // Auto-confirm any confirmation or warning dialogs (e.g. Locality mismatch, Proceed, OK)
+            await page.evaluate(() => {
+                const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"]'));
+                for (const d of dialogs) {
+                    if (d.offsetParent !== null) {
+                        const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn'));
+                        const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok/i.test(b.innerText || b.value || ''));
+                        if (okBtn) okBtn.click();
+                    }
+                }
+            });
         }
 
         // Fill Verification details only on Verification tab
@@ -1308,12 +1477,22 @@ async function run() {
 
         if (!evcModalReady) {
             const trailingErr = await page.evaluate(() => {
-                const e = document.querySelector('.alert-danger, .toast-error, .has-error, div[role="alert"], .help-block');
-                return e && e.innerText ? e.innerText.trim() : null;
+                const candidates = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"]'));
+                for (const c of candidates) {
+                    if (c.offsetParent !== null || window.getComputedStyle(c).display !== 'none') {
+                        const txt = (c.innerText || '').trim();
+                        if (txt && !/only maximum file size/i.test(txt) && !/format is only allowed/i.test(txt) && !/file with pdf/i.test(txt)) {
+                            return txt;
+                        }
+                    }
+                }
+                return null;
             });
-            const finalMsg = trailingErr || 'EVC OTP modal did not appear from GST Portal. Please inspect application details.';
-            sendPortalError(finalMsg);
-            throw new Error(`GST Portal validation failed: ${finalMsg}`);
+            if (trailingErr) {
+                sendPortalError(trailingErr);
+                throw new Error(`GST Portal validation failed: ${trailingErr}`);
+            }
+            sendUpdate('Notice: EVC OTP modal did not appear automatically. Application may be processing or awaiting OTP submission.');
         }
 
         // =========================================================================

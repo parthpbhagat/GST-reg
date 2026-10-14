@@ -955,11 +955,14 @@ async function run() {
                 }
                 const bodyText = document.body ? document.body.innerText : '';
                 let arn = null;
-                const arnMatch = bodyText.match(/[A-Za-z0-9]{15,20}ARN/i) || 
-                                 bodyText.match(/ARN\s*[:\-]?\s*([A-Za-z0-9]+)/i) ||
-                                 bodyText.match(/\b([A-Z]{2}[0-9]{11,15}[A-Z0-9]?)\b/);
+                const arnMatch = bodyText.match(/\b([A-Z]{2}[0-9]{11,15}[A-Z0-9]?)\b/) ||
+                                 bodyText.match(/\bARN\s*[:\-]?\s*([A-Za-z0-9]{12,18})\b/i) ||
+                                 bodyText.match(/\b([0-9]{14,16})\b/);
                 if (arnMatch) {
-                    arn = arnMatch[1] || arnMatch[0];
+                    const candidate = (arnMatch[1] || arnMatch[0]).trim();
+                    if (candidate && candidate.length >= 8 && /\d{4,}/.test(candidate) && !/warning/i.test(candidate)) {
+                        arn = candidate;
+                    }
                 }
                 const isSuccess = bodyText.toLowerCase().includes('success') ||
                                   bodyText.toLowerCase().includes('acknowledgment') ||

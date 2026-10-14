@@ -2369,7 +2369,8 @@ window.startAutomationPipeline = async function (id, mode = 'regular', multiStat
                     });
                     const app = await res.json();
                     
-                    const arn = (app && app.arn) || (app && app.data && app.data.arn) || null;
+                    let arn = (app && app.arn) || (app && app.data && app.data.arn) || null;
+                    if (arn && (arn.length < 8 || !/\d/.test(arn) || /warning/i.test(arn))) arn = null;
                     const trn = (app && app.trn) || (app && app.data && app.data.trn) || null;
                     const displayVal = arn || trn || 'Application Submitted';
                     

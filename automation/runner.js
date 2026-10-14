@@ -26,19 +26,49 @@ function sendUpdate(status) {
     console.log(`STATUS:${status}`);
 }
 
+function formatDDMMYYYY(dateStr) {
+    if (!dateStr) {
+        const now = new Date();
+        const d = String(now.getDate()).padStart(2, '0');
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const y = now.getFullYear();
+        return `${d}/${m}/${y}`;
+    }
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) return dateStr;
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        return `${day}/${month}/${year}`;
+    }
+    return String(dateStr);
+}
+
+function extractCleanErrorMessage(raw) {
+    if (!raw) return 'Validation error from GST portal';
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    const errLine = lines.slice().reverse().find(l => /required|mandatory|invalid|enter|select|provide|cannot|error|failed|does not match/i.test(l));
+    if (errLine) return errLine;
+    if (lines.length > 0) return lines[lines.length - 1];
+    return raw.trim();
+}
+
 function mapPortalError(msg) {
     const text = (msg || '').toLowerCase();
     if (text.includes('14a') || text.includes('rule 14') || text.includes('rule14')) {
         return { field: 'rule14A', step: 0, stepName: 'Business Details', label: 'Option for registration under Rule 14A' };
     }
-    if (text.includes('pan') || text.includes('permanent account number')) {
+    // Check constitution FIRST before PAN (since options like "Foreign Company" contain "pan")
+    if (text.includes('constitution')) {
+        return { field: 'businessConstitution', step: 0, stepName: 'Business Details', label: 'Constitution of Business' };
+    }
+    // Check PAN with word boundary to avoid matching "company", "japan", etc.
+    if (/\bpan\b/i.test(text) || text.includes('permanent account number')) {
         return { field: 'pan', step: 0, stepName: 'Business Details', label: 'PAN Number' };
     }
     if (text.includes('legal name') || text.includes('trade name')) {
         return { field: 'tradeName', step: 0, stepName: 'Business Details', label: 'Trade Name / Legal Name' };
-    }
-    if (text.includes('constitution')) {
-        return { field: 'businessConstitution', step: 0, stepName: 'Business Details', label: 'Constitution of Business' };
     }
     if (text.includes('commencement')) {
         return { field: 'dateOfCommencement', step: 0, stepName: 'Business Details', label: 'Date of Commencement of Business' };
@@ -79,13 +109,15 @@ function mapPortalError(msg) {
     if (text.includes('verification') || text.includes('declaration') || text.includes('place')) {
         return { field: 'verification_place', step: 9, stepName: 'Verification', label: 'Verification Place' };
     }
-    return { field: 'rule14A', step: 0, stepName: 'Business Details', label: 'Business Details' };
+    return { field: 'businessConstitution', step: 0, stepName: 'Business Details', label: 'Constitution of Business' };
 }
 
-function sendPortalError(msg, defaultStep = 0, defaultField = 'rule14A', defaultStepName = 'Business Details', defaultLabel = 'Business Details') {
+function sendPortalError(msg, defaultStep = 0, defaultField = 'businessConstitution', defaultStepName = 'Business Details', defaultLabel = 'Constitution of Business') {
     const mapped = mapPortalError(msg);
+    const cleanMsg = extractCleanErrorMessage(msg);
     const payload = {
-        message: msg,
+        message: cleanMsg,
+        rawMessage: msg,
         field: mapped.field || defaultField,
         step: typeof mapped.step === 'number' ? mapped.step : defaultStep,
         stepName: mapped.stepName || defaultStepName,
@@ -678,13 +710,109 @@ async function run() {
         // =========================================================================
         // [પગલું ૪: Verification Tab & EVC OTP Dispatch]
         // =========================================================================
-        sendUpdate('[પગલું ૪: EVC OTP મોકલવો] Verification સ્ક્રીન પર જઈને EVC OTP વિનંતી કરવી...');
+        // =========================================================================
+        // [પગલું ૪: Business Details Auto-Fill & Verification Screen]
+        // =========================================================================
+        sendUpdate('[પગલું ૪: Business Details Auto-Fill] Business Details ફોર્મ પોર્ટલ પર આપમેળે ભરી રહ્યા છીએ...');
 
-        // 1. First, make sure we do not leave any accidental toggles on Business Details and set Rule 14A
-        await page.evaluate((r14Val) => {
-            const val = (r14Val || 'No').trim().toLowerCase();
-            const wantYes = val === 'yes' || val === 'y';
+        const targetConstitution = (data.businessConstitution || 'Proprietorship').trim();
+        const targetReason = (data.reasonToObtainRegistration || 'Voluntary Basis').trim();
+        const tradeName = (data.tradeName || '').trim();
+        const commDate = formatDDMMYYYY(data.dateOfCommencement || data.dateOfLiability || new Date());
+        const liabDate = formatDDMMYYYY(data.dateOfLiability || data.dateOfCommencement || new Date());
+        const rule14AVal = (data.rule14A || 'No').trim();
 
+        // 1. Fill all Business Details fields on screen via DOM & Angular
+        await page.evaluate(({ constVal, reasonVal, trdVal, commVal, liabVal, r14Val }) => {
+            const selects = Array.from(document.querySelectorAll('select'));
+
+            // A. Constitution of Business Dropdown
+            const cobzSelect = selects.find(s => {
+                const optTexts = Array.from(s.options || []).map(o => (o.text || '').toLowerCase());
+                return optTexts.some(t => t.includes('proprietorship') || t.includes('partnership') || t.includes('foreign company'));
+            }) || document.querySelector('select[name*="cobz" i], select[id*="cobz" i], select[ng-model*="cobz" i], select[ng-model*="constitution" i]');
+
+            if (cobzSelect) {
+                const search = constVal.toLowerCase();
+                let matched = Array.from(cobzSelect.options).find(o => {
+                    const txt = (o.text || '').toLowerCase().trim();
+                    const val = (o.value || '').toLowerCase().trim();
+                    if (search.includes('proprietor') && txt.includes('proprietor')) return true;
+                    if ((search.includes('private limited') || search.includes('pvt')) && txt.includes('private limited')) return true;
+                    if (search.includes('public limited') && txt.includes('public limited')) return true;
+                    if ((search.includes('limited liability') || search.includes('llp')) && (txt.includes('limited liability') || txt.includes('llp'))) return true;
+                    if (search.includes('partnership') && txt.includes('partnership')) return true;
+                    if ((search.includes('hindu') || search.includes('huf')) && (txt.includes('hindu') || txt.includes('huf'))) return true;
+                    if (search.includes('society') && txt.includes('society')) return true;
+                    if (search.includes('trust') && txt.includes('trust')) return true;
+                    return txt.includes(search) || val === search;
+                });
+                if (!matched && cobzSelect.options.length > 1) {
+                    matched = Array.from(cobzSelect.options).find(o => (o.text || '').toLowerCase().includes('proprietor')) || cobzSelect.options[1];
+                }
+                if (matched) {
+                    cobzSelect.value = matched.value;
+                    cobzSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    cobzSelect.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            }
+
+            // B. Reason to Obtain Registration Dropdown
+            const reasonSelect = selects.find(s => {
+                const optTexts = Array.from(s.options || []).map(o => (o.text || '').toLowerCase());
+                return optTexts.some(t => t.includes('voluntary') || t.includes('threshold') || t.includes('inter-state'));
+            }) || document.querySelector('select[name*="rslibrg" i], select[id*="rslibrg" i], select[ng-model*="rslibrg" i]');
+
+            if (reasonSelect) {
+                const search = reasonVal.toLowerCase();
+                let matched = Array.from(reasonSelect.options).find(o => {
+                    const txt = (o.text || '').toLowerCase().trim();
+                    const val = (o.value || '').toLowerCase().trim();
+                    if (search.includes('voluntary') && txt.includes('voluntary')) return true;
+                    if (search.includes('threshold') && txt.includes('threshold')) return true;
+                    if (search.includes('inter-state') && txt.includes('inter-state')) return true;
+                    if (search.includes('e-commerce') && txt.includes('e-commerce')) return true;
+                    return txt.includes(search) || val === search;
+                });
+                if (!matched && reasonSelect.options.length > 1) {
+                    matched = Array.from(reasonSelect.options).find(o => (o.text || '').toLowerCase().includes('voluntary')) || reasonSelect.options[1];
+                }
+                if (matched) {
+                    reasonSelect.value = matched.value;
+                    reasonSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    reasonSelect.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            }
+
+            // C. Trade Name (if provided)
+            if (trdVal) {
+                const trdInput = document.querySelector('input[name*="trdnm" i], input[id*="trdnm" i], input[ng-model*="trdnm" i]');
+                if (trdInput) {
+                    trdInput.value = trdVal;
+                    trdInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    trdInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+
+            // D. Date of Commencement & Liability
+            const allInputs = Array.from(document.querySelectorAll('input'));
+            const commInput = allInputs.find(i => /cmbzdt|commence/i.test(i.name || i.id || i.getAttribute('ng-model') || '')) ||
+                              document.querySelector('input[name*="cmbzdt" i], input[id*="cmbzdt" i]');
+            if (commInput && !commInput.value) {
+                commInput.value = commVal;
+                commInput.dispatchEvent(new Event('input', { bubbles: true }));
+                commInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            const liabInput = allInputs.find(i => /lbrg|liability/i.test(i.name || i.id || i.getAttribute('ng-model') || '')) ||
+                             document.querySelector('input[name*="lbrg" i], input[id*="lbrg" i]');
+            if (liabInput && !liabInput.value) {
+                liabInput.value = liabVal;
+                liabInput.dispatchEvent(new Event('input', { bubbles: true }));
+                liabInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            // E. Toggles: Casual Taxable Person and Composition (make sure unchecked)
             const labels = Array.from(document.querySelectorAll('label, div, p, span'));
             const casualLabel = labels.find(l => /casual taxable person/i.test(l.innerText || ''));
             if (casualLabel) {
@@ -697,7 +825,9 @@ async function run() {
                 if (toggle && toggle.checked) toggle.click();
             }
 
-            // Option for registration under Rule 14A
+            // F. Option for registration under Rule 14A
+            const val = (r14Val || 'No').trim().toLowerCase();
+            const wantYes = val === 'yes' || val === 'y';
             const r14Label = labels.find(l => /rule\s*14\s*a/i.test(l.innerText || ''));
             if (r14Label) {
                 const container = r14Label.closest('.form-group, .row, div, tr') || r14Label.parentElement;
@@ -722,22 +852,48 @@ async function run() {
                 }
             }
 
+            // G. Angular digest and model synchronization
             if (window.angular) {
                 try {
-                    const radios = Array.from(document.querySelectorAll('input[ng-model*="14" i], input[ng-model*="rule" i]'));
-                    for (const r of radios) {
-                        const lbl = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || r.value || '').toLowerCase();
-                        if ((wantYes && (lbl.includes('yes') || r.value === 'Y')) || (!wantYes && (lbl.includes('no') || r.value === 'N'))) {
-                            if (!r.checked) {
-                                r.click();
-                                r.checked = true;
-                                r.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                        }
-                    }
+                    const body = document.querySelector('[ng-controller], [data-ng-controller], body');
+                    const sc = window.angular.element(body).scope();
+                    if (sc && !sc.$$phase) sc.$apply();
                 } catch(e) {}
             }
-        }, data.rule14A || 'No');
+        }, {
+            constVal: targetConstitution,
+            reasonVal: targetReason,
+            trdVal: tradeName,
+            commVal: commDate,
+            liabVal: liabDate,
+            r14Val: rule14AVal
+        });
+
+        // 2. Playwright locator fallback for Constitution of Business
+        try {
+            const cobzSelectLocator = page.locator('select').filter({ hasText: /Proprietorship/i }).first();
+            if (await cobzSelectLocator.count() > 0) {
+                const options = await cobzSelectLocator.locator('option').allInnerTexts();
+                const matchedText = options.find(o => o.toLowerCase().includes(targetConstitution.toLowerCase().includes('proprietor') ? 'proprietor' : targetConstitution.toLowerCase()));
+                if (matchedText) {
+                    await cobzSelectLocator.selectOption({ label: matchedText.trim() }).catch(() => {});
+                }
+            }
+        } catch (e) {}
+
+        sendUpdate(`✅ Business Details populated (Constitution: ${targetConstitution}, Reason: ${targetReason}).`);
+        await page.waitForTimeout(1000);
+
+        // 3. Save Business Details so the portal validates and completes Tab 0
+        sendUpdate('Saving Business Details on GST Portal...');
+        await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
+            const saveNext = btns.find(b => /save\s*&\s*continue|continue/i.test(b.innerText || b.value || ''));
+            if (saveNext && !saveNext.disabled) {
+                saveNext.click();
+            }
+        });
+        await page.waitForTimeout(2500);
 
         // 2. Navigate directly to Verification tab
         sendUpdate('Switching to Verification tab...');

@@ -2645,14 +2645,16 @@ window.mapPortalError = function (msg) {
     if (text.includes('14a') || text.includes('rule 14') || text.includes('rule14')) {
         return { field: 'rule14A', step: 0, stepName: 'Business Details', label: 'Option for registration under Rule 14A' };
     }
-    if (text.includes('pan') || text.includes('permanent account number')) {
+    // Check constitution FIRST before PAN (since options like "Foreign Company" contain "pan")
+    if (text.includes('constitution')) {
+        return { field: 'businessConstitution', step: 0, stepName: 'Business Details', label: 'Constitution of Business' };
+    }
+    // Check PAN with word boundary to avoid matching "company", "japan", etc.
+    if (/\bpan\b/i.test(text) || text.includes('permanent account number')) {
         return { field: 'pan', step: 0, stepName: 'Business Details', label: 'PAN Number' };
     }
     if (text.includes('legal name') || text.includes('trade name')) {
         return { field: 'tradeName', step: 0, stepName: 'Business Details', label: 'Trade Name / Legal Name' };
-    }
-    if (text.includes('constitution')) {
-        return { field: 'businessConstitution', step: 0, stepName: 'Business Details', label: 'Constitution of Business' };
     }
     if (text.includes('commencement')) {
         return { field: 'dateOfCommencement', step: 0, stepName: 'Business Details', label: 'Date of Commencement of Business' };
@@ -2693,7 +2695,7 @@ window.mapPortalError = function (msg) {
     if (text.includes('verification') || text.includes('declaration') || text.includes('place')) {
         return { field: 'verification_place', step: 9, stepName: 'Verification', label: 'Verification Place' };
     }
-    return { field: 'rule14A', step: 0, stepName: 'Business Details', label: 'Option for registration under Rule 14A' };
+    return { field: 'businessConstitution', step: 0, stepName: 'Business Details', label: 'Constitution of Business' };
 };
 
 window.showPipelineErrorModal = function (errData) {

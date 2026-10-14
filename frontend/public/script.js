@@ -833,6 +833,7 @@ window.loadAutosave = function () {
             console.log('Autosaved form restored successfully.');
             if (typeof renderSidebar === 'function') renderSidebar();
             if (typeof renderContent === 'function') renderContent();
+            if (typeof window.calculateProgress === 'function') window.calculateProgress();
         }
     } catch (e) {
         console.warn('Load autosave error:', e);
@@ -851,14 +852,16 @@ setTimeout(window.loadAutosave, 150);
 // Auto-save periodically every 2.5 seconds
 setInterval(window.saveAutosave, 2500);
 
-// Auto-save on any keystroke or change anywhere in the document
+// Auto-save and progress calculation on any keystroke or change anywhere in the document
 if (!window._autosaveListenerAttached) {
     window._autosaveListenerAttached = true;
     document.addEventListener('input', () => {
         if (window.saveAutosave) window.saveAutosave();
+        if (typeof window.calculateProgress === 'function') window.calculateProgress();
     }, true);
     document.addEventListener('change', () => {
         if (window.saveAutosave) window.saveAutosave();
+        if (typeof window.calculateProgress === 'function') window.calculateProgress();
     }, true);
 }
 
@@ -1020,6 +1023,7 @@ function setStep(newStep) {
     setTimeout(() => {
         try {
             renderContent();
+            if (typeof window.calculateProgress === 'function') window.calculateProgress();
         } catch (e) {
             console.error("renderContent error:", e);
         } finally {
@@ -1169,6 +1173,10 @@ window.updateForm = function (key, value) {
     // If Primary Authorized Signatory logic is active, resync Promoter p1 to Auth Sig
     if (window.form.a1 && window.form.a1.primary && key.startsWith('p1')) {
         window.handlePrimaryAuthSigChange(true);
+    }
+
+    if (typeof window.calculateProgress === 'function') {
+        window.calculateProgress();
     }
 }
 
@@ -3876,6 +3884,10 @@ function renderContent() {
     if (typeof initMapsAndAutocomplete === 'function') {
         initMapsAndAutocomplete();
     }
+
+    if (typeof window.calculateProgress === 'function') {
+        window.calculateProgress();
+    }
 }
 
 
@@ -4299,44 +4311,104 @@ fetch('https://reg.gst.gov.in/master/states')
     .catch(err => console.error("Error fetching states:", err));
 
 window.calculateProgress = function () {
+    const f = window.form || {};
     let total = 0;
     let filled = 0;
-    const skipKeys = ['promoters', 'authSig', 'ppob_natureOfBusiness', 'goods_hsn', 'goods_sac', 'taxpayerType', 'proofOfConstitutionType', 'proofOfConstitutionFile', 'documentForTradeNameFile', 'authSigProofType', 'authSigProofFile', 'authSigPhotoFile', 'promoterPhotoFile', 'ppob_doc', 'ppob_docFile', 'stateSpecific_electricityBoard', 'stateSpecific_electricityConsumerNo', 'stateSpecific_ptEcNo', 'stateSpecific_ptRcNo', 'stateSpecific_exciseLicenseNo', 'stateSpecific_exciseLicenseHolder', 'existingRegistrationType', 'existingRegistrationNo', 'existingRegistrationDate'];
 
-    // Core fields
-    for (const key in window.form) {
-        if (skipKeys.includes(key)) continue;
-        if (key === 'promoters' || key === 'authSig' || key === 'ppob_natureOfBusiness') continue;
+    const check = (val) => {
         total++;
-        if (window.form[key] && window.form[key] !== '') filled++;
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+            filled++;
+        }
+    };
+
+    // 1. Business Details (Step 0)
+    check(f.pan);
+    check(f.legalName);
+    check(f.tradeName);
+    check(f.businessConstitution);
+    check(f.state);
+    check(f.district);
+    check(f.dateOfCommencement);
+    check(f.dateOfLiability);
+    check(f.reasonToObtainRegistration);
+    check(f.proofOfConstitutionType);
+    check(f.proofOfConstitutionFile);
+
+    // 2. Promoter / Partners (Step 1)
+    const promoterKeys = Object.keys(f).filter(k => k.match(/^p\d+$/));
+    const pKeysToCheck = promoterKeys.length > 0 ? promoterKeys : ['p1'];
+    for (const pKey of pKeysToCheck) {
+        const p = f[pKey] || {};
+        check(p.firstName);
+        check(p.middleName || p.lastName);
+        check(p.fatherFirstName);
+        check(p.dob);
+        check(p.gender);
+        check(p.mobile);
+        check(p.email);
+        check(p.designation);
+        check(p.pan);
+        check(p.res_pincode);
+        check(p.res_state);
+        check(p.res_district);
+        check(p.res_city);
+        check(p.res_road);
+        check(p.res_buildingNo);
+        check(p.promoterPhotoFile);
     }
 
-    // Promoters
-    if (window.form.promoters && window.form.promoters.length > 0) {
-        for (const key in window.form.promoters[0]) {
-            if (skipKeys.includes(key)) continue;
-            total++;
-            if (window.form.promoters[0][key] && window.form.promoters[0][key] !== '') filled++;
+    // 3. Authorized Signatory (Step 2)
+    const hasPromoterAuthSig = promoterKeys.some(k => f[k] && f[k].alsoAuthorizedSignatory);
+    if (hasPromoterAuthSig) {
+        total += 2;
+        filled += 2;
+    } else {
+        const authSigKeys = Object.keys(f).filter(k => k.match(/^a\d+$/));
+        const aKeysToCheck = authSigKeys.length > 0 ? authSigKeys : ['a1'];
+        for (const aKey of aKeysToCheck) {
+            const a = f[aKey] || {};
+            check(a.firstName);
+            check(a.mobile);
+            check(a.email);
+            check(a.designation);
+            check(a.pan);
+            check(a.authSigProofFile);
+            check(a.authSigPhotoFile);
         }
     }
 
-    // Auth Sig
-    // Auth Sig (Multiple)
-    for (const key in window.form) {
-        if (key.match(/^a\d+$/)) {
-            for (const subKey in window.form[key]) {
-                if (skipKeys.includes(subKey) || subKey === 'primary') continue;
-                total++;
-                if (window.form[key][subKey] && window.form[key][subKey] !== '') filled++;
-            }
-        }
+    // 4. Principal Place of Business (Step 4)
+    check(f.ppob_building || f.ppob_buildingName || f.ppob_flatNo || f.ppob_floor);
+    check(f.ppob_street || f.ppob_road);
+    check(f.ppob_city);
+    check(f.ppob_district);
+    check(f.ppob_state);
+    check(f.ppob_pincode);
+    check(f.ppob_email);
+    check(f.ppob_mobile);
+    check(f.ppob_natureOfPossession);
+    check(f.ppob_docFile);
+    
+    total++;
+    if (f.ppob_natureOfBusiness && Object.values(f.ppob_natureOfBusiness).some(Boolean)) {
+        filled++;
     }
+
+    // 5. Goods and Services (Step 6)
+    total++;
+    if ((Array.isArray(f.goods_hsn) && f.goods_hsn.length > 0) || (Array.isArray(f.goods_sac) && f.goods_sac.length > 0)) {
+        filled++;
+    }
+
+    // 6. Verification (Step 9)
+    check(f.verification_signatory || (f.p1 && f.p1.firstName));
+    check(f.verification_place || f.ppob_city || f.district);
 
     let percentage = 0;
     if (total > 0) {
-        percentage = Math.round((filled / total) * 100);
+        percentage = Math.min(100, Math.round((filled / total) * 100));
     }
-    if (percentage > 100) percentage = 100;
 
     const circle = document.getElementById('form-progress-circle');
     const text = document.getElementById('form-progress-text');
@@ -4344,6 +4416,8 @@ window.calculateProgress = function () {
         circle.style.background = `conic-gradient(#22c55e ${percentage}%, #cbd5e1 ${percentage}%)`;
         text.innerText = `${percentage}%`;
     }
+
+    return percentage;
 };
 
 document.addEventListener('change', function (e) {

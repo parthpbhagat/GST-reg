@@ -237,16 +237,13 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
     }
 
     let query = supabase.from('applications').select('*').eq('appId', id);
-    if (req.user.email !== 'admin@example.com') {
-        query = query.eq('userEmail', req.user.email);
-    }
     const { data: row, error: fetchErr } = await query.single();
 
     if (fetchErr || !row) {
-        return res.status(404).json({ error: 'Application not found or unauthorized' });
+        return res.status(404).json({ error: 'Application not found' });
     }
 
-    let appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+    let appData = typeof row.data === 'string' ? JSON.parse(row.data) : (row.data || {});
 
     if (status === 'Accepted' || status === 'Approved') {
         try {
@@ -283,7 +280,6 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
                 appData.ppob_docFile = filePath;
             }
 
-            // Move PDF Declaration (Added missing logic to prevent enormous base64 payload overhead in DB)
             if (appData.authSig && appData.authSig.authSigProofFile && (appData.authSig.authSigProofFile.startsWith('data:image') || appData.authSig.authSigProofFile.startsWith('data:application/pdf'))) {
                 const base64Data = appData.authSig.authSigProofFile.replace(/^data:.*?;base64,/, "");
                 const ext = appData.authSig.authSigProofFile.includes('application/pdf') ? 'pdf' : 'jpg';
@@ -298,16 +294,17 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
         }
     }
 
-    let updateQuery = supabase.from('applications').update({ status, data: appData }).eq('appId', id);
-    if (req.user.email !== 'admin@example.com') {
-        updateQuery = updateQuery.eq('userEmail', req.user.email);
+    const updatePayload = { status, data: appData };
+    if (req.body.arn) {
+        updatePayload.arn = req.body.arn;
+        appData.arn = req.body.arn;
     }
+
+    let updateQuery = supabase.from('applications').update(updatePayload).eq('appId', id);
     const { error } = await updateQuery;
 
     try {
-        let oldUpdateQuery = oldSupabase.from('applications').update({ status, data: appData }).eq('appId', id);
-        if (req.user && req.user.email !== 'admin@example.com') oldUpdateQuery = oldUpdateQuery.eq('userEmail', req.user.email);
-        await oldUpdateQuery;
+        await oldSupabase.from('applications').update(updatePayload).eq('appId', id);
     } catch (e) {
         console.error('Error updating status in oldSupabase:', e.message);
     }
@@ -316,7 +313,7 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
         console.error('Error updating status:', error.message);
         return res.status(500).json({ error: 'Failed to update status' });
     }
-    res.json({ message: 'Status updated successfully', appId: id, status });
+    res.json({ message: 'Status updated successfully', appId: id, status, arn: req.body.arn });
 });
 
 // PUT /api/applications/:id - Update an existing application's data
@@ -444,13 +441,15 @@ app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
 
     const updateFields = {
         trn: primaryTrn,
+        status: req.body.status || 'TRN Generated',
         data: appData
     };
+    if (req.body.arn) {
+        updateFields.arn = req.body.arn;
+        appData.arn = req.body.arn;
+    }
 
     let updateQuery = supabase.from('applications').update(updateFields).eq('appId', id);
-    if (req.user.email !== 'admin@example.com') {
-        updateQuery = updateQuery.eq('userEmail', req.user.email);
-    }
     const { error } = await updateQuery;
 
     try {
@@ -478,6 +477,11 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
     console.log(`[Automation] Starting automation for App ID: ${appId} (Mode: ${automationMode})`);
 
     io.to(appId).emit('automation_update', { status: `INITIALIZING: Launching ${automationMode === 'multistate' ? 'Multi-State' : 'Regular'} automation process...` });
+
+    // Update status to 'In Progress' immediately
+    supabase.from('applications').update({ status: 'In Progress' }).eq('appId', appId)
+        .then(() => oldSupabase.from('applications').update({ status: 'In Progress' }).eq('appId', appId).catch(() => {}))
+        .catch(err => console.error('[Automation] Failed to set In Progress status:', err));
 
     // Spawn the Playwright runner
     const runnerDir = path.join(__dirname, '..', 'automation');

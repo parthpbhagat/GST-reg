@@ -3290,7 +3290,7 @@ function renderContent() {
                     <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ File with PDF or JPEG format is only allowed. Max size 1 MB.</p>
                     <div style="display: flex; gap: 10px; align-items: center; margin-top: 4px;">
                         <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form['${currentPromoterKey}'].authSigProofFile = data; window.form['${currentPromoterKey}'].authSigProofFileName = filename; renderContent(); })" style="font-size: 14px; ${pForm.authSigProofFile ? 'display: none;' : ''}" />
-                        ${!pForm.authSigProofFile ? `<button class="btn accent" style="padding: 6px 12px; font-size: 13px;" onclick="window.openDeclarationModal('${currentPromoterKey}')">Auto-Generate Declaration</button>` : ''}
+                        ${'' /* Auto-Generate Declaration commented out as requested */}
                     </div>
                     ${pForm.authSigProofFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${pForm.authSigProofFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentPromoterKey}'].authSigProofFile, () => { window.form['${currentPromoterKey}'].authSigProofFile = ''; window.form['${currentPromoterKey}'].authSigProofFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentPromoterKey}'].authSigProofFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
                 </div>
@@ -3516,7 +3516,7 @@ function renderContent() {
                 <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ File with PDF or JPEG format is only allowed. Max size 1 MB.</p>
                 <div style="display: flex; gap: 10px; align-items: center; margin-top: 4px;">
                     <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form['${currentAuthSigKey}'].authSigProofFile = data; window.form['${currentAuthSigKey}'].authSigProofFileName = filename; renderContent(); })" style="font-size: 14px; ${aForm.authSigProofFile ? 'display: none;' : ''}" />
-                    ${!aForm.authSigProofFile ? `<button class="btn accent" style="padding: 6px 12px; font-size: 13px;" onclick="window.openDeclarationModal('${currentAuthSigKey}')">Auto-Generate Declaration</button>` : ''}
+                    ${'' /* Auto-Generate Declaration commented out as requested */}
                 </div>
                 ${aForm.authSigProofFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${aForm.authSigProofFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentAuthSigKey}'].authSigProofFile, () => { window.form['${currentAuthSigKey}'].authSigProofFile = ''; window.form['${currentAuthSigKey}'].authSigProofFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentAuthSigKey}'].authSigProofFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
             </div>
@@ -3782,8 +3782,113 @@ function renderContent() {
         </div>
         </section>`;
     } else if (step === 9) {
-        html = `<section class="card"><h2>Review</h2>
-        <button class="btn accent" onclick="showPreview();">Complete Application</button>
+        // Collect available signatories from form
+        const signatoriesList = [];
+        for (let i = 1; i <= 10; i++) {
+            const a = form['a' + i];
+            if (a && (a.firstName || a.lastName)) {
+                const fullName = [a.firstName, a.middleName, a.lastName].filter(Boolean).join(' ');
+                signatoriesList.push({ name: fullName, pan: a.pan, designation: a.designation || 'Authorized Signatory' });
+            }
+            const p = form['p' + i];
+            if (p && (p.firstName || p.lastName) && p.alsoAuthorizedSignatory) {
+                const fullName = [p.firstName, p.middleName, p.lastName].filter(Boolean).join(' ');
+                if (!signatoriesList.some(s => s.pan === p.pan && s.name === fullName)) {
+                    signatoriesList.push({ name: fullName, pan: p.pan, designation: p.designation || 'Partner/Director' });
+                }
+            }
+        }
+        if (signatoriesList.length === 0 && form.legalName) {
+            signatoriesList.push({ name: form.legalName, pan: form.pan, designation: 'Proprietor/Director' });
+        }
+
+        const selectedSig = form.verification_signatory || (signatoriesList[0] ? signatoriesList[0].name : '');
+        const currentSigObj = signatoriesList.find(s => s.name === selectedSig) || signatoriesList[0] || {};
+        const currentDesignation = form.verification_designation || currentSigObj.designation || form.a1?.designation || form.p1?.designation || 'Director';
+        const currentPlace = form.verification_place !== undefined ? form.verification_place : (form.ppob_city || form.ppob_district || '');
+
+        const sigOptionsHtml = signatoriesList.map(s => {
+            const label = s.pan ? `${s.name} [${s.pan.toUpperCase()}]` : s.name;
+            const isSel = (form.verification_signatory === s.name || (!form.verification_signatory && s === signatoriesList[0])) ? 'selected' : '';
+            return `<option value="${s.name}" data-designation="${s.designation}" ${isSel}>${label}</option>`;
+        }).join('');
+
+        html = `
+        <section class="card" style="box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; border-bottom: 1px solid #e2e8f0; padding-bottom: 16px;">
+                <div>
+                    <h2 style="margin: 0 0 4px 0; font-size: 20px; color: #1e3a8a; display: flex; align-items: center; gap: 8px;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                        Verification
+                    </h2>
+                    <p style="margin: 0; font-size: 13px; color: #64748b;">Review and complete legal declaration for GST Registration application</p>
+                </div>
+                <span style="font-size: 13px; color: #ef4444; font-weight: 500;">* indicates mandatory fields</span>
+            </div>
+
+            <!-- Declaration Affirmation Checkbox -->
+            <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 18px; margin-bottom: 24px;">
+                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer; font-size: 14px; color: #1e293b; line-height: 1.5;">
+                    <input type="checkbox" id="verification-declaration" style="width: 20px; height: 20px; margin-top: 2px; accent-color: #2563eb; cursor: pointer;" 
+                        ${form.verification_declaration !== false ? 'checked' : ''} 
+                        onchange="window.updateForm('verification_declaration', this.checked)">
+                    <span>
+                        I hereby solemnly affirm and declare that the information given herein above is true and correct to the best of my knowledge and belief and nothing has been concealed therefrom. <span style="color: #ef4444">*</span>
+                    </span>
+                </label>
+            </div>
+
+            <!-- Verification Fields Grid -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 28px;">
+                <div>
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">
+                        Name of Authorized Signatory <span style="color: #ef4444">*</span>
+                    </label>
+                    <select style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; background: white; outline: none;"
+                        onchange="window.updateForm('verification_signatory', this.value); const d = this.options[this.selectedIndex].getAttribute('data-designation'); if (d) window.updateForm('verification_designation', d); renderContent();">
+                        ${sigOptionsHtml}
+                    </select>
+                </div>
+
+                <div>
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">
+                        Place <span style="color: #ef4444">*</span>
+                    </label>
+                    <input type="text" placeholder="Enter Place (e.g. Ahmedabad)" 
+                        value="${currentPlace}"
+                        style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; outline: none;"
+                        oninput="window.updateForm('verification_place', this.value)">
+                </div>
+
+                <div>
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">
+                        Designation / Status
+                    </label>
+                    <input type="text" readonly 
+                        value="${currentDesignation}"
+                        style="width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 14px; background: #f1f5f9; color: #64748b; cursor: not-allowed;">
+                </div>
+
+                <div>
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">
+                        Date
+                    </label>
+                    <input type="text" readonly 
+                        value="${new Date().toLocaleDateString('en-GB')}"
+                        style="width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 14px; background: #f1f5f9; color: #64748b; cursor: not-allowed;">
+                </div>
+            </div>
+
+            <!-- Complete Application Callout -->
+            <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                <div>
+                    <h4 style="margin: 0 0 4px 0; color: #166534; font-size: 16px; font-weight: 600;">Ready to Complete Application?</h4>
+                    <p style="margin: 0; color: #15803d; font-size: 13px;">Review your entered details and submit to Admin / GST Automation Pipeline.</p>
+                </div>
+                <button class="btn accent" style="padding: 10px 24px; font-size: 14px; font-weight: 600; background: #16a34a; border-color: #16a34a;" onclick="showPreview();">
+                    Preview & Submit Application →
+                </button>
+            </div>
         </section>`;
     }
 

@@ -138,7 +138,7 @@ function buildGstApplicationPayload(data, draftId = '', trn = '') {
     const commencementDate = formatDDMMYYYY(data.dateOfCommencement);
 
     const effectiveDraftId = String(draftId || data.draftId || data.aplCd || '').trim();
-    const effectiveTrn = String(trn || data.trn || '').trim();
+    const effectiveTrn = String(trn || data.trn || (stateCd + '2600' + effectiveDraftId + 'TRN')).trim();
 
     // Promoters array (opdtls)
     const opdtls = [];

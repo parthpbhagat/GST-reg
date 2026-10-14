@@ -795,21 +795,54 @@ async function run() {
             }
 
             // D. Date of Commencement & Liability
-            const allInputs = Array.from(document.querySelectorAll('input'));
-            const commInput = allInputs.find(i => /cmbzdt|commence/i.test(i.name || i.id || i.getAttribute('ng-model') || '')) ||
-                              document.querySelector('input[name*="cmbzdt" i], input[id*="cmbzdt" i]');
-            if (commInput && !commInput.value) {
+            const allContainers = Array.from(document.querySelectorAll('.form-group, .col-md-3, .col-md-4, .col-sm-6, .row, div'));
+            
+            // Find Commencement Input
+            const commContainer = allContainers.find(el => {
+                const txt = (el.innerText || '').toLowerCase();
+                return txt.includes('commencement') && el.querySelector('input');
+            });
+            const commInput = (commContainer ? commContainer.querySelector('input') : null) ||
+                              document.querySelector('input[placeholder*="from" i], input[id*="comm" i], input[name*="comm" i], input[ng-model*="cmbzdt" i], input[ng-model*="comm" i]');
+            if (commInput) {
                 commInput.value = commVal;
                 commInput.dispatchEvent(new Event('input', { bubbles: true }));
                 commInput.dispatchEvent(new Event('change', { bubbles: true }));
+                commInput.dispatchEvent(new Event('blur', { bubbles: true }));
+                if (window.angular) {
+                    try {
+                        const ngModel = window.angular.element(commInput).controller('ngModel');
+                        if (ngModel) {
+                            ngModel.$setViewValue(commVal);
+                            ngModel.$render();
+                            ngModel.$commitViewValue();
+                        }
+                    } catch(e) {}
+                }
             }
 
-            const liabInput = allInputs.find(i => /lbrg|liability/i.test(i.name || i.id || i.getAttribute('ng-model') || '')) ||
-                             document.querySelector('input[name*="lbrg" i], input[id*="lbrg" i]');
-            if (liabInput && !liabInput.value) {
+            // Find Liability Input
+            const liabContainer = allContainers.find(el => {
+                const txt = (el.innerText || '').toLowerCase();
+                return txt.includes('liability to register') && el.querySelector('input');
+            });
+            const liabInput = (liabContainer ? liabContainer.querySelector('input') : null) ||
+                             document.querySelector('input[placeholder*="liability" i], input[id*="lbrg" i], input[name*="lbrg" i], input[ng-model*="lbrg" i]');
+            if (liabInput) {
                 liabInput.value = liabVal;
                 liabInput.dispatchEvent(new Event('input', { bubbles: true }));
                 liabInput.dispatchEvent(new Event('change', { bubbles: true }));
+                liabInput.dispatchEvent(new Event('blur', { bubbles: true }));
+                if (window.angular) {
+                    try {
+                        const ngModel = window.angular.element(liabInput).controller('ngModel');
+                        if (ngModel) {
+                            ngModel.$setViewValue(liabVal);
+                            ngModel.$render();
+                            ngModel.$commitViewValue();
+                        }
+                    } catch(e) {}
+                }
             }
 
             // E. Toggles: Casual Taxable Person and Composition (make sure unchecked)
@@ -857,7 +890,18 @@ async function run() {
                 try {
                     const body = document.querySelector('[ng-controller], [data-ng-controller], body');
                     const sc = window.angular.element(body).scope();
-                    if (sc && !sc.$$phase) sc.$apply();
+                    if (sc) {
+                        for (const key of Object.keys(sc)) {
+                            const obj = sc[key];
+                            if (obj && typeof obj === 'object') {
+                                if ('cmbzdt' in obj) obj.cmbzdt = commVal;
+                                if ('lbrgdt' in obj) obj.lbrgdt = liabVal;
+                                if ('dtcomm' in obj) obj.dtcomm = commVal;
+                                if ('dtlbrg' in obj) obj.dtlbrg = liabVal;
+                            }
+                        }
+                        if (!sc.$$phase) sc.$apply();
+                    }
                 } catch(e) {}
             }
         }, {
@@ -869,7 +913,7 @@ async function run() {
             r14Val: rule14AVal
         });
 
-        // 2. Playwright locator fallback for Constitution of Business
+        // 2. Playwright locator fallbacks
         try {
             const cobzSelectLocator = page.locator('select').filter({ hasText: /Proprietorship/i }).first();
             if (await cobzSelectLocator.count() > 0) {
@@ -881,7 +925,25 @@ async function run() {
             }
         } catch (e) {}
 
-        sendUpdate(`✅ Business Details populated (Constitution: ${targetConstitution}, Reason: ${targetReason}).`);
+        try {
+            const commLoc = page.locator('.form-group, div').filter({ hasText: /commencement/i }).locator('input').first();
+            if (await commLoc.count() > 0) {
+                await commLoc.click().catch(() => {});
+                await commLoc.fill(commDate).catch(() => {});
+                await commLoc.press('Tab').catch(() => {});
+            }
+        } catch (e) {}
+
+        try {
+            const liabLoc = page.locator('.form-group, div').filter({ hasText: /liability/i }).locator('input').first();
+            if (await liabLoc.count() > 0) {
+                await liabLoc.click().catch(() => {});
+                await liabLoc.fill(liabDate).catch(() => {});
+                await liabLoc.press('Tab').catch(() => {});
+            }
+        } catch (e) {}
+
+        sendUpdate(`✅ Business Details populated (Constitution: ${targetConstitution}, Reason: ${targetReason}, Commencement: ${commDate}).`);
         await page.waitForTimeout(1000);
 
         // 3. Save Business Details so the portal validates and completes Tab 0

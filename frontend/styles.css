@@ -491,6 +491,148 @@ input:checked + .slider:before {
   transform: translateX(20px);
 }
 
+/* Official GST Portal Info Circle */
+.gst-info-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #1e3a8a;
+  color: #ffffff;
+  font-size: 10px;
+  font-family: monospace, Arial, sans-serif;
+  font-weight: bold;
+  line-height: 1;
+  margin-left: 4px;
+  vertical-align: middle;
+  cursor: default;
+}
+
+/* Official GST Portal Toggle Switch */
+.gst-toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 58px;
+  height: 28px;
+  cursor: pointer;
+  user-select: none;
+}
+.gst-toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.gst-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #cbd5e1;
+  transition: 0.25s ease-in-out;
+  border-radius: 28px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.gst-toggle-slider .toggle-knob {
+  position: absolute;
+  height: 22px;
+  width: 22px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #ffffff;
+  transition: 0.25s ease-in-out;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  z-index: 2;
+}
+.gst-toggle-slider .toggle-text-yes {
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  display: none;
+  padding-left: 8px;
+  line-height: 28px;
+  letter-spacing: 0.3px;
+  z-index: 1;
+}
+.gst-toggle-slider .toggle-text-no {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+  display: block;
+  margin-left: auto;
+  padding-right: 8px;
+  line-height: 28px;
+  letter-spacing: 0.3px;
+  z-index: 1;
+}
+.gst-toggle-switch input:checked + .gst-toggle-slider {
+  background-color: #34a853; /* GST portal green */
+}
+.gst-toggle-switch input:checked + .gst-toggle-slider .toggle-knob {
+  transform: translateX(30px);
+}
+.gst-toggle-switch input:checked + .gst-toggle-slider .toggle-text-yes {
+  display: block;
+}
+.gst-toggle-switch input:checked + .gst-toggle-slider .toggle-text-no {
+  display: none;
+}
+
+/* Official GST Portal Action Buttons */
+.gst-portal-btn-primary {
+  background-color: #244b7a;
+  color: #ffffff;
+  border: 1px solid #244b7a;
+  padding: 8px 22px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out;
+}
+.gst-portal-btn-primary:hover {
+  background-color: #1a385c;
+}
+.gst-portal-btn-secondary {
+  background-color: #ffffff;
+  color: #244b7a;
+  border: 1px solid #244b7a;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out;
+}
+.gst-portal-btn-secondary:hover {
+  background-color: #f1f5f9;
+}
+.gst-portal-btn-disabled {
+  background-color: #b0c4de;
+  color: #ffffff;
+  border: 1px solid #b0c4de;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.gst-portal-btn-disabled:hover {
+  background-color: #9fb8d4;
+}
+
+
 
 .header-btn {
     padding: 8px 16px;

@@ -543,20 +543,62 @@ app.get('/api/applications/:id/gst-json', authenticateToken, async (req, res) =>
 
 const { spawn } = require('child_process');
 
+// Logs directory for persistent automation and system logs
+const logsDir = path.join(__dirname, 'logs');
+if (!fs.existsSync(logsDir)) {
+    fs.mkdirSync(logsDir, { recursive: true });
+}
+
+function writeLog(appId, message, level = 'INFO') {
+    const timestamp = new Date().toISOString();
+    const timeDisplay = new Date().toLocaleTimeString();
+    const cleanAppId = appId || 'SYSTEM';
+    const consoleMsg = `[${timeDisplay}] [${level}] [${cleanAppId}] ${message}`;
+    const fileMsg = `[${timestamp}] [${level}] ${message}\n`;
+
+    // 1. Output clearly to backend terminal
+    if (level === 'ERROR') {
+        console.error(consoleMsg);
+    } else if (level === 'WARN') {
+        console.warn(consoleMsg);
+    } else {
+        console.log(consoleMsg);
+    }
+
+    // 2. Persist to application-specific and global log files
+    try {
+        if (appId) {
+            fs.appendFileSync(path.join(logsDir, `automation_${appId}.log`), fileMsg, 'utf-8');
+        }
+        fs.appendFileSync(path.join(logsDir, 'system_activity.log'), `[${cleanAppId}] ${fileMsg}`, 'utf-8');
+    } catch (e) {}
+}
+
 const activeAutomations = new Map();
+
+// GET /api/applications/:id/logs - View automation log history
+app.get('/api/applications/:id/logs', authenticateToken, (req, res) => {
+    const { id } = req.params;
+    const logPath = path.join(logsDir, `automation_${id}.log`);
+    if (fs.existsSync(logPath)) {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        return res.sendFile(logPath);
+    }
+    res.status(404).send('No logs found for this application ID.');
+});
 
 // POST /api/automation/start
 app.post('/api/automation/start', authenticateToken, (req, res) => {
     const { appId, mode, multiStateConfig } = req.body;
     const automationMode = mode || 'regular';
-    console.log(`[Automation] Starting automation for App ID: ${appId} (Mode: ${automationMode})`);
+    writeLog(appId, `Starting automation process (Mode: ${automationMode})`, 'INIT');
 
     io.to(appId).emit('automation_update', { status: `INITIALIZING: Launching ${automationMode === 'multistate' ? 'Multi-State' : 'Regular'} automation process...` });
 
     // Update status to 'In Progress' immediately
     supabase.from('applications').update({ status: 'In Progress' }).eq('appId', appId)
         .then(() => oldSupabase.from('applications').update({ status: 'In Progress' }).eq('appId', appId).catch(() => {}))
-        .catch(err => console.error('[Automation] Failed to set In Progress status:', err));
+        .catch(err => writeLog(appId, `Failed to set In Progress status in DB: ${err.message}`, 'WARN'));
 
     // Spawn the Playwright runner
     const runnerDir = path.join(__dirname, '..', 'automation');
@@ -577,11 +619,15 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
         const lines = data.toString().split('\n');
         for (let line of lines) {
             line = line.trim();
+            if (!line) continue;
+
             if (line.startsWith('STATUS:')) {
-                const statusMsg = line.replace('STATUS:', '');
+                const statusMsg = line.replace('STATUS:', '').trim();
+                writeLog(appId, statusMsg, 'STATUS');
                 io.to(appId).emit('automation_update', { status: statusMsg });
             } else if (line.startsWith('CAPTCHA_IMAGE:')) {
                 const imageSrc = line.replace('CAPTCHA_IMAGE:', '');
+                writeLog(appId, 'Captcha image received and broadcast to client', 'INFO');
                 io.to(appId).emit('automation_captcha_image', imageSrc);
             } else if (line.startsWith('SCREENSHOT:')) {
                 const base64 = line.replace('SCREENSHOT:', '');
@@ -600,19 +646,23 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
                         warningPayload.message = raw;
                     }
                 }
+                writeLog(appId, `Portal Warning prompt: ${warningPayload.message}`, 'WARN');
                 io.to(appId).emit('automation_warning', warningPayload);
-            } else if (line) {
-                console.log(`[Runner Log]: ${line}`);
+            } else {
+                writeLog(appId, line, 'RUNNER');
             }
         }
     });
 
     child.stderr.on('data', (data) => {
-        console.error(`[Runner Error]: ${data.toString()}`);
+        const errText = data.toString().trim();
+        if (errText) {
+            writeLog(appId, errText, 'ERROR');
+        }
     });
 
     child.on('close', (code) => {
-        console.log(`[Automation] Process exited with code ${code}`);
+        writeLog(appId, `Process finished with exit code ${code}`, code === 0 ? 'INFO' : 'WARN');
         activeAutomations.delete(appId);
         if (code !== 0) {
             io.to(appId).emit('automation_update', { status: 'Failed: Automation process crashed unexpectedly.' });
@@ -625,13 +675,15 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
 // POST /api/automation/stop
 app.post('/api/automation/stop', (req, res) => {
     const { appId } = req.body;
-    console.log(`[Automation] Stopping automation for App ID: ${appId}`);
+    writeLog(appId, 'Received request to stop automation', 'ACTION');
 
     const child = activeAutomations.get(appId);
     if (child) {
         child.kill(); // Kill the playwright runner process
         activeAutomations.delete(appId);
-        console.log(`[Automation] Process killed for App ID: ${appId}`);
+        writeLog(appId, 'Process killed successfully', 'INFO');
+    } else {
+        writeLog(appId, 'No active process found to kill', 'WARN');
     }
     res.json({ message: 'Automation stopped successfully' });
 });
@@ -639,14 +691,13 @@ app.post('/api/automation/stop', (req, res) => {
 // POST /api/automation/captcha
 app.post('/api/automation/captcha', (req, res) => {
     const { appId, captcha } = req.body;
-    console.log(`[Automation] Captcha received for App ID: ${appId} - Captcha: ${captcha}`);
+    writeLog(appId, `Captcha received from user: ${captcha}`, 'ACTION');
 
     const child = activeAutomations.get(appId);
     if (child) {
-        // Send the captcha text directly to the running headless browser script
         child.stdin.write(captcha + '\n');
     } else {
-        console.log(`[Automation] No active process found for App ID: ${appId}`);
+        writeLog(appId, 'No active process found for App ID on captcha submission', 'WARN');
     }
 
     res.json({ message: 'Captcha received successfully' });
@@ -655,14 +706,13 @@ app.post('/api/automation/captcha', (req, res) => {
 // POST /api/automation/warning_response
 app.post('/api/automation/warning_response', (req, res) => {
     const { appId, choice } = req.body;
-    console.log(`[Automation] Warning response received for App ID: ${appId} - Choice: ${choice}`);
+    writeLog(appId, `Warning modal choice received from user: ${choice}`, 'ACTION');
 
     const child = activeAutomations.get(appId);
     if (child) {
-        // Send the choice directly to the running headless browser script
         child.stdin.write(choice + '\n');
     } else {
-        console.log(`[Automation] No active process found for App ID: ${appId}`);
+        writeLog(appId, 'No active process found for App ID on warning response', 'WARN');
     }
 
     res.json({ message: 'Warning response received successfully' });
@@ -671,14 +721,13 @@ app.post('/api/automation/warning_response', (req, res) => {
 // POST /api/automation/otp
 app.post('/api/automation/otp', (req, res) => {
     const { appId, mobileOtp, emailOtp } = req.body;
-    console.log(`[Automation] OTPs received for App ID: ${appId}`);
+    writeLog(appId, 'Part A OTPs received from user: Mobile & Email', 'ACTION');
 
     const child = activeAutomations.get(appId);
     if (child) {
-        // Send both OTPs comma-separated to the running headless browser script
         child.stdin.write(`${mobileOtp},${emailOtp}\n`);
     } else {
-        console.log(`[Automation] No active process found for App ID: ${appId}`);
+        writeLog(appId, 'No active process found for App ID on OTP submission', 'WARN');
     }
 
     res.json({ message: 'OTPs received successfully' });
@@ -687,13 +736,13 @@ app.post('/api/automation/otp', (req, res) => {
 // POST /api/automation/evc_otp
 app.post('/api/automation/evc_otp', (req, res) => {
     const { appId, otp } = req.body;
-    console.log(`[Automation] EVC OTP received for App ID: ${appId} - OTP: ${otp}`);
+    writeLog(appId, `Final EVC OTP received from user: ${otp}`, 'ACTION');
 
     const child = activeAutomations.get(appId);
     if (child) {
         child.stdin.write(`${(otp || '').trim()}\n`);
     } else {
-        console.log(`[Automation] No active process found for App ID: ${appId}`);
+        writeLog(appId, 'No active process found for App ID on EVC OTP submission', 'WARN');
     }
 
     res.json({ message: 'EVC OTP received successfully' });

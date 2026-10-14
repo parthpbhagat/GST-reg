@@ -2938,6 +2938,105 @@ window.showPromoterList = function () {
     renderContent();
 };
 
+window.openSelfieModal = function(key) {
+    let modal = document.getElementById('selfie-camera-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'selfie-camera-modal';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+        <div class="modal" style="width: 460px; max-width: 92vw; text-align: center; border-radius: 8px; background: #ffffff; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.25);">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 12px; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: #1e3a8a; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                    Take Picture (Device Camera / Selfie)
+                </h3>
+                <button type="button" onclick="window.closeSelfieModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #64748b; font-weight: bold;">✕</button>
+            </div>
+            <div style="position: relative; width: 100%; height: 280px; background: #0f172a; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+                <video id="selfieVideo" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
+                <canvas id="selfieCanvas" style="display: none;"></canvas>
+            </div>
+            <p style="font-size: 12px; color: #64748b; margin: 10px 0 15px; text-align: left;">
+                <span class="gst-info-circle">i</span> Position your face clearly within the frame before capturing.
+            </p>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn ghost" onclick="window.closeSelfieModal()">Cancel</button>
+                <button type="button" class="btn primary" id="captureSelfieBtn" style="background-color: #244b7a; border-color: #244b7a; font-weight: 600;">📷 Capture Photo</button>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+    }
+    
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    
+    const video = document.getElementById('selfieVideo');
+    const captureBtn = document.getElementById('captureSelfieBtn');
+    
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } })
+            .then(stream => {
+                window._selfieStream = stream;
+                if (video) {
+                    video.srcObject = stream;
+                    video.play().catch(() => {});
+                }
+            })
+            .catch(err => {
+                console.error("Camera access error:", err);
+                alert("Camera access error: " + (err.message || err.name) + "\nPlease use file upload to choose your photograph.");
+                window.closeSelfieModal();
+            });
+    } else {
+        alert("Camera is not supported on this browser or connection. Please use file upload.");
+        window.closeSelfieModal();
+    }
+    
+    if (captureBtn) {
+        captureBtn.onclick = function() {
+            if (!video || !video.videoWidth) {
+                alert("Camera feed is not ready yet. Please wait a moment.");
+                return;
+            }
+            const canvas = document.getElementById('selfieCanvas');
+            canvas.width = 400;
+            canvas.height = 400;
+            const ctx = canvas.getContext('2d');
+            const minDim = Math.min(video.videoWidth, video.videoHeight);
+            const sx = (video.videoWidth - minDim) / 2;
+            const sy = (video.videoHeight - minDim) / 2;
+            ctx.drawImage(video, sx, sy, minDim, minDim, 0, 0, 400, 400);
+            
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+            
+            if (key && window.form[key]) {
+                if (key.startsWith('p')) {
+                    window.form[key].promoterPhotoFile = dataUrl;
+                    window.form[key].promoterPhotoFileName = 'selfie_photograph.jpg';
+                } else {
+                    window.form[key].authSigPhotoFile = dataUrl;
+                    window.form[key].authSigPhotoFileName = 'selfie_photograph.jpg';
+                }
+            }
+            window.closeSelfieModal();
+            renderContent();
+        };
+    }
+};
+
+window.closeSelfieModal = function() {
+    const modal = document.getElementById('selfie-camera-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+    if (window._selfieStream) {
+        window._selfieStream.getTracks().forEach(track => track.stop());
+        window._selfieStream = null;
+    }
+};
+
 function renderContent() {
     const content = document.getElementById('wizard-content-inner');
     if (!content) return;
@@ -3298,57 +3397,93 @@ function renderContent() {
                 ${field('Floor No.', `<input type="text" placeholder="Enter Floor No." value="${pForm.res_floor || ''}" onchange="window.updateForm('${currentPromoterKey}.res_floor', this.value)" />`)}
                 ${field('Nearby Landmark', `<input type="text" placeholder="Enter Nearby Landmark" value="${pForm.res_landmark || ''}" onchange="window.updateForm('${currentPromoterKey}.res_landmark', this.value)" />`)}
             </div>
-            <h3 style="font-size: 18px; font-weight: 600; color: #1e3a8a; margin: 32px 0 20px;">
-                Other Information
-            </h3>
-            <div style="border: 1px solid #e2e8f0; padding: 20px; border-radius: var(--radius-md); margin-bottom: 20px; background: #f8fafc;">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <div>
-                        <div style="font-size: 15px; font-weight: 600; color: #1e293b;">Also Authorized Signatory</div>
-                        <p style="font-size: 13px; color: #64748b; margin-top: 4px;">Is this promoter also an authorized signatory?</p>
+            </div>
+
+            <!-- Document Upload Section matching Official GST Portal (Image 2) -->
+            <div style="margin-top: 28px; border-top: 1px solid #cbd5e1; padding-top: 16px;">
+                <h3 style="font-size: 16px; font-weight: 600; color: #1e3a8a; margin: 0 0 16px 0; display: flex; align-items: center; gap: 6px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#1e3a8a" style="vertical-align: text-bottom;"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+                    Document Upload
+                    <span class="gst-info-circle" title="Document Upload Details">i</span>
+                </h3>
+
+                <div style="border-top: 1px solid #e2e8f0; padding-top: 14px;">
+                    <div style="font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 12px;">
+                        Upload Photograph (of person whose information has been given above) <span style="color: #ef4444">*</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                        <span style="font-size: 14px; font-weight: 600; color: ${pForm.alsoAuthorizedSignatory ? '#22c55e' : '#94a3b8'};">${pForm.alsoAuthorizedSignatory ? 'Yes' : 'No'}</span>
-                        <label class="switch">
+
+                    <div style="display: flex; align-items: stretch; justify-content: space-between; flex-wrap: wrap; gap: 20px; background: #fff;">
+                        <!-- Left: File upload -->
+                        <div style="flex: 1; min-width: 280px; padding-right: 15px;">
+                            <div style="font-size: 13px; color: #475569; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                                <span class="gst-info-circle">i</span>
+                                Only JPEG file format is allowed
+                            </div>
+                            <div style="font-size: 13px; color: #475569; margin-bottom: 14px; display: flex; align-items: center; gap: 6px;">
+                                <span class="gst-info-circle">i</span>
+                                Maximum file size for upload is 100 KB
+                            </div>
+                            <div>
+                                <input type="file" id="promoterPhotoInput" accept="image/jpeg, image/jpg" onchange="window.handleFileUpload(this, 'jpeg', 100, (data, filename) => { window.form['${currentPromoterKey}'].promoterPhotoFile = data; window.form['${currentPromoterKey}'].promoterPhotoFileName = filename; renderContent(); })" style="font-size: 14px; ${pForm.promoterPhotoFile ? 'display: none;' : ''}" />
+                                ${pForm.promoterPhotoFile ? `
+                                <div style="margin-top: 4px; font-size: 13px; color: #166534; font-weight: 500; display: inline-flex; align-items: center; gap: 12px; padding: 6px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;">
+                                    <span>📄 ${pForm.promoterPhotoFileName || 'Uploaded Photograph'}</span>
+                                    <button type="button" onclick="window.deleteFile(window.form['${currentPromoterKey}'].promoterPhotoFile, () => { window.form['${currentPromoterKey}'].promoterPhotoFile = ''; window.form['${currentPromoterKey}'].promoterPhotoFileName = ''; renderContent(); }); return false;" class="btn-doc-delete" style="padding: 2px 8px; font-size: 12px; cursor: pointer;">Delete</button>
+                                    <button type="button" onclick="window.viewDocument(window.form['${currentPromoterKey}'].promoterPhotoFile); return false;" class="btn-doc-view" style="padding: 2px 8px; font-size: 12px; cursor: pointer;">View</button>
+                                </div>` : ''}
+                            </div>
+                        </div>
+
+                        <!-- Center Divider with OR badge -->
+                        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding: 0 10px; min-height: 80px;">
+                            <div style="position: absolute; top: 0; bottom: 0; width: 1px; background-color: #cbd5e1;"></div>
+                            <span style="position: relative; z-index: 1; background: #fff; padding: 2px 8px; font-size: 11px; font-weight: 700; color: #94a3b8; border: 1px solid #e2e8f0; border-radius: 3px; text-transform: uppercase;">OR</span>
+                        </div>
+
+                        <!-- Right: Take Picture -->
+                        <div style="flex: 1; min-width: 280px; padding-left: 15px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;">
+                            <button type="button" onclick="window.openSelfieModal('${currentPromoterKey}')" style="display: inline-flex; align-items: center; gap: 8px; background-color: #244b7a; color: #ffffff; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; padding: 9px 24px; border: none; border-radius: 2px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.15);">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                                TAKE PICTURE
+                            </button>
+                            <div style="font-size: 12px; color: #475569; margin-top: 10px; display: flex; align-items: center; gap: 6px;">
+                                <span class="gst-info-circle">i</span>
+                                You can use your device camera to take selfie photograph.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other Information Section matching Official GST Portal (Image 2) -->
+            <div style="margin-top: 28px; border-top: 1px solid #cbd5e1; padding-top: 16px;">
+                <h3 style="font-size: 16px; font-weight: 600; color: #1e3a8a; margin: 0 0 12px 0;">
+                    Other Information
+                </h3>
+                <div style="border-top: 1px solid #e2e8f0; padding-top: 12px;">
+                    <div style="font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                        Also Authorized Signatory
+                        <span class="gst-info-circle" title="Promoter is also an authorized signatory">i</span>
+                    </div>
+                    <div style="margin-top: 6px;">
+                        <label class="gst-toggle-switch">
                             <input type="checkbox" ${pForm.alsoAuthorizedSignatory ? 'checked' : ''} onchange="window.updateForm('${currentPromoterKey}.alsoAuthorizedSignatory', this.checked); renderContent();">
-                            <span class="slider"></span>
+                            <span class="gst-toggle-slider">
+                                <span class="toggle-text-yes">Yes</span>
+                                <span class="toggle-text-no">No</span>
+                                <span class="toggle-knob"></span>
+                            </span>
                         </label>
                     </div>
                 </div>
-                ${pForm.alsoAuthorizedSignatory ? `
-                <hr style="border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-                <div style="margin-bottom: 12px;">
-                    ${field('Proof of details of authorized signatory <span style="color: #ef4444">*</span>', `<select style="width: 100%; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 14px; margin-bottom: 8px; outline: none;" onchange="window.form['${currentPromoterKey}'].authSigProofType = this.value; renderContent();"><option value="">Select</option><option value="Letter of Authorisation" ${pForm.authSigProofType === 'Letter of Authorisation' ? 'selected' : ''}>Letter of Authorisation</option><option value="Copy of resolution passed by BoD / Managing Committee" ${pForm.authSigProofType === 'Copy of resolution passed by BoD / Managing Committee' ? 'selected' : ''}>Copy of resolution passed by BoD / Managing Committee</option></select>`)}
-                    <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ File with PDF or JPEG format is only allowed. Max size 1 MB.</p>
-                    <div style="display: flex; gap: 10px; align-items: center; margin-top: 4px;">
-                        <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form['${currentPromoterKey}'].authSigProofFile = data; window.form['${currentPromoterKey}'].authSigProofFileName = filename; renderContent(); })" style="font-size: 14px; ${pForm.authSigProofFile ? 'display: none;' : ''}" />
-                        ${'' /* Auto-Generate Declaration commented out as requested */}
-                    </div>
-                    ${pForm.authSigProofFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${pForm.authSigProofFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentPromoterKey}'].authSigProofFile, () => { window.form['${currentPromoterKey}'].authSigProofFile = ''; window.form['${currentPromoterKey}'].authSigProofFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentPromoterKey}'].authSigProofFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
-                </div>
-                ` : ''}
             </div>
-            <h3 style="font-size: 18px; font-weight: 600; color: #1e3a8a; margin: 32px 0 20px;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="vertical-align: text-bottom; margin-right: 8px;"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
-                Document Upload
-            </h3>
-            <div style="border: 1px solid #e2e8f0; padding: 20px; border-radius: var(--radius-md);">
-                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
-                    <div style="flex: 1; min-width: 300px;">
-                        <div style="font-size: 14px; font-weight: 500; color: #1e293b; margin-bottom: 8px;">Upload Photograph (of person whose information has been given above) <span style="color: #ef4444">*</span></div>
-                        <p style="font-size: 12px; color: #64748b; margin-top: 8px;">ℹ Only JPEG file format is allowed</p>
-                        <p style="font-size: 12px; color: #64748b; margin-bottom: 8px;">ℹ Maximum file size for upload is 100 KB</p>
-                        <input type="file" accept="image/jpeg, image/jpg" onchange="window.handleFileUpload(this, 'jpeg', 100, (data, filename) => { window.form['${currentPromoterKey}'].promoterPhotoFile = data; window.form['${currentPromoterKey}'].promoterPhotoFileName = filename; renderContent(); })" style="font-size: 14px; margin-top: 5px; ${pForm.promoterPhotoFile ? 'display: none;' : ''}" />
-                        ${pForm.promoterPhotoFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${pForm.promoterPhotoFileName || 'Uploaded Photograph'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentPromoterKey}'].promoterPhotoFile, () => { window.form['${currentPromoterKey}'].promoterPhotoFile = ''; window.form['${currentPromoterKey}'].promoterPhotoFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentPromoterKey}'].promoterPhotoFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
-                    </div>
-                </div>
-            </div>
-            <div style="margin-top: 20px; text-align: left; padding-top: 20px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <button class="btn accent" style="padding: 10px 20px; font-weight: 600;" onclick="window.showPromoterList()">Save Promoter & Show list</button>
-                </div>
-            </div>
-            </div>
+
+            <!-- Bottom Action Buttons matching Image 2 -->
+            <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #cbd5e1; display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
+                <button type="button" class="gst-portal-btn-secondary" onclick="setStep(0)">BACK</button>
+                <button type="button" class="gst-portal-btn-secondary" onclick="window.showPromoterList()">SHOW LIST</button>
+                <button type="button" class="gst-portal-btn-disabled" onclick="window.addPromoter()">ADD NEW</button>
+                <button type="button" class="gst-portal-btn-primary" onclick="setStep(2)">SAVE & CONTINUE</button>
             </div>
             </section>`;
         }
@@ -3552,19 +3687,60 @@ function renderContent() {
                 </div>
                 ${aForm.authSigProofFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${aForm.authSigProofFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentAuthSigKey}'].authSigProofFile, () => { window.form['${currentAuthSigKey}'].authSigProofFile = ''; window.form['${currentAuthSigKey}'].authSigProofFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentAuthSigKey}'].authSigProofFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
             </div>
-            <hr style="border-top: 1px solid #e2e8f0; margin-bottom: 12px;" />
-            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
-                <div style="flex: 1; min-width: 300px;">
-                    <div style="font-size: 14px; font-weight: 500; color: #1e293b; margin-bottom: 4px;">Upload Photograph (of person whose information has been given above) <span style="color: #ef4444">*</span></div>
-                    <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ Only JPEG file format is allowed. Max size 100 KB.</p>
-                    <input type="file" accept="image/jpeg, image/jpg" onchange="window.handleFileUpload(this, 'jpeg', 100, (data, filename) => { window.form['${currentAuthSigKey}'].authSigPhotoFile = data; window.form['${currentAuthSigKey}'].authSigPhotoFileName = filename; renderContent(); })" style="font-size: 14px; margin-top: 4px; ${aForm.authSigPhotoFile ? 'display: none;' : ''}" />
-                    ${aForm.authSigPhotoFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${aForm.authSigPhotoFileName || 'Uploaded Photograph'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentAuthSigKey}'].authSigPhotoFile, () => { window.form['${currentAuthSigKey}'].authSigPhotoFile = ''; window.form['${currentAuthSigKey}'].authSigPhotoFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentAuthSigKey}'].authSigPhotoFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
+            <hr style="border-top: 1px solid #e2e8f0; margin-bottom: 16px;" />
+            <div style="font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 12px;">
+                Upload Photograph (of person whose information has been given above) <span style="color: #ef4444">*</span>
+            </div>
+            <div style="display: flex; align-items: stretch; justify-content: space-between; flex-wrap: wrap; gap: 20px; background: #fff;">
+                <!-- Left: File upload -->
+                <div style="flex: 1; min-width: 280px; padding-right: 15px;">
+                    <div style="font-size: 13px; color: #475569; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                        <span class="gst-info-circle">i</span>
+                        Only JPEG file format is allowed
+                    </div>
+                    <div style="font-size: 13px; color: #475569; margin-bottom: 14px; display: flex; align-items: center; gap: 6px;">
+                        <span class="gst-info-circle">i</span>
+                        Maximum file size for upload is 100 KB
+                    </div>
+                    <div>
+                        <input type="file" id="authSigPhotoInput" accept="image/jpeg, image/jpg" onchange="window.handleFileUpload(this, 'jpeg', 100, (data, filename) => { window.form['${currentAuthSigKey}'].authSigPhotoFile = data; window.form['${currentAuthSigKey}'].authSigPhotoFileName = filename; renderContent(); })" style="font-size: 14px; ${aForm.authSigPhotoFile ? 'display: none;' : ''}" />
+                        ${aForm.authSigPhotoFile ? `
+                        <div style="margin-top: 4px; font-size: 13px; color: #166534; font-weight: 500; display: inline-flex; align-items: center; gap: 12px; padding: 6px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;">
+                            <span>📄 ${aForm.authSigPhotoFileName || 'Uploaded Photograph'}</span>
+                            <button type="button" onclick="window.deleteFile(window.form['${currentAuthSigKey}'].authSigPhotoFile, () => { window.form['${currentAuthSigKey}'].authSigPhotoFile = ''; window.form['${currentAuthSigKey}'].authSigPhotoFileName = ''; renderContent(); }); return false;" class="btn-doc-delete" style="padding: 2px 8px; font-size: 12px; cursor: pointer;">Delete</button>
+                            <button type="button" onclick="window.viewDocument(window.form['${currentAuthSigKey}'].authSigPhotoFile); return false;" class="btn-doc-view" style="padding: 2px 8px; font-size: 12px; cursor: pointer;">View</button>
+                        </div>` : ''}
+                    </div>
+                </div>
+
+                <!-- Center Divider with OR badge -->
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding: 0 10px; min-height: 80px;">
+                    <div style="position: absolute; top: 0; bottom: 0; width: 1px; background-color: #cbd5e1;"></div>
+                    <span style="position: relative; z-index: 1; background: #fff; padding: 2px 8px; font-size: 11px; font-weight: 700; color: #94a3b8; border: 1px solid #e2e8f0; border-radius: 3px; text-transform: uppercase;">OR</span>
+                </div>
+
+                <!-- Right: Take Picture -->
+                <div style="flex: 1; min-width: 280px; padding-left: 15px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;">
+                    <button type="button" onclick="window.openSelfieModal('${currentAuthSigKey}')" style="display: inline-flex; align-items: center; gap: 8px; background-color: #244b7a; color: #ffffff; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; padding: 9px 24px; border: none; border-radius: 2px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.15);">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                        TAKE PICTURE
+                    </button>
+                    <div style="font-size: 12px; color: #475569; margin-top: 10px; display: flex; align-items: center; gap: 6px;">
+                        <span class="gst-info-circle">i</span>
+                        You can use your device camera to take selfie photograph.
+                    </div>
                 </div>
             </div>
         </div>
         </div>
         </div>
-        <div><button class="btn accent" style="padding: 10px 20px; font-weight: 600; margin-top: 20px;" onclick="window.showAuthSigList()">Save Signatory & Show list</button></div>
+        <!-- Bottom Action Buttons matching Image 2 -->
+        <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #cbd5e1; display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
+            <button type="button" class="gst-portal-btn-secondary" onclick="setStep(1)">BACK</button>
+            <button type="button" class="gst-portal-btn-secondary" onclick="window.showAuthSigList()">SHOW LIST</button>
+            <button type="button" class="gst-portal-btn-disabled" onclick="window.addAuthSig()">ADD NEW</button>
+            <button type="button" class="gst-portal-btn-primary" onclick="setStep(3)">SAVE & CONTINUE</button>
+        </div>
         </section>`;
         }
     } else if (step === 3) {
@@ -3924,17 +4100,19 @@ function renderContent() {
         </section>`;
     }
 
-    html += `
-    <div class="nav" style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
-        <div style="display: flex; gap: 12px; align-items: center;">
-            ${step > 0 ? `<button class="btn ghost" onclick="setStep(${step - 1})">Back</button>` : '<div></div>'}
-            <button class="btn ghost" style="color: #ef4444; border-color: #fca5a5; font-size: 13px;" onclick="window.resetFormDraft()">🗑️ Clear Draft</button>
-        </div>
-        <div style="display: flex; gap: 12px; align-items: center;">
-            ${(window.form && window.form._appId) ? `<button class="btn accent" style="background: #10b981; border-color: #10b981;" onclick="submitApplication()">💾 Save / Update Application</button>` : ''}
-            ${step < STEPS.length - 1 ? `<button class="btn primary" onclick="setStep(${step + 1})">Next</button>` : ''}
-        </div>
-    </div>`;
+    if (!(step === 1 && !isPromoterListView) && !(step === 2 && !isAuthSigListView)) {
+        html += `
+        <div class="nav" style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
+            <div style="display: flex; gap: 12px; align-items: center;">
+                ${step > 0 ? `<button class="btn ghost" onclick="setStep(${step - 1})">Back</button>` : '<div></div>'}
+                <button class="btn ghost" style="color: #ef4444; border-color: #fca5a5; font-size: 13px;" onclick="window.resetFormDraft()">🗑️ Clear Draft</button>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                ${(window.form && window.form._appId) ? `<button class="btn accent" style="background: #10b981; border-color: #10b981;" onclick="submitApplication()">💾 Save / Update Application</button>` : ''}
+                ${step < STEPS.length - 1 ? `<button class="btn primary" onclick="setStep(${step + 1})">Next</button>` : ''}
+            </div>
+        </div>`;
+    }
     content.innerHTML = editBannerHtml + html;
 
     if (step === 2 && !isAuthSigListView && window.isViewingPromoter) {

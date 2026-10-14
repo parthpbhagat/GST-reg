@@ -682,33 +682,58 @@ async function run() {
         }
 
         // Direct in-page POST to the portal's verified final endpoint
-        sendUpdate(`Posting JSON to endpoint /registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${capturedDraftId}...`);
+        // Upload application data and post to finalform endpoint
+        sendUpdate(`Posting application JSON to official endpoints (applicationdata & generateFinalformJsonWithApoB for draftId: ${capturedDraftId})...`);
         const uploadResult = await page.evaluate(async ({ draftId, payload }) => {
             const report = {};
+            const headers = {
+                'Content-Type': 'application/json;charset=UTF-8',
+                'Accept': 'application/json, text/plain, */*'
+            };
+            const jsonBody = JSON.stringify(payload);
+
             try {
-                // 1. Post to applicationdata API
-                const resApp = await fetch(`/registration/auth/api/applicationdata?applnId=${draftId}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json, text/plain, */*'
-                    },
-                    body: JSON.stringify(payload)
+                // 1. Upload application data to /registration/auth/api/applicationdata?applnId={draftId}
+                // Try PUT first (GST Angular standard for updating saved drafts), then fallback to POST
+                let resApp = await fetch(`/registration/auth/api/applicationdata?applnId=${draftId}`, {
+                    method: 'PUT',
+                    headers,
+                    body: jsonBody
                 }).catch(e => ({ error: e.message }));
+
+                if (!resApp.ok && (resApp.status === 405 || !resApp.status)) {
+                    resApp = await fetch(`/registration/auth/api/applicationdata?applnId=${draftId}`, {
+                        method: 'POST',
+                        headers,
+                        body: jsonBody
+                    }).catch(e => ({ error: e.message }));
+                }
                 report.appDataStatus = resApp.status || (resApp.error ? 'err: ' + resApp.error : 'ok');
 
-                // 2. Post to generateFinalformJsonWithApoB endpoint
-                const resFinal = await fetch(`/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${draftId}`, {
+                // 2. Post final form JSON to /registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId={draftId}
+                let resFinal = await fetch(`/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${draftId}`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json, text/plain, */*'
-                    },
-                    body: JSON.stringify(payload)
+                    headers,
+                    body: jsonBody
                 }).catch(e => ({ error: e.message }));
+
+                if (!resFinal.ok && resFinal.status === 405) {
+                    resFinal = await fetch(`/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${draftId}`, {
+                        method: 'PUT',
+                        headers,
+                        body: jsonBody
+                    }).catch(e => ({ error: e.message }));
+                }
+
+                if (!resFinal.ok && resFinal.status === 405) {
+                    resFinal = await fetch(`/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${draftId}`, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json, text/plain, */*' }
+                    }).catch(e => ({ error: e.message }));
+                }
                 report.finalFormStatus = resFinal.status || (resFinal.error ? 'err: ' + resFinal.error : 'ok');
 
-                return { success: (resFinal.ok || resFinal.status === 200 || resApp.ok), report };
+                return { success: (resFinal.ok || resFinal.status === 200 || resApp.ok || resApp.status === 200), report };
             } catch (e) {
                 return { success: false, error: e.message, report };
             }
@@ -1742,6 +1767,26 @@ async function run() {
             }
 
             sendUpdate('Submitted EVC OTP. Awaiting portal confirmation...');
+
+            // Also call official verify/otp endpoint directly (line 54 in end points che aa gst regestractio.txt)
+            try {
+                await page.evaluate(async ({ dId, otp }) => {
+                    const payloads = [
+                        { otp: otp, draftId: dId, amendFlag: 'APLRG' },
+                        { otpVal: otp, draftId: dId, amendFlag: 'APLRG' }
+                    ];
+                    for (const p of payloads) {
+                        try {
+                            await fetch(`/registration/auth/api/verify/otp?amendFlag=APLRG&draftId=${dId}`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*' },
+                                body: JSON.stringify(p)
+                            });
+                        } catch (e) {}
+                    }
+                }, { dId: capturedDraftId, otp: evcOtp });
+            } catch (e) {}
+
             await page.waitForTimeout(5000);
 
             const checkStatus = await page.evaluate(() => {

@@ -54,16 +54,31 @@ async function run() {
 
     // Fetch full application data from local backend API
     const appData = await new Promise((resolve, reject) => {
-        http.get(`http://127.0.0.1:3002/api/applications/${appId}`, {
+        const req = http.get(`http://127.0.0.1:3002/api/applications/${appId}`, {
             headers: { 'Authorization': `Bearer ${token}` }
         }, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
-                if (res.statusCode === 200) resolve(JSON.parse(data));
-                else reject(new Error('App not found in database'));
+                if (res.statusCode === 200) {
+                    try {
+                        resolve(JSON.parse(data));
+                    } catch (e) {
+                        reject(new Error(`Failed to parse application JSON: ${e.message}`));
+                    }
+                } else {
+                    let errDetail = `HTTP ${res.statusCode}`;
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed.error) errDetail += `: ${parsed.error}`;
+                    } catch (_) {
+                        if (data) errDetail += `: ${data}`;
+                    }
+                    reject(new Error(`Application fetch failed (${errDetail})`));
+                }
             });
-        }).on('error', reject);
+        });
+        req.on('error', (err) => reject(new Error(`Network error connecting to backend: ${err.message}`)));
     });
 
     const data = appData.data || {};

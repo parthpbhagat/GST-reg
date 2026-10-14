@@ -858,7 +858,7 @@
                         <label
                             style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Application
                             Code (aplCd):</label>
-                        <input type="text" id="msr-aplCd" value="1219"
+                        <input type="text" id="msr-aplCd" value="" placeholder="e.g. Draft ID / aplCd"
                             style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;" />
                     </div>
                     <div>
@@ -878,14 +878,14 @@
                         <label
                             style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Constitution
                             Code (cobz):</label>
-                        <input type="text" id="msr-cobz" value="PRO"
+                        <input type="text" id="msr-cobz" value="" placeholder="e.g. PRO, PVT, LLP"
                             style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;" />
                     </div>
                     <div>
                         <label
                             style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Security
                             Token (secToken):</label>
-                        <input type="text" id="msr-secToken" value="M10260001219TRN"
+                        <input type="text" id="msr-secToken" value="" placeholder="e.g. 15-char TRN"
                             style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;" />
                     </div>
                 </div>
@@ -934,23 +934,7 @@
         </div>
     </div>
 
-    <div id="pdf-gen-modal" class="modal-overlay hidden">
-        <div class="modal" style="display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2 style="margin:0;">Review Declaration Form</h2>
-                <div style="display: flex; gap: 10px;">
-                    <button class="btn ghost"
-                        onclick="document.getElementById('pdf-gen-modal').classList.add('hidden')">Cancel</button>
-                    <button class="btn primary" id="btn-generate-pdf">Generate & Upload PDF</button>
-                </div>
-            </div>
-            <div id="pdf-gen-content-container"
-                style="flex: 1; border: 1px solid #e2e8f0; background: #f1f5f9; position: relative;">
-                <iframe id="pdf-preview-frame"
-                    style="width: 100%; height: 60vh; border: none; background: white;"></iframe>
-            </div>
-        </div>
-    </div>
+
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="/config.js?v=7"></script>

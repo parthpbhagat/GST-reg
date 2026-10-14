@@ -1241,7 +1241,8 @@ window.submitApplication = async function () {
             btn.innerText = 'Submitting Application... Please wait...';
         }
 
-        const appId = form._appId || 'APP-' + Math.floor(100000 + Math.random() * 900000);
+        // Generate 8-digit numeric application draft ID matching GST portal format
+        const appId = form._appId || (form.draftId ? String(form.draftId) : Math.floor(10000000 + Math.random() * 90000000).toString());
         form._appId = appId;
 
         // Auto-add existing registration if left in the form fields without clicking '+ ADD'
@@ -1593,8 +1594,7 @@ window.renderAdminDashboard = async function () {
                 actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6;" onclick="registerApplication('${app.appId}')">Register Automatically</button>
                          <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
                          <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>
-                         <button class="btn accent" style="margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
-                         <button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>`;
+                         <button class="btn accent" style="margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>`;
             } else if (app.status === 'Rejected') {
                 actionButtons = `<button class="btn accent" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
                          <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')">📋 Duplicate / Multi-State</button>`;
@@ -1604,7 +1604,6 @@ window.renderAdminDashboard = async function () {
                 <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
                 <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>
                 <button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
-                <button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>
                 <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">🗑️ Delete Application</button>
             `;
         }
@@ -1612,7 +1611,7 @@ window.renderAdminDashboard = async function () {
         let html = `<div class="card" style="margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <div style="display: flex; align-items: center; gap: 15px;">
-                    <h2 style="margin: 0;">Previewing Application: ${app.appId}</h2>
+                    <h2 style="margin: 0;">Previewing Application: ${(app.trn || (app.data && (app.data.draftId || app.data.gstAppId)) || app.appId)}</h2>
                     <div style="display: flex; gap: 10px;">${actionButtons}</div>
                 </div>
                 <button class="btn ghost" onclick="currentPreviewAppId = null; renderAdminDashboard();">Back to List</button>
@@ -1635,8 +1634,17 @@ window.renderAdminDashboard = async function () {
     if (typeof window.showLoader === 'function') window.showLoader();
     try {
         const res = await fetch(`${API_BASE_URL}/api/applications`, { headers: { "Authorization": "Bearer " + (await window.getFreshToken()) } });
-        allApps = await res.json();
-        if (!Array.isArray(allApps)) { throw new Error(allApps.error || 'Invalid response from server'); }
+        const rawApps = await res.json();
+        if (!Array.isArray(rawApps)) { throw new Error(rawApps.error || 'Invalid response from server'); }
+        
+        // Strict deduplication by appId to eliminate any duplicate entries
+        const seenIds = new Set();
+        allApps = rawApps.filter(item => {
+            if (!item || !item.appId) return false;
+            if (seenIds.has(item.appId)) return false;
+            seenIds.add(item.appId);
+            return true;
+        });
     } catch (e) {
         console.error(e);
         const tk = await window.getFreshToken();
@@ -1677,7 +1685,7 @@ window.renderAdminDashboard = async function () {
             <tbody>
                 ${allApps.map(app => `
                     <tr style="border-bottom: 1px solid var(--border-color);">
-                        <td style="padding: 10px;">${app.appId}</td>
+                        <td style="padding: 10px; font-weight: 600;">${(app.trn || (app.data && (app.data.draftId || app.data.gstAppId)) || app.appId)}</td>
                         <td style="padding: 10px;">${new Date(app.date).toLocaleDateString()}</td>
                         <td style="padding: 10px;">${app.data.legalName || 'N/A'}</td>
                         <td style="padding: 10px; color: #64748b; font-size: 13px;">${app.userEmail || '-'}</td>
@@ -1688,7 +1696,6 @@ window.renderAdminDashboard = async function () {
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #0ea5e9; border: none; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #8b5cf6; border: none; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate application for Multi-State Registration">📋 Duplicate</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #3b82f6; border: none; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit</button>
-                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #6366f1; border: none; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Declaration Form</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #ef4444; border: none; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">Delete</button>
                         </td>
                     </tr>
@@ -1776,7 +1783,7 @@ window.duplicateApplication = async function (id) {
     if (typeof window.showLoader === 'function') window.showLoader();
 
     try {
-        const newAppId = 'APP-' + Math.floor(100000 + Math.random() * 900000);
+        const newAppId = Math.floor(10000000 + Math.random() * 90000000).toString();
         const clonedData = JSON.parse(JSON.stringify(app.data || {}));
 
         // Clean up previous registration-specific identifiers and TRNs
@@ -2010,12 +2017,32 @@ window.openMultiStateModal = function (appId) {
         modal.classList.remove('hidden');
         const secTokenInput = document.getElementById('msr-secToken');
         const aplCdInput = document.getElementById('msr-aplCd');
-        if (app.trn) {
-            if (secTokenInput) secTokenInput.value = app.trn;
-            if (aplCdInput) {
-                const match = app.trn.match(/(\d{4,7})TRN/i);
-                if (match) aplCdInput.value = match[1].slice(-4);
+        const cobzInput = document.getElementById('msr-cobz');
+        const trnVal = app.trn || (app.data && app.data.trn) || '';
+        if (secTokenInput) secTokenInput.value = trnVal;
+        if (aplCdInput) {
+            let derived = '';
+            if (trnVal) {
+                const match = trnVal.match(/(\d{4,7})TRN/i);
+                if (match) derived = match[1].slice(-4);
             }
+            if (!derived && app.data && (app.data.draftId || app.data.aplCd)) {
+                derived = String(app.data.draftId || app.data.aplCd);
+            }
+            aplCdInput.value = derived;
+        }
+        if (cobzInput && app.data && app.data.businessConstitution) {
+            const bc = (app.data.businessConstitution || '').toLowerCase();
+            let cCode = 'PRO';
+            if (bc.includes('proprietor')) cCode = 'PRO';
+            else if (bc.includes('private') || bc.includes('pvt')) cCode = 'PVT';
+            else if (bc.includes('public')) cCode = 'PUB';
+            else if (bc.includes('partnership')) cCode = 'PAR';
+            else if (bc.includes('llp') || bc.includes('limited liability')) cCode = 'LLP';
+            else if (bc.includes('huf')) cCode = 'HUF';
+            else if (bc.includes('society')) cCode = 'SOC';
+            else if (bc.includes('trust')) cCode = 'TRU';
+            cobzInput.value = cCode;
         }
     }
 };
@@ -2037,17 +2064,33 @@ window.launchMultiStateAutomation = function () {
         return;
     }
 
-    const appTrn = currentMultiStateApp.trn || '';
-    let derivedAplCd = '1283';
+    const appTrn = currentMultiStateApp.trn || (currentMultiStateApp.data && currentMultiStateApp.data.trn) || '';
+    let derivedAplCd = '';
     if (appTrn) {
         const m = appTrn.match(/(\d{4,7})TRN/i);
         if (m) derivedAplCd = m[1].slice(-4);
     }
+    if (!derivedAplCd && currentMultiStateApp.data && (currentMultiStateApp.data.draftId || currentMultiStateApp.data.aplCd)) {
+        derivedAplCd = String(currentMultiStateApp.data.draftId || currentMultiStateApp.data.aplCd);
+    }
 
-    const aplCd = document.getElementById('msr-aplCd')?.value || derivedAplCd;
+    let defaultCobz = 'PRO';
+    if (currentMultiStateApp.data && currentMultiStateApp.data.businessConstitution) {
+        const bc = currentMultiStateApp.data.businessConstitution.toLowerCase();
+        if (bc.includes('proprietor')) defaultCobz = 'PRO';
+        else if (bc.includes('private') || bc.includes('pvt')) defaultCobz = 'PVT';
+        else if (bc.includes('public')) defaultCobz = 'PUB';
+        else if (bc.includes('partnership')) defaultCobz = 'PAR';
+        else if (bc.includes('llp')) defaultCobz = 'LLP';
+        else if (bc.includes('huf')) defaultCobz = 'HUF';
+        else if (bc.includes('society')) defaultCobz = 'SOC';
+        else if (bc.includes('trust')) defaultCobz = 'TRU';
+    }
+
+    const aplCd = (document.getElementById('msr-aplCd')?.value || derivedAplCd || '').trim();
     const typAR = document.getElementById('msr-typAR')?.value || 'TRP';
-    const cobz = document.getElementById('msr-cobz')?.value || 'PRO';
-    const secToken = document.getElementById('msr-secToken')?.value || appTrn || 'M10260001283TRN';
+    const cobz = (document.getElementById('msr-cobz')?.value || defaultCobz).trim();
+    const secToken = (document.getElementById('msr-secToken')?.value || appTrn || '').trim();
 
     const multiStateConfig = {
         aplCd,
@@ -3407,7 +3450,6 @@ function renderContent() {
                         <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ File with PDF or JPEG format is only allowed. Max size 1 MB.</p>
                         <div style="display: flex; gap: 12px; align-items: center; margin-top: 6px;">
                             <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form['${currentPromoterKey}'].authSigProofFile = data; window.form['${currentPromoterKey}'].authSigProofFileName = filename; renderContent(); })" style="font-size: 14px; ${pForm.authSigProofFile ? 'display: none;' : ''}" />
-                            ${!pForm.authSigProofFile ? `<button type="button" class="btn accent" style="padding: 7px 14px; font-size: 13px;" onclick="window.openDeclarationModal('${currentPromoterKey}')">Auto-Generate Declaration</button>` : ''}
                         </div>
                         ${pForm.authSigProofFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${pForm.authSigProofFileName || 'Uploaded Document'}</span> <button type="button" onclick="window.deleteFile(window.form['${currentPromoterKey}'].authSigProofFile, () => { window.form['${currentPromoterKey}'].authSigProofFile = ''; window.form['${currentPromoterKey}'].authSigProofFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button type="button" onclick="window.viewDocument(window.form['${currentPromoterKey}'].authSigProofFile); return false;" class="btn-doc-view">View</button></div>` : ''}
                     </div>
@@ -3629,7 +3671,6 @@ function renderContent() {
                 <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ File with PDF or JPEG format is only allowed. Max size 1 MB.</p>
                 <div style="display: flex; gap: 12px; align-items: center; margin-top: 6px;">
                     <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form['${currentAuthSigKey}'].authSigProofFile = data; window.form['${currentAuthSigKey}'].authSigProofFileName = filename; renderContent(); })" style="font-size: 14px; ${aForm.authSigProofFile ? 'display: none;' : ''}" />
-                    ${!aForm.authSigProofFile ? `<button type="button" class="btn accent" style="padding: 7px 14px; font-size: 13px;" onclick="window.openDeclarationModal('${currentAuthSigKey}')">Auto-Generate Declaration</button>` : ''}
                 </div>
                 ${aForm.authSigProofFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${aForm.authSigProofFileName || 'Uploaded Document'}</span> <button type="button" onclick="window.deleteFile(window.form['${currentAuthSigKey}'].authSigProofFile, () => { window.form['${currentAuthSigKey}'].authSigProofFile = ''; window.form['${currentAuthSigKey}'].authSigProofFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button type="button" onclick="window.viewDocument(window.form['${currentAuthSigKey}'].authSigProofFile); return false;" class="btn-doc-view">View</button></div>` : ''}
             </div>
@@ -4836,228 +4877,7 @@ window.handleRoute = function () {
     }
 };
 
-let currentPdfAuthKey = null;
 
-window.openDeclarationModal = function (key) {
-    currentPdfAuthKey = key;
-    const modal = document.getElementById('pdf-gen-modal');
-    const iframe = document.getElementById('pdf-preview-frame');
-
-    fetch('/declaration_template.html')
-        .then(res => res.text())
-        .then(html => {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-
-            const data = window.form;
-            let companyName = data.legalName || data.tradeName || '';
-            companyName = companyName.replace(/PVT\s+LTD\.?/i, '').replace(/PRIVATE\s+LIMITED/i, '').trim();
-
-            const setVal = (id, val) => {
-                const el = doc.getElementById(id);
-                if (el && val) el.setAttribute('value', val);
-            };
-
-            setVal('company_name', companyName);
-            setVal('company_name_2', companyName);
-            setVal('company_name_3', companyName);
-            setVal('company_name_4', companyName);
-            setVal('company_name_5', companyName);
-
-            setVal('cin', data.cin || '');
-            setVal('address', data.principalAddress || '');
-            setVal('contact', data.mobile || '');
-            setVal('email', data.email || '');
-
-            if (data.p1) {
-                setVal('dir1_name', `${data.p1.firstName || ''} ${data.p1.lastName || ''}`);
-                setVal('dir1_din', data.p1.din || '');
-            }
-            if (data.p2) {
-                setVal('dir2_name', `${data.p2.firstName || ''} ${data.p2.lastName || ''}`);
-                setVal('dir2_din', data.p2.din || '');
-            }
-
-            const auth = data[key];
-            if (auth) {
-                const authName = `${auth.firstName || ''} ${auth.lastName || ''}`;
-                setVal('auth_signatory_name', authName);
-                setVal('auth_signatory_name_2', authName);
-                setVal('auth_signatory_name_3', authName);
-                setVal('auth_signatory_din', auth.din || '');
-            }
-
-            setVal('date', new Date().toLocaleDateString('en-IN'));
-
-            const printBtn = doc.querySelector('.print-btn');
-            if (printBtn) printBtn.remove();
-
-            iframe.srcdoc = doc.documentElement.outerHTML;
-            modal.classList.remove('hidden');
-        });
-};
-
-document.getElementById('btn-generate-pdf').addEventListener('click', () => {
-    const iframe = document.getElementById('pdf-preview-frame');
-    const doc = iframe.contentDocument || iframe.contentWindow.document;
-
-    // Get all values from the form
-    const v = (id) => {
-        const el = doc.getElementById(id);
-        return el ? el.value.trim() : '';
-    };
-
-    const company_name = v('company_name');
-    const cin = v('cin');
-    const address = v('address');
-    const contact = v('contact');
-    const email = v('email');
-
-    const dir1_name = v('dir1_name');
-    const dir2_name = v('dir2_name');
-    const auth_signatory_name = v('auth_signatory_name');
-    const dir1_din = v('dir1_din');
-    const dir2_din = v('dir2_din');
-    const auth_signatory_din = v('auth_signatory_din');
-
-    const date = v('date');
-    const place = v('place');
-
-    const btn = document.getElementById('btn-generate-pdf');
-    btn.innerText = 'Generating...';
-    btn.disabled = true;
-
-    try {
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-
-        // Define margins and line spacing
-        const margin = 20;
-        let y = 30;
-        const width = 210; // A4 width in mm
-
-        // Fonts
-        const fNormal = "helvetica";
-        const fBold = "helvetica";
-
-        // Header
-        pdf.setFontSize(16);
-        pdf.setFont(fBold, "bold");
-        pdf.text(`${company_name} PRIVATE LIMITED`, width / 2, y, { align: "center" });
-        y += 7;
-
-        pdf.setFontSize(11);
-        pdf.setFont(fNormal, "normal");
-        pdf.text(`CIN: ${cin}`, width / 2, y, { align: "center" });
-        y += 10;
-
-        pdf.text(`Address: ${address}`, margin, y);
-        y += 7;
-        pdf.text(`Contact No. ${contact}`, margin, y);
-        pdf.text(`Email : ${email}`, width / 2 + 10, y);
-        y += 15;
-
-        // Title
-        pdf.setFontSize(14);
-        pdf.setFont(fBold, "bold");
-        pdf.text("DECLARATION FOR AUTHORIZED SIGNATORY", width / 2, y, { align: "center" });
-        y += 15;
-
-        // Body 1
-        pdf.setFontSize(11);
-        pdf.setFont(fNormal, "normal");
-        const p1 = `We, Mr. ${dir1_name} and Mr. ${dir2_name} (Director of ${company_name} PVT LTD) hereby solemnly authorize Mr. ${auth_signatory_name} to act as primary authorized signatory of Private Limited Company "${company_name} PVT LTD" for GST Registration.`;
-        const lines1 = pdf.splitTextToSize(p1, width - margin * 2);
-        pdf.text(lines1, margin, y);
-        y += lines1.length * 6 + 5;
-
-        // Body 2
-        const p2 = `Mr. ${auth_signatory_name} of "${company_name} PVT LTD" are authorized to sign all the necessary applications, undertakings and such other documents as may be necessary for GST registration application & all other compliances on behalf of Company`;
-        const lines2 = pdf.splitTextToSize(p2, width - margin * 2);
-        pdf.text(lines2, margin, y);
-        y += lines2.length * 6 + 5;
-
-        // Body 3
-        pdf.text(`All his actions in relation to this business will be binding on us.`, margin, y);
-        y += 10;
-
-        pdf.text(`For ${company_name} PVT LTD`, margin, y);
-        y += 25;
-
-        // Signatures 1
-        // Draw lines
-        pdf.line(margin, y - 5, margin + 40, y - 5);
-        pdf.line(width - margin - 40, y - 5, width - margin, y - 5);
-
-        // Add signature images if they exist in the canvas
-        const sign1Canvas = doc.getElementById('sign1');
-        if (sign1Canvas) {
-            const sign1Data = sign1Canvas.toDataURL('image/png');
-            pdf.addImage(sign1Data, 'PNG', margin, y - 20, 40, 12);
-        }
-        const sign2Canvas = doc.getElementById('sign2');
-        if (sign2Canvas) {
-            const sign2Data = sign2Canvas.toDataURL('image/png');
-            pdf.addImage(sign2Data, 'PNG', width - margin - 40, y - 20, 40, 12);
-        }
-
-        pdf.text(`Director`, margin, y);
-        pdf.text(`DIN: ${dir1_din}`, margin, y + 6);
-
-        pdf.text(`Director`, width - margin - 40, y);
-        pdf.text(`DIN: ${dir2_din}`, width - margin - 40, y + 6);
-
-        y += 20;
-
-        // Acceptance
-        pdf.setFontSize(14);
-        pdf.setFont(fBold, "bold");
-        pdf.text("Acceptance as an authorized signatory", width / 2, y, { align: "center" });
-        y += 15;
-
-        pdf.setFontSize(11);
-        pdf.setFont(fNormal, "normal");
-        const p3 = `I, ${auth_signatory_name}, hereby solemnly accord my acceptance to act as authorized signatory for the above referred business and all acts shall be binding on the business.`;
-        const lines3 = pdf.splitTextToSize(p3, width - margin * 2);
-        pdf.text(lines3, margin, y);
-        y += lines3.length * 6 + 20;
-
-        // Signature 2
-        pdf.line(margin, y - 5, margin + 40, y - 5);
-
-        const sign3Canvas = doc.getElementById('sign3');
-        if (sign3Canvas) {
-            const sign3Data = sign3Canvas.toDataURL('image/png');
-            pdf.addImage(sign3Data, 'PNG', margin, y - 20, 40, 12);
-        }
-
-        pdf.text(`Director`, margin, y);
-        pdf.text(`DIN: ${auth_signatory_din}`, margin, y + 6);
-
-        y += 15;
-
-        // Footer
-        pdf.text(`Date: ${date}`, margin, y);
-        y += 6;
-        pdf.text(`Place: ${place}`, margin, y);
-
-        // Output and upload
-        const pdfAsString = pdf.output('datauristring');
-
-        window.form[currentPdfAuthKey].authSigProofFile = pdfAsString;
-        window.form[currentPdfAuthKey].authSigProofFileName = 'Declaration_Form.pdf';
-
-        document.getElementById('pdf-gen-modal').classList.add('hidden');
-        renderContent();
-
-    } catch (err) {
-        console.error("PDF generation failed", err);
-        alert("Failed to generate PDF. Please try again.");
-    } finally {
-        btn.innerText = 'Generate & Upload PDF';
-        btn.disabled = false;
-    }
-});
 
 window.addEventListener('popstate', handleRoute);
 document.addEventListener('DOMContentLoaded', () => {

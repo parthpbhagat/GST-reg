@@ -163,10 +163,14 @@ app.get('/api/hsn/:code', (req, res) => {
 // POST /api/applications - Submit a new application
 app.post('/api/applications', authenticateToken, async (req, res) => {
     try {
-        const { appId, data } = req.body;
+        let { appId, data } = req.body;
 
-        if (!appId || !data) {
-            return res.status(400).json({ error: 'appId and data are required' });
+        if (!data) {
+            return res.status(400).json({ error: 'data is required' });
+        }
+
+        if (!appId) {
+            appId = (data && (data.draftId || data.aplCd || data._appId)) || Math.floor(10000000 + Math.random() * 90000000).toString();
         }
 
         // Validate mandatory business details
@@ -177,16 +181,20 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
         const userEmail = (req.user && req.user.email) || req.body.userEmail || (data && data.userEmail) || (data && data.email) || null;
         const userId = (req.user && req.user.id) || null;
         const status = req.body.status || 'Pending'; // Default status
+        const trnVal = data.trn || req.body.trn || null;
+        const arnVal = data.arn || req.body.arn || null;
 
         const { error } = await supabase.from('applications').upsert({
             appId: appId,
             data: data,
             status: status,
-            userEmail: userEmail
+            userEmail: userEmail,
+            trn: trnVal,
+            arn: arnVal
         }, { onConflict: 'appId' });
 
         try {
-            await oldSupabase.from('applications').upsert({ appId, data, status, userEmail, trn: null });
+            await oldSupabase.from('applications').upsert({ appId, data, status, userEmail, trn: trnVal, arn: arnVal });
         } catch (oldErr) {
             console.error('Error syncing to oldSupabase:', oldErr.message || oldErr);
         }
@@ -219,7 +227,21 @@ app.get('/api/applications', authenticateToken, async (req, res) => {
         if (res1.data) allRows = allRows.concat(res1.data);
         if (res2.data) allRows = allRows.concat(res2.data);
 
-        const applications = allRows.map(row => {
+        // Deduplicate rows by appId (preferring row with TRN, ARN, or newer timestamp)
+        const appMap = new Map();
+        for (const row of allRows) {
+            if (!row || !row.appId) continue;
+            const existing = appMap.get(row.appId);
+            if (!existing) {
+                appMap.set(row.appId, row);
+            } else {
+                if ((!existing.trn && row.trn) || new Date(row.createdAt) > new Date(existing.createdAt)) {
+                    appMap.set(row.appId, row);
+                }
+            }
+        }
+
+        const applications = Array.from(appMap.values()).map(row => {
             const appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
             return {
                 appId: row.appId,
@@ -232,7 +254,7 @@ app.get('/api/applications', authenticateToken, async (req, res) => {
             };
         });
 
-        // Sort applications by date descending since they came from two different sources
+        // Sort applications by date descending
         applications.sort((a, b) => new Date(b.date) - new Date(a.date));
 
         res.json(applications);
@@ -246,12 +268,19 @@ app.get('/api/applications', authenticateToken, async (req, res) => {
 app.get('/api/applications/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
-        let query1 = supabase.from('applications').select('*').eq('appId', id);
-        let query2 = oldSupabase.from('applications').select('*').eq('appId', id);
+        let query1 = supabase.from('applications').select('*').or(`appId.eq.${id},trn.eq.${id}`);
+        let query2 = oldSupabase.from('applications').select('*').or(`appId.eq.${id},trn.eq.${id}`);
 
-        const [res1, res2] = await Promise.all([query1, query2]);
+        let [res1, res2] = await Promise.all([query1, query2]);
+        let row = (res1.data && res1.data[0]) || (res2.data && res2.data[0]);
 
-        const row = (res1.data && res1.data[0]) || (res2.data && res2.data[0]);
+        if (!row) {
+            const [fb1, fb2] = await Promise.all([
+                supabase.from('applications').select('*').eq('appId', id),
+                oldSupabase.from('applications').select('*').eq('appId', id)
+            ]);
+            row = (fb1.data && fb1.data[0]) || (fb2.data && fb2.data[0]);
+        }
 
         if (!row) {
             return res.status(404).json({ error: `Application ${id} not found in database` });
@@ -380,6 +409,8 @@ app.put('/api/applications/:id', authenticateToken, async (req, res) => {
 
         const updatePayload = { data };
         if (status) updatePayload.status = status;
+        if (data.trn || req.body.trn) updatePayload.trn = data.trn || req.body.trn;
+        if (data.arn || req.body.arn) updatePayload.arn = data.arn || req.body.arn;
 
         let updateQuery = supabase.from('applications').update(updatePayload).eq('appId', id);
         if (req.user && req.user.email && req.user.email !== 'admin@example.com') {

@@ -627,7 +627,7 @@ async function run() {
 
         // Fill Verification details
         sendUpdate('Filling Verification Details (Declaration, Signatory & Place)...');
-        const place = (data.verification_place || data.ppob_city || data.district || 'Warud').trim();
+        const place = (data.verification_place || data.ppob_city || data.district || '').trim();
         try {
             // Check declaration checkbox
             const checkbox = page.locator('input[type="checkbox"]').first();

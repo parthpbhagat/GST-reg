@@ -2278,30 +2278,75 @@ window.startAutomationPipeline = async function (id, mode = 'regular', multiStat
                 badge.style.color = '#facc15';
                 document.getElementById('trn-otp-card').classList.remove('hidden');
                 document.getElementById('trn-otp-input').focus();
+            } else if (status === 'WAITING_FOR_FINAL_EVC_OTP') {
+                setPipelineActiveStep(5);
+                badge.innerText = 'ENTER FINAL EVC OTP';
+                badge.style.color = '#34d399';
+                badge.classList.add('pulse-badge');
+                
+                // Hide earlier cards and show the final EVC OTP card
+                document.getElementById('captcha-card').classList.add('hidden');
+                document.getElementById('otp-card').classList.add('hidden');
+                document.getElementById('trn-otp-card').classList.add('hidden');
+                document.getElementById('warning-card').classList.add('hidden');
+                
+                const evcCard = document.getElementById('evc-otp-card');
+                if (evcCard) {
+                    evcCard.classList.remove('hidden');
+                    const inp = document.getElementById('evc-otp-input');
+                    if (inp) {
+                        inp.value = '';
+                        inp.focus();
+                    }
+                }
             } else if (status === 'COMPLETED') {
                 setPipelineActiveStep(5);
                 badge.innerText = 'REGISTRATION SUCCESS';
                 badge.style.color = '#4ade80';
                 badge.classList.remove('pulse-badge');
+                
+                const evcCard = document.getElementById('evc-otp-card');
+                if (evcCard) evcCard.classList.add('hidden');
+                
                 updateAppStatus(activeAutomationAppId, 'Registered');
-                addTerminalLog('Application submitted successfully.');
+                addTerminalLog('Application submitted successfully to GST Portal with ARN.');
 
-                // Fetch the updated TRN and display the big success card (with cache busting)
-                fetch(`${API_BASE_URL}/api/applications?t=${Date.now()}`, { headers: { "Authorization": "Bearer " + (await window.getFreshToken()) } })
-                    .then(res => res.json())
-                    .then(apps => {
-                        const app = apps.find(a => a.appId === activeAutomationAppId);
-                        if (app && app.trn) {
-                            document.getElementById('trn-display-text').innerText = app.trn;
-                        } else {
-                            document.getElementById('trn-display-text').innerText = 'Check GST Portal';
-                        }
-                        // Hide terminal and show success card
-                        const term = document.querySelector('.terminal-window');
-                        if (term) term.classList.add('hidden');
-                        document.getElementById('trn-success-card').classList.remove('hidden');
-                    })
-                    .catch(err => console.error(err));
+                // Fetch single app details to extract ARN / TRN
+                try {
+                    const token = await window.getFreshToken();
+                    const res = await fetch(`${API_BASE_URL}/api/applications/${activeAutomationAppId}?t=${Date.now()}`, { 
+                        headers: { "Authorization": "Bearer " + token } 
+                    });
+                    const app = await res.json();
+                    
+                    const arn = (app && app.arn) || (app && app.data && app.data.arn) || null;
+                    const trn = (app && app.trn) || (app && app.data && app.data.trn) || null;
+                    const displayVal = arn || trn || 'Application Submitted';
+                    
+                    const labelEl = document.getElementById('trn-label-text');
+                    if (labelEl) {
+                        labelEl.innerText = arn ? 'ARN NUMBER' : 'TRN NUMBER';
+                    }
+                    const dispEl = document.getElementById('trn-display-text');
+                    if (dispEl) dispEl.innerText = displayVal;
+
+                    const titleEl = document.getElementById('success-card-title');
+                    if (titleEl) {
+                        titleEl.innerText = arn ? 'GST Application Submitted Successfully!' : 'Application Processed!';
+                    }
+                    const subEl = document.getElementById('success-card-subtitle');
+                    if (subEl) {
+                        subEl.innerText = arn ? `Official ARN: ${arn} - Application dispatched to tax officer for verification.` : 'Reference number generated successfully.';
+                    }
+
+                    // Hide terminal and show success card
+                    const term = document.querySelector('.terminal-view') || document.querySelector('.terminal-window');
+                    if (term) term.classList.add('hidden');
+                    document.getElementById('trn-success-card').classList.remove('hidden');
+                } catch (err) {
+                    console.error('Error fetching final application details:', err);
+                    document.getElementById('trn-success-card').classList.remove('hidden');
+                }
             }
         });
 
@@ -2414,6 +2459,38 @@ window.submitTrnOtp = async function () {
         });
     } catch (e) {
         console.error(e);
+    }
+};
+
+window.submitEvcOtp = async function () {
+    const otp = (document.getElementById('evc-otp-input').value || '').trim();
+    if (!otp) {
+        alert('Please enter the EVC OTP.');
+        return;
+    }
+
+    document.getElementById('evc-otp-card').classList.add('hidden');
+    document.getElementById('auto-status-badge').innerText = 'VALIDATING EVC OTP';
+    document.getElementById('auto-status-badge').style.color = '#34d399';
+    addTerminalLog(`Submitting final EVC OTP (${otp}) for ARN generation...`);
+
+    try {
+        const token = await window.getFreshToken();
+        
+        // Also emit via socket for instant delivery
+        if (socket && socket.connected) {
+            socket.emit('evc_otp', { appId: activeAutomationAppId, otp: otp });
+        }
+
+        // Post to dedicated EVC OTP endpoint
+        await fetch(`${API_BASE_URL}/api/automation/evc_otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({ appId: activeAutomationAppId, otp: otp })
+        });
+    } catch (e) {
+        console.error('Error submitting EVC OTP:', e);
+        addTerminalLog('Error sending EVC OTP to pipeline.');
     }
 };
 

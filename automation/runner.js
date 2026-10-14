@@ -457,8 +457,21 @@ async function run() {
         const editButtonSelector = 'button[data-ng-click="editSavedapp(x)"]';
         await page.waitForSelector(editButtonSelector, { state: 'visible', timeout: 30000 });
 
+        // 1. Try extracting draftId directly from the table or button scope
         capturedDraftId = await page.evaluate(() => {
             const btn = document.querySelector('button[data-ng-click*="editSavedapp"]');
+            if (btn && window.angular) {
+                try {
+                    const scope = window.angular.element(btn).scope();
+                    if (scope) {
+                        const item = scope.x || (scope.savedAppList && scope.savedAppList[0]);
+                        if (item) {
+                            const id = item.draftId || item.applnId || item.aplCd || item.id || item.appId || item.refNo;
+                            if (id) return String(id);
+                        }
+                    }
+                } catch (e) {}
+            }
             if (btn) {
                 const tr = btn.closest('tr');
                 if (tr) {
@@ -468,26 +481,45 @@ async function run() {
                     }
                 }
             }
-            try {
-                const el = document.querySelector('[ng-controller], [data-ng-controller], table');
-                if (window.angular && el) {
-                    const scope = window.angular.element(el).scope();
-                    if (scope && scope.savedAppList && scope.savedAppList.length > 0) {
-                        return scope.savedAppList[0].draftId || scope.savedAppList[0].applnId;
-                    }
-                }
-            } catch (e) {}
             return null;
         });
+
+        // 2. Intercept network requests while clicking Edit Application (GST portal calls /api/applicationdata?applnId=...)
+        const reqHandler = (req) => {
+            const u = req.url();
+            const m = u.match(/(?:applnId|draftId)=([0-9A-Za-z]+)/i);
+            if (m && m[1] && !capturedDraftId) {
+                capturedDraftId = m[1];
+            }
+        };
+        page.on('request', reqHandler);
 
         sendUpdate('Clicking Edit Application to acquire authenticated portal session...');
         await page.click(editButtonSelector);
         await page.waitForTimeout(4000);
+        page.off('request', reqHandler);
 
+        // 3. Fallback extraction from URL, Angular rootScope, and storage
         if (!capturedDraftId) {
-            const urlMatch = page.url().match(/(?:applnId|draftId)=([0-9A-Za-z]+)/i);
-            if (urlMatch) capturedDraftId = urlMatch[1];
+            capturedDraftId = await page.evaluate(() => {
+                const u = window.location.href;
+                const m = u.match(/(?:applnId|draftId)=([0-9A-Za-z]+)/i);
+                if (m) return m[1];
+                if (window.angular) {
+                    try {
+                        const rootScope = window.angular.element(document.body).scope();
+                        if (rootScope && (rootScope.applnId || rootScope.draftId)) return String(rootScope.applnId || rootScope.draftId);
+                    } catch(e) {}
+                }
+                for (let i = 0; i < sessionStorage.length; i++) {
+                    const val = sessionStorage.getItem(sessionStorage.key(i));
+                    const numMatch = val && val.match(/"(?:applnId|draftId)":\s*"?([0-9A-Za-z]+)"?/);
+                    if (numMatch) return numMatch[1];
+                }
+                return null;
+            });
         }
+
         if (!capturedDraftId) {
             capturedDraftId = (data && data.draftId) || (data && data.aplCd) || '';
         }
@@ -595,29 +627,29 @@ async function run() {
 
         // Fill Verification details
         sendUpdate('Filling Verification Details (Declaration, Signatory & Place)...');
+        const place = (data.verification_place || data.ppob_city || data.district || 'Warud').trim();
         try {
             // Check declaration checkbox
             const checkbox = page.locator('input[type="checkbox"]').first();
             await checkbox.check().catch(() => checkbox.evaluate(el => el.click()).catch(() => checkbox.click({ force: true })));
-            await page.waitForTimeout(800);
+            await page.waitForTimeout(600);
 
             // Select Authorized Signatory
             const authSigDropdown = page.locator('select').first();
             const optionsCount = await authSigDropdown.locator('option').count();
             if (data.verification_signatory) {
                 try {
-                    await authSigDropdown.selectOption({ label: data.verification_signatory });
+                    await authSigDropdown.selectOption({ label: data.verification_signatory }, { timeout: 2000 });
                 } catch (e) {
                     if (optionsCount > 1) await authSigDropdown.selectOption({ index: 1 });
                 }
             } else if (optionsCount > 1) {
                 await authSigDropdown.selectOption({ index: 1 });
             }
-            await page.waitForTimeout(800);
+            await page.waitForTimeout(600);
 
-            // Fill Place
-            const place = (data.verification_place || data.ppob_city || data.district || 'Ahmedabad').trim();
-            await page.fill('#place', place).catch(async () => {
+            // Fill Place with quick 2s timeout
+            await page.fill('#place', place, { timeout: 2000 }).catch(async () => {
                 const inputs = page.locator('input[type="text"]');
                 const count = await inputs.count();
                 for (let i = 0; i < count; i++) {
@@ -628,6 +660,43 @@ async function run() {
                     }
                 }
             });
+
+            // Ensure Angular digest & validity in DOM
+            await page.evaluate(({ placeVal, signatoryVal }) => {
+                const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+                for (const cb of cbs) {
+                    if (!cb.checked) {
+                        cb.checked = true;
+                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                        cb.dispatchEvent(new Event('click', { bubbles: true }));
+                    }
+                }
+
+                const selects = Array.from(document.querySelectorAll('select'));
+                for (const sel of selects) {
+                    if (sel.options && sel.options.length > 1 && sel.selectedIndex <= 0) {
+                        sel.selectedIndex = 1;
+                        sel.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }
+
+                const pInputs = Array.from(document.querySelectorAll('input[type="text"], #place'));
+                const pInput = pInputs.find(i => i.id === 'place' || /place/i.test(i.name || '') || /place/i.test(i.placeholder || '')) || pInputs[pInputs.length - 1];
+                if (pInput && !pInput.value) {
+                    pInput.value = placeVal;
+                    pInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    pInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+
+                if (window.angular) {
+                    try {
+                        const el = document.querySelector('[ng-controller], [data-ng-controller], form, body');
+                        const sc = window.angular.element(el).scope();
+                        if (sc && !sc.$$phase) sc.$apply();
+                    } catch (e) {}
+                }
+            }, { placeVal: place, signatoryVal: data.verification_signatory || '' });
+
             sendUpdate(`Verification details confirmed (Place: ${place}).`);
         } catch (vErr) {
             sendUpdate(`Verification note: ${vErr.message}`);
@@ -640,13 +709,15 @@ async function run() {
             'button:has-text("SUBMIT WITH EVC")',
             'button:has-text("Submit with EVC")',
             'button:has-text("EVC")',
-            'input[value*="SUBMIT WITH EVC" i]'
+            'input[value*="SUBMIT WITH EVC" i]',
+            'input[value*="EVC" i]'
         ];
 
         for (const sel of evcSelectors) {
             try {
                 const btn = page.locator(sel).first();
-                if (await btn.count() > 0 && await btn.isVisible({ timeout: 2000 })) {
+                if (await btn.count() > 0 && await btn.isVisible({ timeout: 1500 })) {
+                    await btn.scrollIntoViewIfNeeded().catch(() => {});
                     await btn.click({ force: true });
                     evcClicked = true;
                     sendUpdate('Clicked SUBMIT WITH EVC button.');
@@ -658,37 +729,73 @@ async function run() {
         if (!evcClicked) {
             evcClicked = await page.evaluate(() => {
                 const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
-                const b = btns.find(btn => (btn.innerText || btn.value || '').toUpperCase().includes('SUBMIT WITH EVC'));
-                if (b) { b.click(); return true; }
+                const b = btns.find(btn => (btn.innerText || btn.value || '').toUpperCase().includes('EVC'));
+                if (b) {
+                    b.disabled = false;
+                    b.removeAttribute('disabled');
+                    b.click();
+                    return true;
+                }
                 return false;
             });
             if (evcClicked) sendUpdate('Clicked SUBMIT WITH EVC button via DOM.');
         }
 
-        await page.waitForTimeout(2000);
-
-        // Confirm intermediate warning dialog if present
-        await page.evaluate(() => {
-            const modals = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"]'));
-            for (const modal of modals) {
-                if (modal.offsetParent !== null && !modal.innerText.toLowerCase().includes('enter otp')) {
-                    const proceedBtn = Array.from(modal.querySelectorAll('button, input[type="button"]')).find(b => /proceed|yes|confirm|ok|continue/i.test(b.innerText || b.value || ''));
-                    if (proceedBtn) proceedBtn.click();
-                }
-            }
-        });
-
-        // Wait for EVC OTP Verification modal
+        // Wait for EVC OTP Verification modal (and automatically handle any intermediate confirmation popups)
         sendUpdate('Waiting for EVC OTP modal on GST portal...');
-        try {
-            await page.waitForFunction(() => {
-                const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
-                if (!modal || modal.offsetParent === null) return false;
-                const text = (modal.innerText || '').toLowerCase();
-                return text.includes('otp verification') || text.includes('please enter otp') || text.includes('validate otp');
-            }, { timeout: 30000 });
-            sendUpdate('EVC OTP modal detected! OTP has been dispatched to your mobile and email.');
-        } catch (e) {
+        const evcWaitStart = Date.now();
+        let evcModalReady = false;
+
+        while (Date.now() - evcWaitStart < 35000) {
+            const modalCheck = await page.evaluate(() => {
+                const modals = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .bootbox, .ui-dialog'));
+                for (const m of modals) {
+                    if (m.offsetParent !== null || window.getComputedStyle(m).display !== 'none') {
+                        const txt = (m.innerText || '').toLowerCase();
+                        // 1. If it's an intermediate warning / confirmation dialog (Proceed/Yes/Continue/Confirm/OK), click it
+                        if (/proceed|continue|yes|confirm|agree|ok/i.test(m.innerText) && !txt.includes('validate otp') && !txt.includes('enter otp') && !txt.includes('enter one time password')) {
+                            const btn = Array.from(m.querySelectorAll('button, input[type="button"], a.btn')).find(b => /proceed|continue|yes|confirm|ok/i.test(b.innerText || b.value || ''));
+                            if (btn) {
+                                btn.click();
+                                return { state: 'clicked_proceed', text: (btn.innerText || btn.value || '').trim() };
+                            }
+                        }
+                        // 2. If it's the OTP modal
+                        const hasOtpInput = !!m.querySelector('input[type="text"], input[type="number"], input[name*="otp" i], #otp');
+                        if (hasOtpInput || txt.includes('otp verification') || txt.includes('validate otp') || txt.includes('enter otp')) {
+                            return { state: 'otp_modal_ready' };
+                        }
+                    }
+                }
+                return { state: 'waiting' };
+            });
+
+            if (modalCheck.state === 'clicked_proceed') {
+                sendUpdate(`Confirmed dialog on portal: clicked "${modalCheck.text}".`);
+                await page.waitForTimeout(2000);
+            } else if (modalCheck.state === 'otp_modal_ready') {
+                evcModalReady = true;
+                sendUpdate('EVC OTP modal detected! OTP has been dispatched to your mobile and email.');
+                break;
+            }
+
+            // If 6 seconds elapsed without any modal, retry clicking the EVC button
+            if (Date.now() - evcWaitStart > 6000 && !evcModalReady) {
+                await page.evaluate(() => {
+                    const btns = Array.from(document.querySelectorAll('button, input[type="button"]'));
+                    const evc = btns.find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));
+                    if (evc) {
+                        evc.disabled = false;
+                        evc.removeAttribute('disabled');
+                        evc.click();
+                    }
+                });
+            }
+
+            await page.waitForTimeout(1000);
+        }
+
+        if (!evcModalReady) {
             sendUpdate('Notice: Awaiting EVC OTP verification modal...');
         }
 
@@ -711,11 +818,23 @@ async function run() {
 
             await page.evaluate((otpVal) => {
                 const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
-                const input = (modal || document).querySelector('input[type="text"], input[type="number"], input[name*="otp" i], #otp, input[placeholder*="OTP" i]');
+                const root = modal || document;
+                const input = root.querySelector('input[type="text"], input[type="number"], input[name*="otp" i], #otp, input[placeholder*="OTP" i], input[ng-model*="otp" i]');
                 if (input) {
                     input.value = otpVal;
                     input.dispatchEvent(new Event('input', { bubbles: true }));
                     input.dispatchEvent(new Event('change', { bubbles: true }));
+                    if (window.angular) {
+                        try {
+                            const ngModel = window.angular.element(input).controller('ngModel');
+                            if (ngModel) {
+                                ngModel.$setViewValue(otpVal);
+                                ngModel.$commitViewValue();
+                            }
+                            const sc = window.angular.element(input).scope();
+                            if (sc && !sc.$$phase) sc.$apply();
+                        } catch (e) {}
+                    }
                 }
             }, evcOtp);
 
@@ -723,15 +842,36 @@ async function run() {
 
             // Click VALIDATE OTP button
             let validateClicked = false;
-            const validateBtn = page.locator('button:has-text("VALIDATE OTP"), button:has-text("Validate OTP")').first();
-            if (await validateBtn.count() > 0 && await validateBtn.isVisible({ timeout: 2000 })) {
-                await validateBtn.click();
-                validateClicked = true;
-            } else {
+            const validateSelectors = [
+                'button:has-text("VALIDATE OTP")',
+                'button:has-text("Validate OTP")',
+                'button:has-text("Validate")',
+                'button:has-text("SUBMIT")',
+                'input[value*="VALIDATE OTP" i]',
+                'input[value*="Validate" i]'
+            ];
+            for (const s of validateSelectors) {
+                try {
+                    const btn = page.locator(s).first();
+                    if (await btn.count() > 0 && await btn.isVisible({ timeout: 1500 })) {
+                        await btn.click({ force: true });
+                        validateClicked = true;
+                        break;
+                    }
+                } catch(e) {}
+            }
+
+            if (!validateClicked) {
                 validateClicked = await page.evaluate(() => {
                     const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
-                    const btn = Array.from((modal || document).querySelectorAll('button, input[type="button"]')).find(b => /validate/i.test(b.innerText || b.value || ''));
-                    if (btn) { btn.click(); return true; }
+                    const btns = Array.from((modal || document).querySelectorAll('button, input[type="button"], a.btn'));
+                    const btn = btns.find(b => /validate|submit/i.test(b.innerText || b.value || ''));
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.removeAttribute('disabled');
+                        btn.click();
+                        return true;
+                    }
                     return false;
                 });
             }
@@ -741,7 +881,7 @@ async function run() {
 
             const checkStatus = await page.evaluate(() => {
                 const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
-                if (modal && modal.offsetParent !== null) {
+                if (modal && (modal.offsetParent !== null || window.getComputedStyle(modal).display !== 'none')) {
                     const modalText = modal.innerText.toLowerCase();
                     if (modalText.includes('invalid') || modalText.includes('incorrect') || modalText.includes('expired') || modalText.includes('mismatch')) {
                         return { isError: true, msg: modal.innerText.trim() };
@@ -749,7 +889,9 @@ async function run() {
                 }
                 const bodyText = document.body ? document.body.innerText : '';
                 let arn = null;
-                const arnMatch = bodyText.match(/[A-Za-z0-9]{15,20}ARN/i) || bodyText.match(/ARN\s*[:\-]?\s*([A-Za-z0-9]+)/i);
+                const arnMatch = bodyText.match(/[A-Za-z0-9]{15,20}ARN/i) || 
+                                 bodyText.match(/ARN\s*[:\-]?\s*([A-Za-z0-9]+)/i) ||
+                                 bodyText.match(/\b([A-Z]{2}[0-9]{11,15}[A-Z0-9]?)\b/);
                 if (arnMatch) {
                     arn = arnMatch[1] || arnMatch[0];
                 }
@@ -761,7 +903,7 @@ async function run() {
             });
 
             if (checkStatus.isError) {
-                sendUpdate(`❌ Invalid EVC OTP entered. Portal error: ${checkStatus.msg}. Retrying...`);
+                sendUpdate(`❌ Invalid EVC OTP entered. Portal error: ${checkStatus.msg}. Please re-enter.`);
                 await page.waitForTimeout(1000);
             } else {
                 evcOtpSuccess = true;

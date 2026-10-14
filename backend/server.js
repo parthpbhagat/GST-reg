@@ -110,6 +110,15 @@ io.on('connection', (socket) => {
         socket.join(appId);
         console.log(`[Socket] Client joined room for App ID: ${appId}`);
     });
+
+    socket.on('evc_otp', (data) => {
+        const { appId, otp } = data || {};
+        const child = activeAutomations.get(appId);
+        if (child && child.stdin) {
+            child.stdin.write(`${(otp || '').trim()}\n`);
+            console.log(`[Socket] Piped EVC OTP for App ID: ${appId}`);
+        }
+    });
 });
 
 // DELETE /api/file - Delete a specific file from data folder
@@ -216,7 +225,8 @@ app.get('/api/applications', authenticateToken, async (req, res) => {
                 appId: row.appId,
                 status: row.status,
                 date: row.createdAt,
-                trn: row.trn,
+                trn: row.trn || (appData && appData.trn) || null,
+                arn: row.arn || (appData && appData.arn) || null,
                 userEmail: row.userEmail || appData.email || appData.ppob_email || '-',
                 data: appData
             };
@@ -253,7 +263,8 @@ app.get('/api/applications/:id', authenticateToken, async (req, res) => {
             appId: row.appId,
             status: row.status,
             date: row.createdAt,
-            trn: row.trn,
+            trn: row.trn || (appData && appData.trn) || null,
+            arn: row.arn || (appData && appData.arn) || null,
             userEmail: row.userEmail || (appData && (appData.email || appData.ppob_email)) || '-',
             data: appData
         });
@@ -266,7 +277,7 @@ app.get('/api/applications/:id', authenticateToken, async (req, res) => {
 // PUT /api/applications/:id/status - Update application status (Admin Approve/Reject)
 app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, arn, trn } = req.body;
 
     if (!status) {
         return res.status(400).json({ error: 'status is required' });
@@ -283,6 +294,8 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
     }
 
     let appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+    if (arn) appData.arn = arn;
+    if (trn) appData.trn = trn;
 
     if (status === 'Accepted' || status === 'Approved') {
         try {

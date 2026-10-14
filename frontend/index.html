@@ -573,8 +573,8 @@
                             <div class="p-step" id="p-step-5">
                                 <div class="p-step-indicator">5</div>
                                 <div class="p-step-content">
-                                    <h4>Finalizing Registration</h4>
-                                    <p>Generating Temporary Reference Number (TRN)</p>
+                                    <h4>Final Submission & ARN</h4>
+                                    <p>EVC OTP verification & generating ARN</p>
                                 </div>
                             </div>
                         </div>
@@ -706,6 +706,41 @@
                             </div>
                         </div>
 
+                        <!-- Final EVC OTP Card (Step 5 - Generate ARN) -->
+                        <div id="evc-otp-card" class="captcha-card hidden"
+                            style="margin-top: 0; border: 1px solid #10b981; background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(15, 23, 42, 0.85));">
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                                <div
+                                    style="width: 44px; height: 44px; border-radius: 10px; background: rgba(16, 185, 129, 0.25); color: #34d399; display: grid; place-items: center;">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                                        <polyline points="9 12 11 14 15 10"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h4 style="color: #fff; font-size: 17px; margin: 0; font-weight: 700;">Final EVC OTP (ARN Generation)</h4>
+                                    <p style="color: #a7f3d0; font-size: 13px; margin: 2px 0 0 0;">Enter the OTP sent to Mobile / Email to submit and generate ARN</p>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 12px;">
+                                <input type="text" id="evc-otp-input" class="captcha-input"
+                                    placeholder="Enter EVC OTP..." autocomplete="off"
+                                    style="font-size: 18px; letter-spacing: 4px; font-weight: 700; text-align: center; border-color: #10b981;"
+                                    maxlength="8" onkeydown="if(event.key==='Enter') submitEvcOtp()" />
+                                <button class="btn accent"
+                                    style="padding: 0 24px; background: #10b981; border-color: #10b981; font-weight: 700; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px;"
+                                    onclick="submitEvcOtp()">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                                    </svg>
+                                    Submit & Generate ARN
+                                </button>
+                            </div>
+                        </div>
+
                         <!-- Warning Card (Hidden by default) -->
                         <div id="warning-card" class="captcha-card hidden"
                             style="margin-top: 0; border: 1px solid #f97316;">
@@ -746,16 +781,14 @@
                                     <polyline points="22 4 12 14.01 9 11.01"></polyline>
                                 </svg>
                             </div>
-                            <h2 style="color: #fff; font-size: 24px; margin: 0 0 10px 0;">Application Successfully
-                                Processed!</h2>
-                            <p style="color: #cbd5e1; font-size: 15px; margin: 0 0 30px 0;">Your Temporary Reference
-                                Number (TRN) is generated.</p>
+                            <h2 style="color: #fff; font-size: 24px; margin: 0 0 10px 0;" id="success-card-title">Application Successfully Processed!</h2>
+                            <p style="color: #cbd5e1; font-size: 15px; margin: 0 0 30px 0;" id="success-card-subtitle">Your GST Application Reference Number has been generated.</p>
 
                             <div
                                 style="background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; border-radius: 12px; padding: 20px; display: inline-block; margin-bottom: 30px;">
-                                <div
+                                <div id="trn-label-text"
                                     style="font-size: 14px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">
-                                    TRN Number</div>
+                                    Application Reference (ARN / TRN)</div>
                                 <div style="display: flex; align-items: center; gap: 15px;">
                                     <span id="trn-display-text"
                                         style="font-size: 32px; font-weight: bold; color: #4ade80; letter-spacing: 2px;">---------</span>

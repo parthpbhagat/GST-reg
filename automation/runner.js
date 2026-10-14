@@ -795,16 +795,35 @@ async function run() {
             }
 
             // D. Date of Commencement & Liability
-            const allContainers = Array.from(document.querySelectorAll('.form-group, .col-md-3, .col-md-4, .col-sm-6, .row, div'));
-            
-            // Find Commencement Input
-            const commContainer = allContainers.find(el => {
-                const txt = (el.innerText || '').toLowerCase();
-                return txt.includes('commencement') && el.querySelector('input');
+            const allLabels = Array.from(document.querySelectorAll('label'));
+
+            // 1. Locate Commencement Input precisely via label
+            const commLabel = allLabels.find(l => (l.innerText || '').toLowerCase().includes('commencement'));
+            let commInput = null;
+            if (commLabel) {
+                if (commLabel.htmlFor) commInput = document.getElementById(commLabel.htmlFor);
+                if (!commInput) {
+                    const fg = commLabel.closest('.form-group, [class*="col-"]') || commLabel.parentElement;
+                    if (fg) commInput = fg.querySelector('input');
+                }
+            }
+
+            // Fallback: look for inputs with datepicker attributes
+            const allInputs = Array.from(document.querySelectorAll('input'));
+            const dateInputs = allInputs.filter(i => {
+                const ph = (i.getAttribute('placeholder') || '').toLowerCase();
+                const uib = i.hasAttribute('uib-datepicker-popup') || i.hasAttribute('datepicker-popup');
+                const ng = (i.getAttribute('ng-model') || '').toLowerCase();
+                const isDate = i.type === 'date';
+                return uib || isDate || ph.includes('dd/mm/yyyy') || ph.includes('from') || ng.includes('cmbzdt') || ng.includes('dtcomm');
             });
-            const commInput = (commContainer ? commContainer.querySelector('input') : null) ||
-                              document.querySelector('input[placeholder*="from" i], input[id*="comm" i], input[name*="comm" i], input[ng-model*="cmbzdt" i], input[ng-model*="comm" i]');
+
+            if (!commInput && dateInputs.length > 0) {
+                commInput = dateInputs[0];
+            }
+
             if (commInput) {
+                commInput.focus();
                 commInput.value = commVal;
                 commInput.dispatchEvent(new Event('input', { bubbles: true }));
                 commInput.dispatchEvent(new Event('change', { bubbles: true }));
@@ -817,18 +836,41 @@ async function run() {
                             ngModel.$render();
                             ngModel.$commitViewValue();
                         }
-                    } catch(e) {}
+                        const sc = window.angular.element(commInput).scope();
+                        if (sc) {
+                            const ngAttr = commInput.getAttribute('ng-model');
+                            if (ngAttr) {
+                                const parts = ngAttr.split('.');
+                                let curr = sc;
+                                for (let i = 0; i < parts.length - 1; i++) {
+                                    if (curr[parts[i]]) curr = curr[parts[i]];
+                                }
+                                curr[parts[parts.length - 1]] = commVal;
+                            }
+                            if (sc.bzdtlsbz) sc.bzdtlsbz.cmbzdt = commVal;
+                            if (sc.cmbzdt !== undefined) sc.cmbzdt = commVal;
+                            if (!sc.$$phase) sc.$apply();
+                        }
+                    } catch (e) { }
                 }
             }
 
-            // Find Liability Input
-            const liabContainer = allContainers.find(el => {
-                const txt = (el.innerText || '').toLowerCase();
-                return txt.includes('liability to register') && el.querySelector('input');
-            });
-            const liabInput = (liabContainer ? liabContainer.querySelector('input') : null) ||
-                             document.querySelector('input[placeholder*="liability" i], input[id*="lbrg" i], input[name*="lbrg" i], input[ng-model*="lbrg" i]');
+            // 2. Locate Liability Input precisely via label
+            const liabLabel = allLabels.find(l => (l.innerText || '').toLowerCase().includes('liability to register') || (l.innerText || '').toLowerCase().includes('liability'));
+            let liabInput = null;
+            if (liabLabel) {
+                if (liabLabel.htmlFor) liabInput = document.getElementById(liabLabel.htmlFor);
+                if (!liabInput) {
+                    const fg = liabLabel.closest('.form-group, [class*="col-"]') || liabLabel.parentElement;
+                    if (fg) liabInput = fg.querySelector('input');
+                }
+            }
+            if (!liabInput && dateInputs.length > 1) {
+                liabInput = dateInputs[1];
+            }
+
             if (liabInput) {
+                liabInput.focus();
                 liabInput.value = liabVal;
                 liabInput.dispatchEvent(new Event('input', { bubbles: true }));
                 liabInput.dispatchEvent(new Event('change', { bubbles: true }));
@@ -841,7 +883,21 @@ async function run() {
                             ngModel.$render();
                             ngModel.$commitViewValue();
                         }
-                    } catch(e) {}
+                        const sc = window.angular.element(liabInput).scope();
+                        if (sc) {
+                            const ngAttr = liabInput.getAttribute('ng-model');
+                            if (ngAttr) {
+                                const parts = ngAttr.split('.');
+                                let curr = sc;
+                                for (let i = 0; i < parts.length - 1; i++) {
+                                    if (curr[parts[i]]) curr = curr[parts[i]];
+                                }
+                                curr[parts[parts.length - 1]] = liabVal;
+                            }
+                            if (sc.bzdtlsbz) sc.bzdtlsbz.lbrgdt = liabVal;
+                            if (!sc.$$phase) sc.$apply();
+                        }
+                    } catch (e) { }
                 }
             }
 
@@ -902,7 +958,7 @@ async function run() {
                         }
                         if (!sc.$$phase) sc.$apply();
                     }
-                } catch(e) {}
+                } catch (e) { }
             }
         }, {
             constVal: targetConstitution,
@@ -913,35 +969,67 @@ async function run() {
             r14Val: rule14AVal
         });
 
-        // 2. Playwright locator fallbacks
+        // 2. Playwright locator fallbacks with native keyboard typing
         try {
             const cobzSelectLocator = page.locator('select').filter({ hasText: /Proprietorship/i }).first();
             if (await cobzSelectLocator.count() > 0) {
                 const options = await cobzSelectLocator.locator('option').allInnerTexts();
                 const matchedText = options.find(o => o.toLowerCase().includes(targetConstitution.toLowerCase().includes('proprietor') ? 'proprietor' : targetConstitution.toLowerCase()));
                 if (matchedText) {
-                    await cobzSelectLocator.selectOption({ label: matchedText.trim() }).catch(() => {});
+                    await cobzSelectLocator.selectOption({ label: matchedText.trim() }).catch(() => { });
                 }
             }
-        } catch (e) {}
+        } catch (e) { }
 
         try {
-            const commLoc = page.locator('.form-group, div').filter({ hasText: /commencement/i }).locator('input').first();
-            if (await commLoc.count() > 0) {
-                await commLoc.click().catch(() => {});
-                await commLoc.fill(commDate).catch(() => {});
-                await commLoc.press('Tab').catch(() => {});
+            const commLabelLoc = page.locator('label').filter({ hasText: /commencement/i }).first();
+            let commInputLoc = null;
+            if (await commLabelLoc.count() > 0) {
+                const forAttr = await commLabelLoc.getAttribute('for').catch(() => null);
+                if (forAttr) {
+                    commInputLoc = page.locator(`#${forAttr}`);
+                }
+                if (!commInputLoc || await commInputLoc.count() === 0) {
+                    commInputLoc = commLabelLoc.locator('xpath=ancestor::*[contains(@class,"form-group") or contains(@class,"col-")][1]//input').first();
+                }
             }
-        } catch (e) {}
+            if (!commInputLoc || await commInputLoc.count() === 0) {
+                commInputLoc = page.locator('input[placeholder*="from" i], input[placeholder*="DD/MM/YYYY" i], input[uib-datepicker-popup]').first();
+            }
+
+            if (commInputLoc && await commInputLoc.count() > 0) {
+                await commInputLoc.click({ force: true }).catch(() => { });
+                await commInputLoc.fill('').catch(() => { });
+                await commInputLoc.type(commDate, { delay: 40 }).catch(() => { });
+                await commInputLoc.press('Tab').catch(() => { });
+                sendUpdate(`Typed Date of Commencement: ${commDate}`);
+            }
+        } catch (e) {
+            sendUpdate(`Commencement input note: ${e.message}`);
+        }
 
         try {
-            const liabLoc = page.locator('.form-group, div').filter({ hasText: /liability/i }).locator('input').first();
-            if (await liabLoc.count() > 0) {
-                await liabLoc.click().catch(() => {});
-                await liabLoc.fill(liabDate).catch(() => {});
-                await liabLoc.press('Tab').catch(() => {});
+            const liabLabelLoc = page.locator('label').filter({ hasText: /liability/i }).first();
+            let liabInputLoc = null;
+            if (await liabLabelLoc.count() > 0) {
+                const forAttr = await liabLabelLoc.getAttribute('for').catch(() => null);
+                if (forAttr) {
+                    liabInputLoc = page.locator(`#${forAttr}`);
+                }
+                if (!liabInputLoc || await liabInputLoc.count() === 0) {
+                    liabInputLoc = liabLabelLoc.locator('xpath=ancestor::*[contains(@class,"form-group") or contains(@class,"col-")][1]//input').first();
+                }
             }
-        } catch (e) {}
+            if (liabInputLoc && await liabInputLoc.count() > 0) {
+                await liabInputLoc.click({ force: true }).catch(() => { });
+                await liabInputLoc.fill('').catch(() => { });
+                await liabInputLoc.type(liabDate, { delay: 40 }).catch(() => { });
+                await liabInputLoc.press('Tab').catch(() => { });
+                sendUpdate(`Typed Date of Liability: ${liabDate}`);
+            }
+        } catch (e) {
+            sendUpdate(`Liability input note: ${e.message}`);
+        }
 
         sendUpdate(`✅ Business Details populated (Constitution: ${targetConstitution}, Reason: ${targetReason}, Commencement: ${commDate}).`);
         await page.waitForTimeout(1000);
@@ -955,6 +1043,14 @@ async function run() {
                 saveNext.click();
             }
         });
+
+        try {
+            const saveBtn = page.locator('button').filter({ hasText: /save\s*&\s*continue/i }).first();
+            if (await saveBtn.count() > 0 && await saveBtn.isVisible()) {
+                await saveBtn.click({ force: true }).catch(() => { });
+            }
+        } catch (e) { }
+
         await page.waitForTimeout(2500);
 
         // 2. Navigate directly to Verification tab

@@ -809,14 +809,23 @@ async function run() {
             // D. Date of Commencement & Liability
             const allLabels = Array.from(document.querySelectorAll('label'));
 
-            // 1. Locate Commencement Input precisely via label
-            const commLabel = allLabels.find(l => (l.innerText || '').toLowerCase().includes('commencement'));
-            let commInput = null;
-            if (commLabel) {
-                if (commLabel.htmlFor) commInput = document.getElementById(commLabel.htmlFor);
-                if (!commInput) {
-                    const fg = commLabel.closest('.form-group, [class*="col-"]') || commLabel.parentElement;
-                    if (fg) commInput = fg.querySelector('input');
+            // 1. Locate Commencement Input (direct ID/name/ng-model first, then label/container)
+            let commInput = document.querySelector('#cmbzdt, input[name="cmbzdt"], input[ng-model*="cmbzdt"], input[ng-model*="dtcomm"], input[id*="commence" i], input[name*="commence" i]');
+            if (!commInput) {
+                const commElem = Array.from(document.querySelectorAll('label, div, span, p')).find(e => {
+                    const txt = (e.innerText || '').toLowerCase();
+                    return txt.includes('commencement') && e.querySelector('input');
+                });
+                if (commElem) commInput = commElem.querySelector('input');
+            }
+            if (!commInput) {
+                const commLabel = allLabels.find(l => (l.innerText || '').toLowerCase().includes('commencement'));
+                if (commLabel) {
+                    if (commLabel.htmlFor) commInput = document.getElementById(commLabel.htmlFor);
+                    if (!commInput) {
+                        const fg = commLabel.closest('.form-group, [class*="col-"]') || commLabel.parentElement;
+                        if (fg) commInput = fg.querySelector('input');
+                    }
                 }
             }
 
@@ -867,14 +876,23 @@ async function run() {
                 }
             }
 
-            // 2. Locate Liability Input precisely via label
-            const liabLabel = allLabels.find(l => (l.innerText || '').toLowerCase().includes('liability to register') || (l.innerText || '').toLowerCase().includes('liability'));
-            let liabInput = null;
-            if (liabLabel) {
-                if (liabLabel.htmlFor) liabInput = document.getElementById(liabLabel.htmlFor);
-                if (!liabInput) {
-                    const fg = liabLabel.closest('.form-group, [class*="col-"]') || liabLabel.parentElement;
-                    if (fg) liabInput = fg.querySelector('input');
+            // 2. Locate Liability Input (direct ID/name/ng-model first, then label/container)
+            let liabInput = document.querySelector('#lbrgdt, input[name="lbrgdt"], input[ng-model*="lbrgdt"], input[ng-model*="dtlbrg"], input[id*="lbrg" i], input[name*="lbrg" i]');
+            if (!liabInput) {
+                const liabElem = Array.from(document.querySelectorAll('label, div, span, p')).find(e => {
+                    const txt = (e.innerText || '').toLowerCase();
+                    return (txt.includes('liability to register') || txt.includes('liability')) && e.querySelector('input');
+                });
+                if (liabElem) liabInput = liabElem.querySelector('input');
+            }
+            if (!liabInput) {
+                const liabLabel = allLabels.find(l => (l.innerText || '').toLowerCase().includes('liability to register') || (l.innerText || '').toLowerCase().includes('liability'));
+                if (liabLabel) {
+                    if (liabLabel.htmlFor) liabInput = document.getElementById(liabLabel.htmlFor);
+                    if (!liabInput) {
+                        const fg = liabLabel.closest('.form-group, [class*="col-"]') || liabLabel.parentElement;
+                        if (fg) liabInput = fg.querySelector('input');
+                    }
                 }
             }
             if (!liabInput && dateInputs.length > 1) {
@@ -994,15 +1012,11 @@ async function run() {
         } catch (e) { }
 
         try {
-            const commLabelLoc = page.locator('label').filter({ hasText: /commencement/i }).first();
-            let commInputLoc = null;
-            if (await commLabelLoc.count() > 0) {
-                const forAttr = await commLabelLoc.getAttribute('for').catch(() => null);
-                if (forAttr) {
-                    commInputLoc = page.locator(`#${forAttr}`);
-                }
-                if (!commInputLoc || await commInputLoc.count() === 0) {
-                    commInputLoc = commLabelLoc.locator('xpath=ancestor::*[contains(@class,"form-group") or contains(@class,"col-")][1]//input').first();
+            let commInputLoc = page.locator('#cmbzdt, input[name="cmbzdt"], input[ng-model*="cmbzdt"], input[id*="commence" i], input[name*="commence" i]').first();
+            if (await commInputLoc.count() === 0) {
+                const commElemLoc = page.locator('.form-group, [class*="col-"], label, div').filter({ hasText: /commencement/i }).first();
+                if (await commElemLoc.count() > 0) {
+                    commInputLoc = commElemLoc.locator('input').first();
                 }
             }
             if (!commInputLoc || await commInputLoc.count() === 0) {
@@ -1010,34 +1024,55 @@ async function run() {
             }
 
             if (commInputLoc && await commInputLoc.count() > 0) {
+                await commInputLoc.scrollIntoViewIfNeeded().catch(() => { });
                 await commInputLoc.click({ force: true }).catch(() => { });
                 await commInputLoc.fill('').catch(() => { });
-                await commInputLoc.type(commDate, { delay: 40 }).catch(() => { });
+                if (commInputLoc.pressSequentially) {
+                    await commInputLoc.pressSequentially(commDate, { delay: 35 }).catch(() => { });
+                } else {
+                    await commInputLoc.type(commDate, { delay: 35 }).catch(() => { });
+                }
                 await commInputLoc.press('Tab').catch(() => { });
-                sendUpdate(`Typed Date of Commencement: ${commDate}`);
+                const valNow = await commInputLoc.inputValue().catch(() => '');
+                if (!valNow) {
+                    await commInputLoc.fill(commDate).catch(() => { });
+                }
+                sendUpdate(`Typed Date of Commencement: ${valNow || commDate}`);
             }
         } catch (e) {
             sendUpdate(`Commencement input note: ${e.message}`);
         }
 
         try {
-            const liabLabelLoc = page.locator('label').filter({ hasText: /liability/i }).first();
-            let liabInputLoc = null;
-            if (await liabLabelLoc.count() > 0) {
-                const forAttr = await liabLabelLoc.getAttribute('for').catch(() => null);
-                if (forAttr) {
-                    liabInputLoc = page.locator(`#${forAttr}`);
-                }
-                if (!liabInputLoc || await liabInputLoc.count() === 0) {
-                    liabInputLoc = liabLabelLoc.locator('xpath=ancestor::*[contains(@class,"form-group") or contains(@class,"col-")][1]//input').first();
+            let liabInputLoc = page.locator('#lbrgdt, input[name="lbrgdt"], input[ng-model*="lbrgdt"], input[id*="lbrg" i], input[name*="lbrg" i]').first();
+            if (await liabInputLoc.count() === 0) {
+                const liabElemLoc = page.locator('.form-group, [class*="col-"], label, div').filter({ hasText: /liability/i }).first();
+                if (await liabElemLoc.count() > 0) {
+                    liabInputLoc = liabElemLoc.locator('input').first();
                 }
             }
+            if (!liabInputLoc || await liabInputLoc.count() === 0) {
+                const allDatePickers = page.locator('input[placeholder*="DD/MM/YYYY" i], input[uib-datepicker-popup]');
+                if (await allDatePickers.count() > 1) {
+                    liabInputLoc = allDatePickers.nth(1);
+                }
+            }
+
             if (liabInputLoc && await liabInputLoc.count() > 0) {
+                await liabInputLoc.scrollIntoViewIfNeeded().catch(() => { });
                 await liabInputLoc.click({ force: true }).catch(() => { });
                 await liabInputLoc.fill('').catch(() => { });
-                await liabInputLoc.type(liabDate, { delay: 40 }).catch(() => { });
+                if (liabInputLoc.pressSequentially) {
+                    await liabInputLoc.pressSequentially(liabDate, { delay: 35 }).catch(() => { });
+                } else {
+                    await liabInputLoc.type(liabDate, { delay: 35 }).catch(() => { });
+                }
                 await liabInputLoc.press('Tab').catch(() => { });
-                sendUpdate(`Typed Date of Liability: ${liabDate}`);
+                const valNow = await liabInputLoc.inputValue().catch(() => '');
+                if (!valNow) {
+                    await liabInputLoc.fill(liabDate).catch(() => { });
+                }
+                sendUpdate(`Typed Date of Liability: ${valNow || liabDate}`);
             }
         } catch (e) {
             sendUpdate(`Liability input note: ${e.message}`);
@@ -1086,10 +1121,11 @@ async function run() {
             // Check if portal blocked navigation with a real error
             const portalError = await page.evaluate(() => {
                 const errs = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"]'));
+                const staticIgnore = /only maximum file size|format is only allowed|file with pdf|jpeg format is only allowed|1 mb is allowed|upload photograph/i;
                 for (const e of errs) {
                     if (e.offsetParent !== null || window.getComputedStyle(e).display !== 'none') {
                         const t = (e.innerText || '').trim();
-                        if (t && t.length > 3 && !/only maximum file size/i.test(t) && !/format is only allowed/i.test(t) && !/file with pdf/i.test(t)) {
+                        if (t && t.length > 3 && !staticIgnore.test(t)) {
                             return t;
                         }
                     }
@@ -1105,11 +1141,19 @@ async function run() {
             const screenInfo = await page.evaluate(() => {
                 const activeLi = document.querySelector('ul.nav-tabs li.active, .step-wizard .active, .wizard-step.active, li.active');
                 const header = document.querySelector('h1, h2, h3, .panel-title');
+                const bodyText = (document.body.innerText || '');
+                const hasPromoterHeader = bodyText.includes('Details of Promoter') || bodyText.includes('Promoter / Partner');
+                const hasPromoterInputs = !!document.querySelector('input[placeholder*="First Name" i], #fnm');
+                const hasSavePromoterBtn = Array.from(document.querySelectorAll('button, input[type="button"]')).some(b => /save promoter/i.test(b.innerText || b.value || ''));
+                const isPromoter = (hasPromoterHeader && hasPromoterInputs) || hasSavePromoterBtn || !!document.querySelector('#fnm');
+                const isPromoterTable = hasPromoterHeader && Array.from(document.querySelectorAll('table tr')).length > 1;
+
                 return {
                     tabText: activeLi ? activeLi.innerText.trim() : '',
                     headerText: header ? header.innerText.trim() : '',
-                    hasPromoterForm: !!document.querySelector('#fnm'),
-                    hasPpobInputs: !!document.querySelector('#pncd, input[name*="pincode" i]'),
+                    isPromoterTab: isPromoter,
+                    isPromoterAlreadySaved: isPromoterTable,
+                    hasPpobInputs: !!document.querySelector('#pncd, input[name*="pincode" i], input[placeholder*="pincode" i]'),
                     hasHsnInput: !!document.querySelector('#gs_hsn_value, input[placeholder*="HSN" i]')
                 };
             });
@@ -1118,7 +1162,7 @@ async function run() {
             sendUpdate(`Navigating wizard: current tab is "${currentTabTitle}"...`);
 
             // If on Promoter tab and form is shown, fill it
-            if (screenInfo.hasPromoterForm) {
+            if (screenInfo.isPromoterTab && !screenInfo.isPromoterAlreadySaved) {
                 sendUpdate('Populating Promoter / Partner (P1) details...');
                 const p = (data && data.p1) || {};
                 const nameParts = ((data && data.legalName) || 'Parth Purushottam Bhagat').split(' ');
@@ -1439,10 +1483,22 @@ async function run() {
                         }
                     }
                 }
-                // Check if any error notification appeared
-                const errorBox = document.querySelector('.alert-danger, .toast-error, .has-error');
-                if (errorBox && errorBox.innerText) {
-                    return { state: 'portal_error', errorText: errorBox.innerText.trim() };
+                // Check if any REAL error notification appeared (skip static file-upload hint text)
+                const errorCandidates = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .has-error .help-block, div[role="alert"]'));
+                for (const ec of errorCandidates) {
+                    if (ec.offsetParent !== null || window.getComputedStyle(ec).display !== 'none') {
+                        const etxt = (ec.innerText || '').trim();
+                        if (etxt && etxt.length > 5
+                            && !/only maximum file size/i.test(etxt)
+                            && !/format is only allowed/i.test(etxt)
+                            && !/file with pdf/i.test(etxt)
+                            && !/jpeg format is only allowed/i.test(etxt)
+                            && !/1 mb is allowed/i.test(etxt)
+                            && !/upload photograph/i.test(etxt)
+                        ) {
+                            return { state: 'portal_error', errorText: etxt };
+                        }
+                    }
                 }
                 return { state: 'waiting' };
             });
@@ -1478,10 +1534,11 @@ async function run() {
         if (!evcModalReady) {
             const trailingErr = await page.evaluate(() => {
                 const candidates = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"]'));
+                const staticIgnore = /only maximum file size|format is only allowed|file with pdf|jpeg format is only allowed|1 mb is allowed|upload photograph/i;
                 for (const c of candidates) {
                     if (c.offsetParent !== null || window.getComputedStyle(c).display !== 'none') {
                         const txt = (c.innerText || '').trim();
-                        if (txt && !/only maximum file size/i.test(txt) && !/format is only allowed/i.test(txt) && !/file with pdf/i.test(txt)) {
+                        if (txt && txt.length > 3 && !staticIgnore.test(txt)) {
                             return txt;
                         }
                     }

@@ -2838,6 +2838,183 @@ async function run() {
                    text.includes('authentication for aadhaar');
         });
 
+        async function submitVerificationWithEVC(page) {
+            sendUpdate('Submitting Verification with EVC (Electronic Verification Code)...');
+
+            // Listen for final form json verification API responses
+            const finalFormHandler = async (res) => {
+                const url = res.url();
+                if (url.includes('generateFinalformJson') || url.includes('applicationdata') || url.includes('verify/otp')) {
+                    try {
+                        const status = res.status();
+                        const text = await res.text();
+                        let parsed = null;
+                        try { parsed = JSON.parse(text); } catch (e) {}
+                        if (url.includes('generateFinalformJson')) {
+                            sendUpdate(`GST Portal: Final Form JSON compiled and verified (HTTP ${status}).`);
+                        } else if (url.includes('verify/otp')) {
+                            if (parsed && (parsed.status_cd === '1' || parsed.success)) {
+                                sendUpdate('✅ GST Portal: Final EVC OTP generated and dispatched.');
+                            } else if (parsed && (parsed.error || parsed.err || parsed.status_cd === '0')) {
+                                sendUpdate(`❌ GST Portal OTP notice: ${parsed.error?.message || parsed.message || text.substring(0, 100)}`);
+                            }
+                        }
+                    } catch (e) {}
+                }
+            };
+            page.on('response', finalFormHandler);
+
+            // 1. Click "SUBMIT WITH EVC"
+            let evcClicked = false;
+            const evcSelectors = [
+                'button:has-text("SUBMIT WITH EVC")',
+                'button:has-text("Submit with EVC")',
+                'button:has-text("EVC")',
+                'input[value*="SUBMIT WITH EVC" i]'
+            ];
+
+            for (const sel of evcSelectors) {
+                try {
+                    const btn = page.locator(sel).first();
+                    if (await btn.count() > 0 && await btn.isVisible({ timeout: 2000 })) {
+                        await btn.click({ force: true });
+                        evcClicked = true;
+                        sendUpdate('Clicked SUBMIT WITH EVC button.');
+                        break;
+                    }
+                } catch (e) {}
+            }
+
+            if (!evcClicked) {
+                evcClicked = await page.evaluate(() => {
+                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
+                    const b = btns.find(btn => (btn.innerText || btn.value || '').toUpperCase().includes('SUBMIT WITH EVC'));
+                    if (b) {
+                        b.click();
+                        return true;
+                    }
+                    return false;
+                });
+                if (evcClicked) sendUpdate('Clicked SUBMIT WITH EVC button via DOM.');
+            }
+
+            if (!evcClicked) {
+                sendUpdate('Warning: Could not auto-click SUBMIT WITH EVC. Please click manually on the portal.');
+                return;
+            }
+
+            await page.waitForTimeout(2000);
+
+            // 2. Check for intermediate confirmation modal (e.g., "Are you sure you want to submit using EVC?")
+            await page.evaluate(() => {
+                const modals = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"]'));
+                for (const modal of modals) {
+                    if (modal.offsetParent !== null && !modal.innerText.toLowerCase().includes('enter otp')) {
+                        const proceedBtn = Array.from(modal.querySelectorAll('button, input[type="button"]')).find(b => /proceed|yes|confirm|ok|continue/i.test(b.innerText || b.value || ''));
+                        if (proceedBtn) proceedBtn.click();
+                    }
+                }
+            });
+
+            // 3. Wait for OTP Verification modal to appear
+            sendUpdate('Waiting for EVC OTP Verification modal...');
+            try {
+                await page.waitForFunction(() => {
+                    const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
+                    if (!modal || modal.offsetParent === null) return false;
+                    const text = (modal.innerText || '').toLowerCase();
+                    return text.includes('otp verification') || text.includes('please enter otp') || text.includes('validate otp');
+                }, { timeout: 30000 });
+                sendUpdate('EVC OTP modal detected on GST portal.');
+            } catch (e) {
+                sendUpdate('Warning: EVC OTP modal wait timeout. Checking for active modal or OTP input...');
+            }
+
+            // 4. EVC OTP Input & Validation Loop
+            let evcOtpSuccess = false;
+            while (!evcOtpSuccess) {
+                sendUpdate('WAITING_FOR_FINAL_EVC_OTP');
+
+                // Wait for user input from stdin
+                const evcOtp = await new Promise(resolve => {
+                    process.stdin.once('data', (input) => {
+                        resolve(input.toString().trim());
+                    });
+                });
+
+                sendUpdate('Filling EVC OTP and validating with GST Portal...');
+
+                // Fill OTP inside modal
+                await page.evaluate((otpVal) => {
+                    const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
+                    const input = (modal || document).querySelector('input[type="text"], input[type="number"], input[name*="otp" i], #otp, input[placeholder*="OTP" i]');
+                    if (input) {
+                        input.value = otpVal;
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }, evcOtp);
+
+                await page.waitForTimeout(600);
+
+                // Click VALIDATE OTP button
+                let validateClicked = false;
+                const validateBtn = page.locator('button:has-text("VALIDATE OTP"), button:has-text("Validate OTP")').first();
+                if (await validateBtn.count() > 0 && await validateBtn.isVisible({ timeout: 2000 })) {
+                    await validateBtn.click();
+                    validateClicked = true;
+                } else {
+                    validateClicked = await page.evaluate(() => {
+                        const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
+                        const btn = Array.from((modal || document).querySelectorAll('button, input[type="button"]')).find(b => /validate/i.test(b.innerText || b.value || ''));
+                        if (btn) {
+                            btn.click();
+                            return true;
+                        }
+                        return false;
+                    });
+                }
+
+                sendUpdate('Submitted EVC OTP. Awaiting portal confirmation...');
+                await page.waitForTimeout(5000);
+
+                // Check for errors or success
+                const checkStatus = await page.evaluate(() => {
+                    const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
+                    if (modal && modal.offsetParent !== null) {
+                        const modalText = modal.innerText.toLowerCase();
+                        if (modalText.includes('invalid') || modalText.includes('incorrect') || modalText.includes('expired') || modalText.includes('mismatch')) {
+                            return { isError: true, msg: modal.innerText.trim() };
+                        }
+                    }
+                    const bodyText = document.body ? document.body.innerText : '';
+                    let arn = null;
+                    const arnMatch = bodyText.match(/[A-Za-z0-9]{15,20}ARN/i) || bodyText.match(/ARN\s*[:\-]?\s*([A-Za-z0-9]+)/i);
+                    if (arnMatch) {
+                        arn = arnMatch[1] || arnMatch[0];
+                    }
+                    const isSuccess = bodyText.toLowerCase().includes('success') ||
+                                      bodyText.toLowerCase().includes('acknowledgment') ||
+                                      bodyText.toLowerCase().includes('submitted successfully') ||
+                                      !modal || modal.offsetParent === null;
+                    return { isError: false, isSuccess, arn, bodySnippet: bodyText.substring(0, 300) };
+                });
+
+                if (checkStatus.isError) {
+                    sendUpdate(`❌ Invalid EVC OTP entered. Portal error: ${checkStatus.msg}. Retrying...`);
+                    await page.waitForTimeout(1000);
+                } else {
+                    evcOtpSuccess = true;
+                    sendUpdate('🎉 GST Application successfully submitted with EVC!');
+                    if (checkStatus.arn) {
+                        sendUpdate(`📌 Application Reference Number (ARN): ${checkStatus.arn}`);
+                    } else {
+                        sendUpdate('📌 Application submitted successfully. ARN will be generated by GSTN and dispatched to registered Email & Mobile within 15-30 minutes.');
+                    }
+                }
+            }
+        }
+
         if (isAadhaarPage) {
             sendUpdate('Aadhaar Authentication page reached. Automating...');
             try {
@@ -2918,7 +3095,8 @@ async function run() {
                         const place = data.ppob_city || data.ppob_district || 'City';
                         await page.fill('#place', place).catch(() => {});
 
-                        sendUpdate('Verification details filled. Please review and click SUBMIT WITH DSC or SUBMIT WITH EVC.');
+                        sendUpdate('Verification details filled. Submitting application with EVC...');
+                        await submitVerificationWithEVC(page);
                     } catch (e) {
                         sendUpdate(`Warning: Verification auto-fill failed: ${e.message}`);
                     }
@@ -2961,9 +3139,9 @@ async function run() {
                     }
                 });
                 
-                sendUpdate('Verification details filled successfully.');
-                await page.waitForTimeout(2000);
-                sendUpdate('Please review and click SUBMIT WITH DSC or SUBMIT WITH EVC on the portal.');
+                sendUpdate('Verification details filled successfully. Submitting application with EVC...');
+                await page.waitForTimeout(1000);
+                await submitVerificationWithEVC(page);
             } catch (e) {
                 sendUpdate(`Warning: Verification section failed: ${e.message}`);
             }

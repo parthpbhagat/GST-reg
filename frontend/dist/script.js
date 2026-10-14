@@ -2312,6 +2312,12 @@ window.startAutomationPipeline = async function (id, mode = 'regular', multiStat
                 badge.style.color = '#facc15';
                 document.getElementById('trn-otp-card').classList.remove('hidden');
                 document.getElementById('trn-otp-input').focus();
+            } else if (status === 'WAITING_FOR_FINAL_EVC_OTP' || status === 'WAITING_FOR_EVC_OTP') {
+                setPipelineActiveStep(5);
+                badge.innerText = 'EVC OTP REQUIRED';
+                badge.style.color = '#10b981';
+                document.getElementById('evc-otp-card').classList.remove('hidden');
+                document.getElementById('evc-otp-input').focus();
             } else if (status.startsWith('WAITING_FOR_WARNING_RESPONSE') || status.includes('PORTAL WARNING DETECTED')) {
                 const card = document.getElementById('warning-card');
                 if (card) {
@@ -2492,6 +2498,29 @@ window.submitTrnOtp = async function () {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await window.getFreshToken()) },
             body: JSON.stringify({ appId: activeAutomationAppId, captcha: otp })
+        });
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+window.submitEvcOtp = async function () {
+    const otp = document.getElementById('evc-otp-input').value;
+    if (!otp) return;
+
+    document.getElementById('evc-otp-card').classList.add('hidden');
+    document.getElementById('evc-otp-input').value = '';
+
+    document.getElementById('auto-status-badge').innerText = 'VALIDATING EVC OTP';
+    document.getElementById('auto-status-badge').style.color = '#10b981';
+
+    addTerminalLog(`[User Action]: Submitted EVC OTP: ${otp.substring(0, 2)}****. Validating with GST Portal...`);
+
+    try {
+        await fetch(`${API_BASE_URL}/api/automation/evc_otp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await window.getFreshToken()) },
+            body: JSON.stringify({ appId: activeAutomationAppId, otp })
         });
     } catch (e) {
         console.error(e);

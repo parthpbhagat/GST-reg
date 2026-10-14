@@ -1,0 +1,247 @@
+{
+  "aplCd": "75028658",
+  "rgdtls": {
+    "aplst": "DFT",
+    "aplty": "APLRG",
+    "duedt": "28/10/2026",
+    "moddt": "13/10/2026",
+    "mbno": "9106514081",
+    "em": "ca.shalinisomani@gmail.com"
+  },
+  "bzdtls": {
+    "bzdtlsbz": {
+      "cobz": "PRO",
+      "rslibrg": "VOLN",
+      "lgnmbzpan": "SHALINI R SOMANI",
+      "pan": {
+        "num": "BLLPR3974D",
+        "iv": "V",
+        "panDate": "2012-12-20"
+      },
+      "stcd": "24",
+      "addltrdnms": [],
+      "isopcmp": "N",
+      "cmbzdt": "01/09/2026",
+      "iscasdl": "N",
+      "otherRsLib": "",
+      "dst": "GJAHM",
+      "sezDtls": {},
+      "regCategory": [],
+      "optCat": "Y",
+      "optCatDeclStatus": "Y"
+    },
+    "exrgdtls": []
+  },
+  "decdtls": {
+    "dt": "14/10/2026"
+  },
+  "secToken": "242600300674TRN",
+  "map": {
+    "adbzdtls": [],
+    "opdtls": [
+      {
+        "eid": 1,
+        "lt": "23.050015",
+        "lg": "72.5836560000001",
+        "eloc": "380004",
+        "city": "Ahmedabad",
+        "geoCodeLevel": "pincode",
+        "nrbyLdMrk": null,
+        "locSubloc": null,
+        "feedback": {
+          "locSubloc": false,
+          "st": false,
+          "bnm": false,
+          "bno": false,
+          "nrbyLdMrk": false
+        }
+      }
+    ],
+    "asgdtls": [
+      {
+        "eid": 2,
+        "lt": "23.050015",
+        "lg": "72.5836560000001",
+        "eloc": "380004",
+        "city": "Ahmedabad",
+        "geoCodeLevel": "pincode",
+        "nrbyLdMrk": null,
+        "locSubloc": null,
+        "feedback": {
+          "locSubloc": false,
+          "st": false,
+          "bnm": false,
+          "bno": false,
+          "nrbyLdMrk": false
+        }
+      }
+    ],
+    "ppbzdtls": {
+      "lt": "23.050015",
+      "lg": "72.5836560000001",
+      "eloc": "380004",
+      "city": "Ahmedabad",
+      "geoCodeLevel": "pincode",
+      "nrbyLdMrk": null,
+      "locSubloc": null,
+      "feedback": {
+        "locSubloc": false,
+        "st": false,
+        "bnm": false,
+        "bno": false,
+        "nrbyLdMrk": false
+      }
+    }
+  },
+  "sezPovToDateVald": "10",
+  "jurdFlag": "Y",
+  "isAddlnInfo": "Y",
+  "isMsrChildFlow": "N",
+  "msrActiveTab": "BKACDTLS",
+  "itcPassonLimit": "250000",
+  "asgdtls": [
+    {
+      "iscitind": "Y",
+      "isNewSignatoryDetailsAfterSCN": false,
+      "fn": "SHALINI",
+      "mn": "Ravi",
+      "ln": " SOMANI",
+      "pan": {
+        "num": "BLLPR3974D"
+      },
+      "rsad": {
+        "cnty": "IND",
+        "pncd": "380004",
+        "dst": "GJAHM",
+        "loc": "Ahmedabad",
+        "stcd": "24",
+        "st": "A-1004",
+        "bnm": "nilkanth revenue near shakti house shaibag",
+        "bno": "A - 1004"
+      },
+      "isasg": "Y",
+      "fhfn": "Ravi",
+      "fhmn": "Vishnu",
+      "fhln": "somani",
+      "dob": "23/02/1993",
+      "mbno": "9106514081",
+      "em": "ca.shalinisomani@gmail.com",
+      "gd": "F",
+      "dg": "director",
+      "dcupdtls": [
+        {
+          "id": 180968957,
+          "ty": "PHOT",
+          "ct": "image/jpeg",
+          "hash": "2b078bba165fb00d63b09afd4c699d5314beb53ae6beb789fffb258ab753f34b"
+        }
+      ],
+      "eid": 2,
+      "isasgcmpt": "Y",
+      "ispas": "Y",
+      "aadhaarflag": "Y"
+    }
+  ],
+  "opdtls": [
+    {
+      "iscitind": "Y",
+      "isNewSignatoryDetailsAfterSCN": false,
+      "fn": "SHALINI",
+      "mn": "Ravi",
+      "ln": " SOMANI",
+      "pan": {
+        "num": "BLLPR3974D"
+      },
+      "rsad": {
+        "cnty": "IND",
+        "pncd": "380004",
+        "dst": "GJAHM",
+        "loc": "Ahmedabad",
+        "stcd": "24",
+        "st": "A-1004",
+        "bnm": "nilkanth revenue near shakti house shaibag",
+        "bno": "A - 1004"
+      },
+      "isasg": "Y",
+      "fhfn": "Ravi",
+      "fhmn": "Vishnu",
+      "fhln": "somani",
+      "dob": "23/02/1993",
+      "mbno": "9106514081",
+      "em": "ca.shalinisomani@gmail.com",
+      "gd": "F",
+      "dg": "director",
+      "dcupdtls": [
+        {
+          "id": 180968957,
+          "ty": "PHOT",
+          "ct": "image/jpeg",
+          "hash": "2b078bba165fb00d63b09afd4c699d5314beb53ae6beb789fffb258ab753f34b"
+        }
+      ],
+      "eid": 1,
+      "isopcmpt": "Y"
+    }
+  ],
+  "validateMultiReg": "N",
+  "gdssvcdtls": {
+    "bzgddtls": [
+      {
+        "gdes": "WHEAT AND MESLIN",
+        "hsncd": "1001",
+        "eid": 3
+      }
+    ],
+    "bzsdtls": []
+  },
+  "stsidtls": {
+    "ebdtls": {
+      "hasebconn": "Y",
+      "ebdes": "Torrent Power Limited",
+      "ebcd": "TPA",
+      "canum": "12345678901"
+    }
+  },
+  "adhrflag": "Y",
+  "ppbzdtls": {
+    "add": {
+      "stcd": "24",
+      "pncd": "380004",
+      "dst": "GJAHM",
+      "loc": "Ahmedabad",
+      "lg": "72.5836560000001",
+      "lt": "23.050015",
+      "st": "nilkanth rervenue",
+      "bno": "A - 1004"
+    },
+    "ntbz": [
+      "BWH"
+    ],
+    "contdtls": {
+      "em": "ca.shalinisomani@gmail.com",
+      "mbno": "9106514081"
+    },
+    "hasaddl": "N",
+    "cj": {
+      "comrtcd": "WT",
+      "divsncd": "WT01",
+      "rangecd": "WT0104"
+    },
+    "sj": {
+      "stjdno": "GJ013",
+      "stjd": "unit"
+    },
+    "psnt": "CON",
+    "dcupdtls": [
+      {
+        "id": "20261024134747",
+        "ty": "ELCB",
+        "ct": "application/pdf",
+        "docName": "declaration_form.pdf",
+        "hash": "097a854004509d1a70983b91ca9e6dfabf51b835d40b72e0e818b97ec372e5d8",
+        "legibscore": "84.55"
+      }
+    ]
+  },
+  "adbzdtls": []
+}

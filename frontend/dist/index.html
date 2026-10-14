@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GST Registration Portal</title>
+    <title>GST Registration Portal</title>
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
@@ -442,6 +442,23 @@
                         <div style="display: flex; gap: 12px;">
                             <input type="text" id="trn-otp-input" class="captcha-input" placeholder="Enter Mobile/Email OTP" autocomplete="off"/>
                             <button class="btn accent" style="padding: 0 24px;" onclick="submitTrnOtp()">Submit</button>
+                        </div>
+                    </div>
+
+                    <!-- Final EVC OTP Verification Card (Hidden by default) -->
+                    <div id="evc-otp-card" class="captcha-card hidden" style="margin-top: 0; border: 1px solid #10b981;">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                            <div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(16, 185, 129, 0.2); color: #10b981; display: grid; place-items: center;">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                            </div>
+                            <div>
+                                <h4 style="color: #fff; font-size: 16px; margin: 0;">Final EVC OTP Verification</h4>
+                                <p style="color: #cbd5e1; font-size: 13px; margin: 0;">Enter OTP received on registered Email & Mobile to complete final submission</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 12px;">
+                            <input type="text" id="evc-otp-input" class="captcha-input" placeholder="Enter EVC OTP" autocomplete="off"/>
+                            <button class="btn accent" style="padding: 0 24px; background: #10b981; border-color: #10b981;" onclick="submitEvcOtp()">Validate & Submit</button>
                         </div>
                     </div>
 

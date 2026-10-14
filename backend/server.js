@@ -605,6 +605,21 @@ app.post('/api/automation/otp', (req, res) => {
     res.json({ message: 'OTPs received successfully' });
 });
 
+// POST /api/automation/evc_otp
+app.post('/api/automation/evc_otp', (req, res) => {
+    const { appId, otp } = req.body;
+    console.log(`[Automation] EVC OTP received for App ID: ${appId} - OTP: ${otp}`);
+
+    const child = activeAutomations.get(appId);
+    if (child) {
+        child.stdin.write(`${(otp || '').trim()}\n`);
+    } else {
+        console.log(`[Automation] No active process found for App ID: ${appId}`);
+    }
+
+    res.json({ message: 'EVC OTP received successfully' });
+});
+
 // Ping endpoint to keep Render awake
 app.get('/ping', (req, res) => {
     res.status(200).send('pong');

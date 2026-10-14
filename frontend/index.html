@@ -1,59 +1,80 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GST Registration Portal</title>
     <link rel="stylesheet" href="/styles.css?v=1791195984620">
 
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <style>
-        .error { color: #ef4444; font-size: 13px; margin-top: 4px; }
-        .hidden { display: none !important; }
-        /* Login Styles */
-        #app-container {
-            padding-top: 42px;
+        .error {
+            color: #ef4444;
+            font-size: 13px;
+            margin-top: 4px;
         }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Login Styles */
         .login-wrapper {
             display: flex;
             align-items: center;
             justify-content: center;
             background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
             position: fixed;
-            top: 42px;
+            top: 0;
             left: 0;
             width: 100%;
-            height: calc(100vh - 42px);
+            height: 100vh;
             z-index: 50;
             overflow: hidden;
         }
+
         @media (min-width: 769px) {
             .login-wrapper {
-                height: calc(145vh - 42px);
+                height: 145vh;
             }
         }
+
         /* Background animated circles */
-        .login-wrapper::before, .login-wrapper::after {
+        .login-wrapper::before,
+        .login-wrapper::after {
             content: '';
             position: absolute;
             border-radius: 50%;
             background: rgba(255, 255, 255, 0.1);
             animation: float 10s infinite ease-in-out alternate;
         }
+
         .login-wrapper::before {
-            width: 400px; height: 400px;
-            top: -100px; left: -100px;
+            width: 400px;
+            height: 400px;
+            top: -100px;
+            left: -100px;
             animation-delay: 0s;
         }
+
         .login-wrapper::after {
-            width: 300px; height: 300px;
-            bottom: -50px; right: -50px;
+            width: 300px;
+            height: 300px;
+            bottom: -50px;
+            right: -50px;
             animation-delay: -5s;
         }
+
         @keyframes float {
-            0% { transform: translateY(0) scale(1); }
-            100% { transform: translateY(20px) scale(1.05); }
+            0% {
+                transform: translateY(0) scale(1);
+            }
+
+            100% {
+                transform: translateY(20px) scale(1.05);
+            }
         }
 
         .login-card {
@@ -69,11 +90,19 @@
             transform: translateY(0);
             animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
         }
+
         @keyframes slideUp {
-            from { transform: translateY(30px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
+            from {
+                transform: translateY(30px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
         }
-        
+
         .login-card h1 {
             margin-top: 0;
             font-size: 28px;
@@ -83,6 +112,7 @@
             margin-bottom: 8px;
             letter-spacing: -0.5px;
         }
+
         .login-card p.subtitle {
             text-align: center;
             color: #64748b;
@@ -90,7 +120,11 @@
             margin-bottom: 32px;
         }
 
-        .login-card .input-group { margin-bottom: 20px; position: relative; }
+        .login-card .input-group {
+            margin-bottom: 20px;
+            position: relative;
+        }
+
         .login-card label {
             display: block;
             margin-bottom: 8px;
@@ -100,6 +134,7 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
+
         .login-card input {
             width: 100%;
             padding: 12px 16px;
@@ -111,12 +146,14 @@
             background: #f8fafc;
             transition: all 0.3s ease;
         }
+
         .login-card input:focus {
             outline: none;
             border-color: #3b82f6;
             background: #fff;
             box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
         }
+
         .login-card button {
             width: 100%;
             background: linear-gradient(to right, #2563eb, #1d4ed8);
@@ -131,19 +168,23 @@
             transition: all 0.3s ease;
             box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
         }
+
         .login-card button:hover {
             transform: translateY(-2px);
             box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
         }
+
         .login-card button:active {
             transform: translateY(0);
         }
+
         .login-card .toggle {
             text-align: center;
             margin-top: 24px;
             font-size: 14px;
             color: #64748b;
         }
+
         .login-card .toggle a {
             color: #2563eb;
             text-decoration: none;
@@ -151,22 +192,54 @@
             cursor: pointer;
             transition: color 0.2s;
         }
+
         .login-card .toggle a:hover {
             color: #1d4ed8;
             text-decoration: underline;
         }
+
         .modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
             z-index: 1000;
         }
+
         .modal {
-            background: #fff; padding: 24px; border-radius: 8px; width: 350px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            background: #fff;
+            padding: 24px;
+            border-radius: 8px;
+            width: 350px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
         }
-        .modal h2 { margin-top: 0; font-size: 18px; margin-bottom: 16px; color: #1e293b; }
-        .modal input { width: 100%; margin-bottom: 12px; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 4px; }
-        .modal .btn-group { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+        .modal h2 {
+            margin-top: 0;
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: #1e293b;
+        }
+
+        .modal input {
+            width: 100%;
+            margin-bottom: 12px;
+            padding: 8px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+        }
+
+        .modal .btn-group {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 16px;
+        }
 
         /* PDF Generation Modal */
         #pdf-gen-modal .modal {
@@ -175,16 +248,20 @@
             max-height: 90vh;
             overflow-y: auto;
         }
+
         #pdf-gen-content {
             background: white;
             color: black;
             padding: 20px;
         }
-    
+
         /* Global Loader */
         .global-loader {
             position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             background: rgba(255, 255, 255, 0.8);
             display: flex;
             align-items: center;
@@ -193,10 +270,12 @@
             opacity: 1;
             transition: opacity 0.3s ease;
         }
+
         .global-loader.hidden {
             opacity: 0;
             pointer-events: none;
         }
+
         .spinner {
             width: 50px;
             height: 50px;
@@ -205,24 +284,24 @@
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
+
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
-</style>
+    </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
-<body>
-    <!-- Global Site Under Maintenance Banner -->
-    <div id="site-maintenance-banner" style="position: fixed; top: 0; left: 0; width: 100%; height: 42px; background: linear-gradient(90deg, #b45309 0%, #d97706 50%, #ea580c 100%); color: #ffffff; padding: 0 16px; text-align: center; font-size: 13.5px; font-weight: 600; box-shadow: 0 2px 10px rgba(0,0,0,0.25); display: flex; align-items: center; justify-content: center; gap: 10px; z-index: 999999; letter-spacing: 0.3px;">
-        <span style="font-size: 18px;">🚧</span>
-        <span><strong>SITE IS UNDER MAINTENANCE:</strong> We are currently upgrading systems and testing new features locally.</span>
-        <span style="background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.4); padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase;">Testing Mode</span>
-    </div>
 
+<body>
     <!-- Global Loader -->
     <div id="global-loader" class="global-loader hidden">
         <div class="spinner"></div>
@@ -232,10 +311,6 @@
         <div class="login-card">
             <h1 id="title">Sign In</h1>
             <p class="subtitle" id="subtitle">Access the GST Registration Portal</p>
-            <div style="background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 10px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 24px; text-align: center; font-weight: 500; display: flex; align-items: center; gap: 8px; justify-content: center;">
-                <span>🚧</span>
-                <span><strong>Notice:</strong> Site is under maintenance. System testing is in progress.</span>
-            </div>
             <form id="authForm">
                 <div class="input-group">
                     <label>Email</label>
@@ -247,14 +322,18 @@
                 </div>
                 <div class="input-group">
                     <label>Password</label>
-                    <input type="password" id="password" placeholder="Enter your password" autocomplete="new-password" required>
+                    <input type="password" id="password" placeholder="Enter your password" autocomplete="new-password"
+                        required>
                 </div>
                 <div style="text-align: right; margin-top: -10px; margin-bottom: 15px;">
-                    <a href="#" id="forgotBtn" style="font-size: 13px; color: #2563eb; text-decoration: none; display: inline-block;">Forgot Password?</a>
+                    <a href="#" id="forgotBtn"
+                        style="font-size: 13px; color: #2563eb; text-decoration: none; display: inline-block;">Forgot
+                        Password?</a>
                 </div>
                 <div class="input-group signup-only" style="display: none;">
                     <label>Confirm Password</label>
-                    <input type="password" id="confirmPassword" placeholder="Confirm your password" autocomplete="new-password">
+                    <input type="password" id="confirmPassword" placeholder="Confirm your password"
+                        autocomplete="new-password">
                 </div>
                 <button type="submit" id="submitBtn">Sign In</button>
                 <div id="errorMsg" class="error"></div>
@@ -266,269 +345,345 @@
     </div>
 
     <div id="app-container" class="hidden">
-    <header class="top">
-        <div class="top-inner">
-            <div class="mark">
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="#ffffff">
-                    <rect x="2" y="2" width="6" height="6" />
-                    <rect x="16" y="2" width="6" height="6" />
-                    <rect x="9" y="9" width="6" height="6" />
-                    <rect x="2" y="16" width="6" height="6" />
-                    <rect x="16" y="16" width="6" height="6" />
-                </svg>
-            </div>
-            <div>
-                <h1>GST Registration Portal</h1>
-                <p>Applicant form</p>
-            </div>
-            <div class="top-actions" style="margin-left: auto; display: flex; gap: 12px; align-items: center;">
-                <span id="autosave-indicator" style="font-size: 13px; font-weight: 600; color: #4ade80; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(74, 222, 128, 0.3); border-radius: 9999px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 4px; transition: opacity 0.3s; opacity: 0.8;">Auto-saved ✓</span>
-                <span id="userEmailDisplay" style="font-size: 14px; font-weight: 500; color: #cbd5e1; margin-right: 8px;"></span>
-                  <button class="header-btn" onclick="navigateTo('/')">New Registration</button>
-                  <button class="header-btn header-btn-primary" onclick="navigateTo('/admin')">My Applications</button>
-                  <button id="logoutBtn" style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;">Logout</button>
-            </div>
-        </div>
-    </header>
-
-    <main class="app">
-        <div class="wizard-container" id="user-wizard-container">
-            <aside class="wizard-sidebar" style="display: flex; align-items: center; justify-content: space-between;">
-                <div class="wizard-steps" id="wizard-steps" style="flex: 1;">
-                    <!-- Sidebar populated by script.js?v=1791195984620 -->
+        <header class="top">
+            <div class="top-inner">
+                <div class="mark">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="#ffffff">
+                        <rect x="2" y="2" width="6" height="6" />
+                        <rect x="16" y="2" width="6" height="6" />
+                        <rect x="9" y="9" width="6" height="6" />
+                        <rect x="2" y="16" width="6" height="6" />
+                        <rect x="16" y="16" width="6" height="6" />
+                    </svg>
                 </div>
-                <div class="form-progress-container" style="display: flex; align-items: center; justify-content: center; margin-left: 24px;" title="Form Completion Progress">
-                    <div class="progress-circle" id="form-progress-circle">
-                        <span id="form-progress-text">0%</span>
-                    </div>
+                <div>
+                    <h1>GST Registration Portal</h1>
+                    <p>Applicant form</p>
                 </div>
-            </aside>
-            <div class="wizard-content" id="wizard-content-inner">
-                <!-- Content populated by script.js?v=1791195984620 -->
+                <div class="top-actions" style="margin-left: auto; display: flex; gap: 12px; align-items: center;">
+                    <span id="autosave-indicator"
+                        style="font-size: 13px; font-weight: 600; color: #4ade80; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(74, 222, 128, 0.3); border-radius: 9999px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 4px; transition: opacity 0.3s; opacity: 0.8;">Auto-saved
+                        ✓</span>
+                    <span id="userEmailDisplay"
+                        style="font-size: 14px; font-weight: 500; color: #cbd5e1; margin-right: 8px;"></span>
+                    <button class="header-btn" onclick="navigateTo('/')">New Registration</button>
+                    <button class="header-btn header-btn-primary" onclick="navigateTo('/admin')">My
+                        Applications</button>
+                    <button id="logoutBtn"
+                        style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer;">Logout</button>
+                </div>
             </div>
-        </div>
+        </header>
 
-        <div class="admin-dashboard hidden" id="admin-dashboard-container" style="padding: 24px; max-width: 1600px; margin: 0 auto; width: 100%;">
-            <!-- Admin Dashboard populated by script.js?v=1791195984620 -->
-        </div>
-
-        <div id="automation-platform-container" class="hidden" style="max-width: 1600px; margin: 0 auto; width: 100%; min-height: 80vh;">
-            <div class="automation-header">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <div>
-                        <h2 style="font-size: 28px; font-weight: 800; color: #fff; margin-bottom: 4px;">Automation Pipeline</h2>
-                        <p style="color: #94a3b8; font-size: 15px;">Securely executing registration on the official GST portal.</p>
+        <main class="app">
+            <div class="wizard-container" id="user-wizard-container">
+                <aside class="wizard-sidebar"
+                    style="display: flex; align-items: center; justify-content: space-between;">
+                    <div class="wizard-steps" id="wizard-steps" style="flex: 1;">
+                        <!-- Sidebar populated by script.js?v=1791195984620 -->
                     </div>
-                    <div style="display: flex; align-items: center; gap: 16px;">
-                        <div class="status-badge pulse-badge" id="auto-status-badge">INITIALIZING</div>
+                    <div class="form-progress-container"
+                        style="display: flex; align-items: center; justify-content: center; margin-left: 24px;"
+                        title="Form Completion Progress">
+                        <div class="progress-circle" id="form-progress-circle">
+                            <span id="form-progress-text">0%</span>
+                        </div>
                     </div>
+                </aside>
+                <div class="wizard-content" id="wizard-content-inner">
+                    <!-- Content populated by script.js?v=1791195984620 -->
                 </div>
             </div>
 
-            <div class="automation-grid">
-                <!-- Left: Visual Pipeline -->
-                <div class="pipeline-view">
-                    <h3 style="color: #e2e8f0; font-size: 18px; margin-bottom: 24px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                        Execution Steps
-                    </h3>
-                    
-                    <div class="pipeline-steps">
-                        <div class="p-step active" id="p-step-1">
-                            <div class="p-step-indicator">1</div>
-                            <div class="p-step-content">
-                                <h4>System Initialization</h4>
-                                <p>Starting secure background browser</p>
-                            </div>
-                        </div>
-                        <div class="p-step" id="p-step-2">
-                            <div class="p-step-indicator">2</div>
-                            <div class="p-step-content">
-                                <h4>Navigating to Portal</h4>
-                                <p>Accessing official GST registration endpoint</p>
-                            </div>
-                        </div>
-                        <div class="p-step" id="p-step-3">
-                            <div class="p-step-indicator">3</div>
-                            <div class="p-step-content">
-                                <h4>Data Injection</h4>
-                                <p>Filling mapped form payload automatically</p>
-                            </div>
-                        </div>
-                        <div class="p-step" id="p-step-4">
-                            <div class="p-step-indicator">4</div>
-                            <div class="p-step-content">
-                                <h4>Manual Verification</h4>
-                                <p>Awaiting Captcha / OTP input from admin</p>
-                            </div>
-                        </div>
-                        <div class="p-step" id="p-step-5">
-                            <div class="p-step-indicator">5</div>
-                            <div class="p-step-content">
-                                <h4>Finalizing Registration</h4>
-                                <p>Generating Temporary Reference Number (TRN)</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <div class="admin-dashboard hidden" id="admin-dashboard-container"
+                style="padding: 24px; max-width: 1600px; margin: 0 auto; width: 100%;">
+                <!-- Admin Dashboard populated by script.js?v=1791195984620 -->
+            </div>
 
-                <!-- Right Column -->
-                <div style="display: flex; flex-direction: column; gap: 24px;">
-                    
-                    <!-- Live Browser Preview -->
-                    <div id="live-preview-card" style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(148, 163, 184, 0.1); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;">
-                        <div style="background: rgba(15, 23, 42, 0.9); padding: 12px 16px; border-bottom: 1px solid rgba(148, 163, 184, 0.1); display: flex; align-items: center; justify-content: space-between;">
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <div style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e;"></div>
-                                <div style="font-family: 'Inter', sans-serif; color: #f8fafc; font-size: 14px; font-weight: 500;">Live Browser Preview</div>
-                            </div>
-                            <div style="color: #64748b; font-size: 12px; font-family: monospace;">PLAYWRIGHT ENGINE</div>
-                        </div>
-                        <div style="padding: 0; background: #000; display: flex; justify-content: center; align-items: center; min-height: 250px;">
-                            <img id="live-preview-img" src="" alt="Waiting for browser stream..." style="width: 100%; height: auto; object-fit: contain; opacity: 0.5; transition: opacity 0.3s ease;">
-                        </div>
-                    </div>
-
-                    <!-- Terminal -->
-                    <div class="terminal-view" style="height: auto;">
-                        <div class="terminal-header">
-                            <div style="display: flex; gap: 6px;">
-                                <div style="width: 12px; height: 12px; border-radius: 50%; background: #ef4444;"></div>
-                                <div style="width: 12px; height: 12px; border-radius: 50%; background: #facc15;"></div>
-                                <div style="width: 12px; height: 12px; border-radius: 50%; background: #22c55e;"></div>
-                            </div>
-                            <div style="font-family: monospace; color: #94a3b8; font-size: 13px;">Live Console Output</div>
-                        </div>
-                        <div id="automation-logs" class="terminal-body">
-                            <!-- Logs injected here -->
-                        </div>
-                    </div>
-
-                    <!-- Beautiful Captcha Card (Hidden by default) -->
-                    <div id="captcha-card" class="captcha-card hidden" style="margin-top: 0;">
-                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-                            <div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(250, 204, 21, 0.2); color: #facc15; display: grid; place-items: center;">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                            </div>
-                            <div>
-                                <h4 style="color: #fff; font-size: 16px; margin: 0;">Verification Required</h4>
-                                <p style="color: #cbd5e1; font-size: 13px; margin: 0;">Please solve the Captcha/OTP to proceed</p>
-                            </div>
-                        </div>
-                        <div style="margin-bottom: 12px; text-align: center;">
-                            <img id="captcha-img" src="" alt="Captcha" style="border-radius: 4px; display: none; max-width: 100%; border: 1px solid #475569;" />
-                        </div>
-                        <div style="display: flex; gap: 12px;">
-                            <input type="text" id="captcha-input" class="captcha-input" placeholder="Enter Captcha / OTP..." autocomplete="off"/>
-                            <button class="btn accent" style="padding: 0 24px;" onclick="submitCaptcha()">Verify</button>
-                        </div>
-                    </div>
-
-                    <!-- OTP Card (Hidden by default) -->
-                    <div id="otp-card" class="captcha-card hidden" style="margin-top: 0;">
-                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-                            <div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; display: grid; place-items: center;">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-                            </div>
-                            <div>
-                                <h4 style="color: #fff; font-size: 16px; margin: 0;">OTP Verification</h4>
-                                <p style="color: #cbd5e1; font-size: 13px; margin: 0;">Please enter the OTPs sent to the applicant</p>
-                            </div>
-                        </div>
-                        <div style="display: flex; flex-direction: column; gap: 12px;">
-                            <input type="text" id="mobile-otp-input" class="captcha-input" placeholder="Enter Mobile OTP" autocomplete="off"/>
-                            <input type="text" id="email-otp-input" class="captcha-input" placeholder="Enter Email OTP" autocomplete="off"/>
-                            <button class="btn accent" style="padding: 10px 24px; width: 100%;" onclick="submitOtp()">Submit OTPs</button>
-                        </div>
-                    </div>
-
-                    <!-- TRN Login OTP Card (Hidden by default) -->
-                    <div id="trn-otp-card" class="captcha-card hidden" style="margin-top: 0;">
-                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-                            <div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; display: grid; place-items: center;">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-                            </div>
-                            <div>
-                                <h4 style="color: #fff; font-size: 16px; margin: 0;">Login OTP Verification</h4>
-                                <p style="color: #cbd5e1; font-size: 13px; margin: 0;">Please enter the Mobile/Email OTP to login</p>
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 12px;">
-                            <input type="text" id="trn-otp-input" class="captcha-input" placeholder="Enter Mobile/Email OTP" autocomplete="off"/>
-                            <button class="btn accent" style="padding: 0 24px;" onclick="submitTrnOtp()">Submit</button>
-                        </div>
-                    </div>
-
-                    <!-- Final EVC OTP Verification Card (Hidden by default) -->
-                    <div id="evc-otp-card" class="captcha-card hidden" style="margin-top: 0; border: 1px solid #10b981;">
-                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-                            <div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(16, 185, 129, 0.2); color: #10b981; display: grid; place-items: center;">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                            </div>
-                            <div>
-                                <h4 style="color: #fff; font-size: 16px; margin: 0;">Final EVC OTP Verification</h4>
-                                <p style="color: #cbd5e1; font-size: 13px; margin: 0;">Enter OTP received on registered Email & Mobile to complete final submission</p>
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 12px;">
-                            <input type="text" id="evc-otp-input" class="captcha-input" placeholder="Enter EVC OTP" autocomplete="off"/>
-                            <button class="btn accent" style="padding: 0 24px; background: #10b981; border-color: #10b981;" onclick="submitEvcOtp()">Validate & Submit</button>
-                        </div>
-                    </div>
-
-                    <!-- Warning Card (Hidden by default) -->
-                    <div id="warning-card" class="captcha-card hidden" style="margin-top: 0; border: 1px solid #f97316;">
-                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-                            <div style="width: 40px; height: 40px; border-radius: 8px; background: rgba(249, 115, 22, 0.2); color: #f97316; display: grid; place-items: center;">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                            </div>
-                            <div>
-                                <h4 id="warning-card-title" style="color: #fff; font-size: 16px; margin: 0;">Address Warning</h4>
-                                <p id="warning-card-message" style="color: #cbd5e1; font-size: 13px; margin: 0;">Locality/Sub-Locality is not matching with the Pin-Code. Do you want to save the details?</p>
-                            </div>
-                        </div>
-                        <div id="warning-card-buttons" style="display: flex; gap: 12px;">
-                            <button class="btn accent" style="padding: 10px 24px; flex: 1; background: #22c55e; border-color: #22c55e;" onclick="submitWarningResponse('yes')">YES</button>
-                            <button class="btn" style="padding: 10px 24px; flex: 1; background: #ef4444; border-color: #ef4444; color: white;" onclick="submitWarningResponse('no')">NO</button>
-                        </div>
-                    </div>
-
-                    <!-- TRN Success Card (Hidden by default) -->
-                    <div id="trn-success-card" class="captcha-card hidden" style="margin-top: 0; border: 1px solid #4ade80; background: linear-gradient(145deg, #1e293b, #0f172a); text-align: center; padding: 40px 20px;">
-                        <div style="margin-bottom: 20px; display: inline-flex; justify-content: center; align-items: center; width: 64px; height: 64px; border-radius: 50%; background: rgba(74, 222, 128, 0.2); color: #4ade80;">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                        </div>
-                        <h2 style="color: #fff; font-size: 24px; margin: 0 0 10px 0;">Application Successfully Processed!</h2>
-                        <p style="color: #cbd5e1; font-size: 15px; margin: 0 0 30px 0;">Your Temporary Reference Number (TRN) is generated.</p>
-                        
-                        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; border-radius: 12px; padding: 20px; display: inline-block; margin-bottom: 30px;">
-                            <div style="font-size: 14px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">TRN Number</div>
-                            <div style="display: flex; align-items: center; gap: 15px;">
-                                <span id="trn-display-text" style="font-size: 32px; font-weight: bold; color: #4ade80; letter-spacing: 2px;">---------</span>
-                                <button class="btn ghost" style="padding: 8px; border-radius: 8px; color: #cbd5e1; background: rgba(255,255,255,0.05);" onclick="copyTrn()" title="Copy to Clipboard">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                                </button>
-                            </div>
-                        </div>
-
+            <div id="automation-platform-container" class="hidden"
+                style="max-width: 1600px; margin: 0 auto; width: 100%; min-height: 80vh;">
+                <div class="automation-header">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
                         <div>
-                            <a href="https://reg.gst.gov.in/registration/" target="_blank" class="btn accent" style="background: #3b82f6; border-color: #3b82f6; padding: 12px 30px; font-size: 16px; text-decoration: none; display: inline-flex; align-items: center; gap: 10px;">
-                                Go to GST Portal
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                            </a>
+                            <h2 style="font-size: 28px; font-weight: 800; color: #fff; margin-bottom: 4px;">Automation
+                                Pipeline</h2>
+                            <p style="color: #94a3b8; font-size: 15px;">Securely executing registration on the official
+                                GST portal.</p>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <div class="status-badge pulse-badge" id="auto-status-badge">INITIALIZING</div>
                         </div>
                     </div>
                 </div>
+
+                <div class="automation-grid">
+                    <!-- Left: Visual Pipeline -->
+                    <div class="pipeline-view">
+                        <h3
+                            style="color: #e2e8f0; font-size: 18px; margin-bottom: 24px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                            </svg>
+                            Execution Steps
+                        </h3>
+
+                        <div class="pipeline-steps">
+                            <div class="p-step active" id="p-step-1">
+                                <div class="p-step-indicator">1</div>
+                                <div class="p-step-content">
+                                    <h4>System Initialization</h4>
+                                    <p>Starting secure background browser</p>
+                                </div>
+                            </div>
+                            <div class="p-step" id="p-step-2">
+                                <div class="p-step-indicator">2</div>
+                                <div class="p-step-content">
+                                    <h4>Navigating to Portal</h4>
+                                    <p>Accessing official GST registration endpoint</p>
+                                </div>
+                            </div>
+                            <div class="p-step" id="p-step-3">
+                                <div class="p-step-indicator">3</div>
+                                <div class="p-step-content">
+                                    <h4>Data Injection</h4>
+                                    <p>Filling mapped form payload automatically</p>
+                                </div>
+                            </div>
+                            <div class="p-step" id="p-step-4">
+                                <div class="p-step-indicator">4</div>
+                                <div class="p-step-content">
+                                    <h4>Manual Verification</h4>
+                                    <p>Awaiting Captcha / OTP input from admin</p>
+                                </div>
+                            </div>
+                            <div class="p-step" id="p-step-5">
+                                <div class="p-step-indicator">5</div>
+                                <div class="p-step-content">
+                                    <h4>Finalizing Registration</h4>
+                                    <p>Generating Temporary Reference Number (TRN)</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column -->
+                    <div style="display: flex; flex-direction: column; gap: 24px;">
+
+                        <!-- Live Browser Preview -->
+                        <div id="live-preview-card"
+                            style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(148, 163, 184, 0.1); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;">
+                            <div
+                                style="background: rgba(15, 23, 42, 0.9); padding: 12px 16px; border-bottom: 1px solid rgba(148, 163, 184, 0.1); display: flex; align-items: center; justify-content: space-between;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <div
+                                        style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e;">
+                                    </div>
+                                    <div
+                                        style="font-family: 'Inter', sans-serif; color: #f8fafc; font-size: 14px; font-weight: 500;">
+                                        Live Browser Preview</div>
+                                </div>
+                                <div style="color: #64748b; font-size: 12px; font-family: monospace;">PLAYWRIGHT ENGINE
+                                </div>
+                            </div>
+                            <div
+                                style="padding: 0; background: #000; display: flex; justify-content: center; align-items: center; min-height: 250px;">
+                                <img id="live-preview-img" src="" alt="Waiting for browser stream..."
+                                    style="width: 100%; height: auto; object-fit: contain; opacity: 0.5; transition: opacity 0.3s ease;">
+                            </div>
+                        </div>
+
+                        <!-- Terminal -->
+                        <div class="terminal-view" style="height: auto;">
+                            <div class="terminal-header">
+                                <div style="display: flex; gap: 6px;">
+                                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #ef4444;">
+                                    </div>
+                                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #facc15;">
+                                    </div>
+                                    <div style="width: 12px; height: 12px; border-radius: 50%; background: #22c55e;">
+                                    </div>
+                                </div>
+                                <div style="font-family: monospace; color: #94a3b8; font-size: 13px;">Live Console
+                                    Output</div>
+                            </div>
+                            <div id="automation-logs" class="terminal-body">
+                                <!-- Logs injected here -->
+                            </div>
+                        </div>
+
+                        <!-- Beautiful Captcha Card (Hidden by default) -->
+                        <div id="captcha-card" class="captcha-card hidden" style="margin-top: 0;">
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                                <div
+                                    style="width: 40px; height: 40px; border-radius: 8px; background: rgba(250, 204, 21, 0.2); color: #facc15; display: grid; place-items: center;">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h4 style="color: #fff; font-size: 16px; margin: 0;">Verification Required</h4>
+                                    <p style="color: #cbd5e1; font-size: 13px; margin: 0;">Please solve the Captcha/OTP
+                                        to proceed</p>
+                                </div>
+                            </div>
+                            <div style="margin-bottom: 12px; text-align: center;">
+                                <img id="captcha-img" src="" alt="Captcha"
+                                    style="border-radius: 4px; display: none; max-width: 100%; border: 1px solid #475569;" />
+                            </div>
+                            <div style="display: flex; gap: 12px;">
+                                <input type="text" id="captcha-input" class="captcha-input"
+                                    placeholder="Enter Captcha / OTP..." autocomplete="off" />
+                                <button class="btn accent" style="padding: 0 24px;"
+                                    onclick="submitCaptcha()">Verify</button>
+                            </div>
+                        </div>
+
+                        <!-- OTP Card (Hidden by default) -->
+                        <div id="otp-card" class="captcha-card hidden" style="margin-top: 0;">
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                                <div
+                                    style="width: 40px; height: 40px; border-radius: 8px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; display: grid; place-items: center;">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+                                        <line x1="12" y1="18" x2="12.01" y2="18" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h4 style="color: #fff; font-size: 16px; margin: 0;">OTP Verification</h4>
+                                    <p style="color: #cbd5e1; font-size: 13px; margin: 0;">Please enter the OTPs sent to
+                                        the applicant</p>
+                                </div>
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 12px;">
+                                <input type="text" id="mobile-otp-input" class="captcha-input"
+                                    placeholder="Enter Mobile OTP" autocomplete="off" />
+                                <input type="text" id="email-otp-input" class="captcha-input"
+                                    placeholder="Enter Email OTP" autocomplete="off" />
+                                <button class="btn accent" style="padding: 10px 24px; width: 100%;"
+                                    onclick="submitOtp()">Submit OTPs</button>
+                            </div>
+                        </div>
+
+                        <!-- TRN Login OTP Card (Hidden by default) -->
+                        <div id="trn-otp-card" class="captcha-card hidden" style="margin-top: 0;">
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                                <div
+                                    style="width: 40px; height: 40px; border-radius: 8px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; display: grid; place-items: center;">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+                                        <line x1="12" y1="18" x2="12.01" y2="18" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h4 style="color: #fff; font-size: 16px; margin: 0;">Login OTP Verification</h4>
+                                    <p style="color: #cbd5e1; font-size: 13px; margin: 0;">Please enter the Mobile/Email
+                                        OTP to login</p>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 12px;">
+                                <input type="text" id="trn-otp-input" class="captcha-input"
+                                    placeholder="Enter Mobile/Email OTP" autocomplete="off" />
+                                <button class="btn accent" style="padding: 0 24px;"
+                                    onclick="submitTrnOtp()">Submit</button>
+                            </div>
+                        </div>
+
+                        <!-- Warning Card (Hidden by default) -->
+                        <div id="warning-card" class="captcha-card hidden"
+                            style="margin-top: 0; border: 1px solid #f97316;">
+                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                                <div
+                                    style="width: 40px; height: 40px; border-radius: 8px; background: rgba(249, 115, 22, 0.2); color: #f97316; display: grid; place-items: center;">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h4 style="color: #fff; font-size: 16px; margin: 0;">Address Warning</h4>
+                                    <p style="color: #cbd5e1; font-size: 13px; margin: 0;">Locality/Sub-Locality is not
+                                        matching with the Pin-Code. Do you want to save the details?</p>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 12px;">
+                                <button class="btn accent"
+                                    style="padding: 10px 24px; flex: 1; background: #22c55e; border-color: #22c55e;"
+                                    onclick="submitWarningResponse('yes')">YES</button>
+                                <button class="btn"
+                                    style="padding: 10px 24px; flex: 1; background: #ef4444; border-color: #ef4444; color: white;"
+                                    onclick="submitWarningResponse('no')">NO</button>
+                            </div>
+                        </div>
+
+                        <!-- TRN Success Card (Hidden by default) -->
+                        <div id="trn-success-card" class="captcha-card hidden"
+                            style="margin-top: 0; border: 1px solid #4ade80; background: linear-gradient(145deg, #1e293b, #0f172a); text-align: center; padding: 40px 20px;">
+                            <div
+                                style="margin-bottom: 20px; display: inline-flex; justify-content: center; align-items: center; width: 64px; height: 64px; border-radius: 50%; background: rgba(74, 222, 128, 0.2); color: #4ade80;">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                                </svg>
+                            </div>
+                            <h2 style="color: #fff; font-size: 24px; margin: 0 0 10px 0;">Application Successfully
+                                Processed!</h2>
+                            <p style="color: #cbd5e1; font-size: 15px; margin: 0 0 30px 0;">Your Temporary Reference
+                                Number (TRN) is generated.</p>
+
+                            <div
+                                style="background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; border-radius: 12px; padding: 20px; display: inline-block; margin-bottom: 30px;">
+                                <div
+                                    style="font-size: 14px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">
+                                    TRN Number</div>
+                                <div style="display: flex; align-items: center; gap: 15px;">
+                                    <span id="trn-display-text"
+                                        style="font-size: 32px; font-weight: bold; color: #4ade80; letter-spacing: 2px;">---------</span>
+                                    <button class="btn ghost"
+                                        style="padding: 8px; border-radius: 8px; color: #cbd5e1; background: rgba(255,255,255,0.05);"
+                                        onclick="copyTrn()" title="Copy to Clipboard">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round">
+                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <a href="https://reg.gst.gov.in/registration/" target="_blank" class="btn accent"
+                                    style="background: #3b82f6; border-color: #3b82f6; padding: 12px 30px; font-size: 16px; text-decoration: none; display: inline-flex; align-items: center; gap: 10px;">
+                                    Go to GST Portal
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                                        <polyline points="15 3 21 3 21 9"></polyline>
+                                        <line x1="10" y1="14" x2="21" y2="3"></line>
+                                    </svg>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 24px; display: flex; justify-content: flex-end;">
+                    <button class="btn" style="background: #334155; color: #fff; border: 1px solid #475569;"
+                        onclick="closeAutomationModal()">Exit Pipeline</button>
+                </div>
             </div>
-            
-            <div style="margin-top: 24px; display: flex; justify-content: flex-end;">
-                <button class="btn" style="background: #334155; color: #fff; border: 1px solid #475569;" onclick="closeAutomationModal()">Exit Pipeline</button>
-            </div>
-        </div>
-    </main>
+        </main>
     </div>
 
-        <!-- Multi-State Registration Configuration Modal -->
+    <!-- Multi-State Registration Configuration Modal -->
     <div id="multistate-modal" class="modal-overlay hidden">
         <div class="modal" style="width: 550px; max-width: 95vw; max-height: 85vh; overflow-y: auto;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -543,20 +698,29 @@
 
             <div id="multistate-modal-content">
                 <div style="margin-bottom: 14px;">
-                    <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Select Registered States (Multiple allowed):</label>
-                    <div id="msr-state-list" style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-height: 160px; overflow-y: auto; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc;">
+                    <label
+                        style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Select
+                        Registered States (Multiple allowed):</label>
+                    <div id="msr-state-list"
+                        style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-height: 160px; overflow-y: auto; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc;">
                         <!-- Checkboxes populated dynamically -->
                     </div>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
                     <div>
-                        <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Application Code (aplCd):</label>
-                        <input type="text" id="msr-aplCd" value="1219" style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;" />
+                        <label
+                            style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Application
+                            Code (aplCd):</label>
+                        <input type="text" id="msr-aplCd" value="1219"
+                            style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;" />
                     </div>
                     <div>
-                        <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Auth Rep Type (typAR):</label>
-                        <select id="msr-typAR" style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+                        <label
+                            style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Auth
+                            Rep Type (typAR):</label>
+                        <select id="msr-typAR"
+                            style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
                             <option value="TRP" selected>TRP (Tax Return Preparer / GST Practitioner)</option>
                             <option value="OTH">OTH (Others)</option>
                         </select>
@@ -565,24 +729,34 @@
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
                     <div>
-                        <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Constitution Code (cobz):</label>
-                        <input type="text" id="msr-cobz" value="PRO" style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;" />
+                        <label
+                            style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Constitution
+                            Code (cobz):</label>
+                        <input type="text" id="msr-cobz" value="PRO"
+                            style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;" />
                     </div>
                     <div>
-                        <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Security Token (secToken):</label>
-                        <input type="text" id="msr-secToken" value="M10260001219TRN" style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;" />
+                        <label
+                            style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #1e293b;">Security
+                            Token (secToken):</label>
+                        <input type="text" id="msr-secToken" value="M10260001219TRN"
+                            style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;" />
                     </div>
                 </div>
 
-                <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 10px; margin-bottom: 16px; font-size: 12px; color: #1e40af;">
-                    <strong>API Endpoint:</strong> <code>https://reg.gst.gov.in/registration/auth/api/multistate/submitcommoninfo</code><br>
-                    Automation will navigate to the Multi-State Registration portal (<code>/registration/msr</code>), fill Part A & verify Captcha/OTP, or directly authenticate to submit common info.
+                <div
+                    style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 10px; margin-bottom: 16px; font-size: 12px; color: #1e40af;">
+                    <strong>API Endpoint:</strong>
+                    <code>https://reg.gst.gov.in/registration/auth/api/multistate/submitcommoninfo</code><br>
+                    Automation will navigate to the Multi-State Registration portal (<code>/registration/msr</code>),
+                    fill Part A & verify Captcha/OTP, or directly authenticate to submit common info.
                 </div>
             </div>
 
             <div class="btn-group" style="display: flex; justify-content: flex-end; gap: 10px;">
                 <button class="btn ghost" onclick="closeMultiStateModal()">Cancel</button>
-                <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; color: white;" onclick="launchMultiStateAutomation()">🚀 Start Multi-State Automation</button>
+                <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; color: white;"
+                    onclick="launchMultiStateAutomation()">🚀 Start Multi-State Automation</button>
             </div>
         </div>
     </div>
@@ -603,47 +777,50 @@
     <div id="missing-fields-modal" class="modal-overlay hidden">
         <div class="modal" style="width: 400px; max-height: 80vh; overflow-y: auto;">
             <h2>Missing Important Fields</h2>
-            <p style="font-size: 13px; color: #64748b; margin-bottom: 16px;">Please fill in the missing fields before automatically registering.</p>
+            <p style="font-size: 13px; color: #64748b; margin-bottom: 16px;">Please fill in the missing fields before
+                automatically registering.</p>
             <div id="missing-fields-container"></div>
             <div class="btn-group">
-                <button class="btn ghost" onclick="document.getElementById('missing-fields-modal').classList.add('hidden')">Cancel</button>
+                <button class="btn ghost"
+                    onclick="document.getElementById('missing-fields-modal').classList.add('hidden')">Cancel</button>
                 <button class="btn accent" onclick="saveMissingFields()">Save</button>
             </div>
         </div>
     </div>
 
-    <!-- Auto-Generate Declaration section commented out as requested
     <div id="pdf-gen-modal" class="modal-overlay hidden">
         <div class="modal" style="display: flex; flex-direction: column;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2 style="margin:0;">Review Declaration Form</h2>
                 <div style="display: flex; gap: 10px;">
-                    <button class="btn ghost" onclick="document.getElementById('pdf-gen-modal').classList.add('hidden')">Cancel</button>
+                    <button class="btn ghost"
+                        onclick="document.getElementById('pdf-gen-modal').classList.add('hidden')">Cancel</button>
                     <button class="btn primary" id="btn-generate-pdf">Generate & Upload PDF</button>
                 </div>
             </div>
-            <div id="pdf-gen-content-container" style="flex: 1; border: 1px solid #e2e8f0; background: #f1f5f9; position: relative;">
-                <iframe id="pdf-preview-frame" style="width: 100%; height: 60vh; border: none; background: white;"></iframe>
+            <div id="pdf-gen-content-container"
+                style="flex: 1; border: 1px solid #e2e8f0; background: #f1f5f9; position: relative;">
+                <iframe id="pdf-preview-frame"
+                    style="width: 100%; height: 60vh; border: none; background: white;"></iframe>
             </div>
         </div>
     </div>
-    -->
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="/config.js?v=5"></script>
     <script src="/script.js?v=1791195984620"></script>
 
     <script>
-        window.showLoader = function() {
+        window.showLoader = function () {
             const loader = document.getElementById('global-loader');
-            if(loader) {
+            if (loader) {
                 loader.classList.remove('hidden');
                 loader.style.display = 'flex';
             }
         };
-        window.hideLoader = function() {
+        window.hideLoader = function () {
             const loader = document.getElementById('global-loader');
-            if(loader) {
+            if (loader) {
                 loader.classList.add('hidden');
                 setTimeout(() => loader.style.display = 'none', 300);
             }
@@ -651,4 +828,5 @@
     </script>
 
 </body>
+
 </html>

@@ -1,11 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
-const fs = require('fs');
-const path = require('path');
 const { Server } = require('socket.io');
 const { supabase, oldSupabase } = require('./database');
-const { buildGstApplicationPayload } = require('./utils/gst_payload_builder');
 
 const app = express();
 const PORT = 3002;
@@ -26,11 +23,11 @@ app.post('/api/log-ocr', async (req, res) => {
     console.log('\n[' + new Date().toISOString() + '] --- NEW OCR PROCESS LOG ---');
     console.log('Document Type:', req.body.type);
     console.log('Extracted Raw Text:', req.body.text);
-    if(req.body.extractedData) {
+    if (req.body.extractedData) {
         console.log('Final Extracted Data:', req.body.extractedData);
-        
+
         // Save to Supabase
-        if(req.body.type === 'pan') {
+        if (req.body.type === 'pan') {
             const { error } = await supabase.from('ocr_pan_data').insert({
                 pan_number: req.body.extractedData.pan || '',
                 legal_name: req.body.extractedData.name || '',
@@ -87,7 +84,7 @@ const authenticateToken = async (req, res, next) => {
                     user = { id: decoded.sub || 'user', email: decoded.email || decoded.user_metadata?.email || 'user@example.com' };
                 }
             }
-        } catch(e) {}
+        } catch (e) { }
     }
 
     if (!user) {
@@ -149,25 +146,6 @@ app.get('/api/hsn/:code', (req, res) => {
     });
 });
 
-// Helper: Compile and save official GST JSON payload to disk
-function saveGstJsonPayloadToDisk(appId, data, trn = '', draftId = '75028658') {
-    try {
-        const legalName = (data && data.legalName) || appId;
-        const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        const dirPath = path.join(__dirname, 'data', safeLegalName);
-        if (!fs.existsSync(dirPath)) {
-            fs.mkdirSync(dirPath, { recursive: true });
-        }
-        const payload = buildGstApplicationPayload(data, draftId, trn);
-        fs.writeFileSync(path.join(dirPath, 'gst_application_payload.json'), JSON.stringify(payload, null, 2), 'utf-8');
-        console.log(`[GST Payload] Successfully compiled and saved JSON payload for App ID ${appId} in data/${safeLegalName}`);
-        return payload;
-    } catch (e) {
-        console.error('[GST Payload] Warning: Could not save GST JSON payload:', e.message);
-        return null;
-    }
-}
-
 // POST /api/applications - Submit a new application
 app.post('/api/applications', authenticateToken, async (req, res) => {
     try {
@@ -185,14 +163,6 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
         const userEmail = (req.user && req.user.email) || req.body.userEmail || (data && data.userEmail) || (data && data.email) || null;
         const userId = (req.user && req.user.id) || null;
         const status = req.body.status || 'Pending'; // Default status
-
-        // Pre-compile official GST registration JSON payload and store in database & disk
-        try {
-            const gstPayload = saveGstJsonPayloadToDisk(appId, data, data.trn || '', data.draftId || '75028658');
-            if (gstPayload) data.gst_payload = gstPayload;
-        } catch (payloadErr) {
-            console.error('[GST Payload] Warning: Could not pre-compile GST JSON:', payloadErr.message);
-        }
 
         const { error } = await supabase.from('applications').upsert({
             appId: appId,
@@ -267,13 +237,16 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
     }
 
     let query = supabase.from('applications').select('*').eq('appId', id);
+    if (req.user.email !== 'admin@example.com') {
+        query = query.eq('userEmail', req.user.email);
+    }
     const { data: row, error: fetchErr } = await query.single();
 
     if (fetchErr || !row) {
-        return res.status(404).json({ error: 'Application not found' });
+        return res.status(404).json({ error: 'Application not found or unauthorized' });
     }
 
-    let appData = typeof row.data === 'string' ? JSON.parse(row.data) : (row.data || {});
+    let appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
 
     if (status === 'Accepted' || status === 'Approved') {
         try {
@@ -310,6 +283,7 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
                 appData.ppob_docFile = filePath;
             }
 
+            // Move PDF Declaration (Added missing logic to prevent enormous base64 payload overhead in DB)
             if (appData.authSig && appData.authSig.authSigProofFile && (appData.authSig.authSigProofFile.startsWith('data:image') || appData.authSig.authSigProofFile.startsWith('data:application/pdf'))) {
                 const base64Data = appData.authSig.authSigProofFile.replace(/^data:.*?;base64,/, "");
                 const ext = appData.authSig.authSigProofFile.includes('application/pdf') ? 'pdf' : 'jpg';
@@ -324,17 +298,16 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
         }
     }
 
-    const updatePayload = { status, data: appData };
-    if (req.body.arn) {
-        updatePayload.arn = req.body.arn;
-        appData.arn = req.body.arn;
+    let updateQuery = supabase.from('applications').update({ status, data: appData }).eq('appId', id);
+    if (req.user.email !== 'admin@example.com') {
+        updateQuery = updateQuery.eq('userEmail', req.user.email);
     }
-
-    let updateQuery = supabase.from('applications').update(updatePayload).eq('appId', id);
     const { error } = await updateQuery;
 
     try {
-        await oldSupabase.from('applications').update(updatePayload).eq('appId', id);
+        let oldUpdateQuery = oldSupabase.from('applications').update({ status, data: appData }).eq('appId', id);
+        if (req.user && req.user.email !== 'admin@example.com') oldUpdateQuery = oldUpdateQuery.eq('userEmail', req.user.email);
+        await oldUpdateQuery;
     } catch (e) {
         console.error('Error updating status in oldSupabase:', e.message);
     }
@@ -343,7 +316,7 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
         console.error('Error updating status:', error.message);
         return res.status(500).json({ error: 'Failed to update status' });
     }
-    res.json({ message: 'Status updated successfully', appId: id, status, arn: req.body.arn });
+    res.json({ message: 'Status updated successfully', appId: id, status });
 });
 
 // PUT /api/applications/:id - Update an existing application's data
@@ -354,14 +327,6 @@ app.put('/api/applications/:id', authenticateToken, async (req, res) => {
 
         if (!data) {
             return res.status(400).json({ error: 'data is required to update application' });
-        }
-
-        // Re-compile official GST registration JSON payload and save to disk & data
-        try {
-            const gstPayload = saveGstJsonPayloadToDisk(id, data, data.trn || '', data.draftId || '75028658');
-            if (gstPayload) data.gst_payload = gstPayload;
-        } catch (payloadErr) {
-            console.error('[GST Payload] Warning: Could not update GST JSON:', payloadErr.message);
         }
 
         const updatePayload = { data };
@@ -376,7 +341,7 @@ app.put('/api/applications/:id', authenticateToken, async (req, res) => {
         try {
             let oldUpdate = oldSupabase.from('applications').update(updatePayload).eq('appId', id);
             await oldUpdate;
-        } catch(oldErr) {
+        } catch (oldErr) {
             console.error('Error updating oldSupabase:', oldErr.message || oldErr);
         }
 
@@ -431,7 +396,7 @@ app.delete('/api/applications/:id', authenticateToken, async (req, res) => {
         // Also delete from oldSupabase so it doesn't reappear on dashboard refresh
         try {
             await oldSupabase.from('applications').delete().eq('appId', id);
-        } catch(oldErr) {
+        } catch (oldErr) {
             console.error('Error deleting from oldSupabase:', oldErr.message || oldErr);
         }
 
@@ -477,28 +442,20 @@ app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
         appData.masterTrn = masterTrn;
     }
 
-    // Update official GST registration JSON payload with primary TRN
-    try {
-        const gstPayload = saveGstJsonPayloadToDisk(id, appData, primaryTrn, appData.draftId || '75028658');
-        if (gstPayload) appData.gst_payload = gstPayload;
-    } catch (e) {}
-
     const updateFields = {
         trn: primaryTrn,
-        status: req.body.status || 'TRN Generated',
         data: appData
     };
-    if (req.body.arn) {
-        updateFields.arn = req.body.arn;
-        appData.arn = req.body.arn;
-    }
 
     let updateQuery = supabase.from('applications').update(updateFields).eq('appId', id);
+    if (req.user.email !== 'admin@example.com') {
+        updateQuery = updateQuery.eq('userEmail', req.user.email);
+    }
     const { error } = await updateQuery;
 
     try {
         await oldSupabase.from('applications').update(updateFields).eq('appId', id);
-    } catch (e) {}
+    } catch (e) { }
 
     if (error) {
         console.error('Error updating TRN in DB:', error.message);
@@ -509,96 +466,18 @@ app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
     res.json({ message: 'TRN saved successfully', appId: id, trn: primaryTrn, stateTrns: appData.stateTrns, masterTrn: appData.masterTrn });
 });
 
-// GET /api/applications/:id/gst-json - Download or inspect official GST JSON payload
-app.get('/api/applications/:id/gst-json', authenticateToken, async (req, res) => {
-    try {
-        const { id } = req.params;
-        let query = supabase.from('applications').select('*').eq('appId', id);
-        if (req.user && req.user.email !== 'admin@example.com') {
-            query = query.or(`userEmail.eq.${req.user.email},userEmail.is.null`);
-        }
-        const { data: row, error } = await query.single();
-        if (error || !row) return res.status(404).json({ error: 'Application not found' });
-
-        let appData = typeof row.data === 'string' ? JSON.parse(row.data) : (row.data || {});
-        let payload = appData.gst_payload;
-        if (!payload) {
-            payload = saveGstJsonPayloadToDisk(id, appData, row.trn || appData.trn || '', appData.draftId || '75028658');
-            if (payload) {
-                appData.gst_payload = payload;
-                supabase.from('applications').update({ data: appData }).eq('appId', id).catch(() => {});
-            }
-        }
-
-        if (req.query.download === '1' || req.query.download === 'true') {
-            const safeName = (appData.legalName || id).replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            res.setHeader('Content-Disposition', `attachment; filename="gst_payload_${safeName}.json"`);
-        }
-        res.setHeader('Content-Type', 'application/json');
-        res.json(payload || {});
-    } catch (err) {
-        res.status(500).json({ error: 'Failed to retrieve GST JSON: ' + (err.message || err) });
-    }
-});
-
 const { spawn } = require('child_process');
-
-// Logs directory for persistent automation and system logs
-const logsDir = path.join(__dirname, 'logs');
-if (!fs.existsSync(logsDir)) {
-    fs.mkdirSync(logsDir, { recursive: true });
-}
-
-function writeLog(appId, message, level = 'INFO') {
-    const timestamp = new Date().toISOString();
-    const timeDisplay = new Date().toLocaleTimeString();
-    const cleanAppId = appId || 'SYSTEM';
-    const consoleMsg = `[${timeDisplay}] [${level}] [${cleanAppId}] ${message}`;
-    const fileMsg = `[${timestamp}] [${level}] ${message}\n`;
-
-    // 1. Output clearly to backend terminal
-    if (level === 'ERROR') {
-        console.error(consoleMsg);
-    } else if (level === 'WARN') {
-        console.warn(consoleMsg);
-    } else {
-        console.log(consoleMsg);
-    }
-
-    // 2. Persist to application-specific and global log files
-    try {
-        if (appId) {
-            fs.appendFileSync(path.join(logsDir, `automation_${appId}.log`), fileMsg, 'utf-8');
-        }
-        fs.appendFileSync(path.join(logsDir, 'system_activity.log'), `[${cleanAppId}] ${fileMsg}`, 'utf-8');
-    } catch (e) {}
-}
+const path = require('path');
 
 const activeAutomations = new Map();
-
-// GET /api/applications/:id/logs - View automation log history
-app.get('/api/applications/:id/logs', authenticateToken, (req, res) => {
-    const { id } = req.params;
-    const logPath = path.join(logsDir, `automation_${id}.log`);
-    if (fs.existsSync(logPath)) {
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        return res.sendFile(logPath);
-    }
-    res.status(404).send('No logs found for this application ID.');
-});
 
 // POST /api/automation/start
 app.post('/api/automation/start', authenticateToken, (req, res) => {
     const { appId, mode, multiStateConfig } = req.body;
     const automationMode = mode || 'regular';
-    writeLog(appId, `Starting automation process (Mode: ${automationMode})`, 'INIT');
+    console.log(`[Automation] Starting automation for App ID: ${appId} (Mode: ${automationMode})`);
 
     io.to(appId).emit('automation_update', { status: `INITIALIZING: Launching ${automationMode === 'multistate' ? 'Multi-State' : 'Regular'} automation process...` });
-
-    // Update status to 'In Progress' immediately
-    supabase.from('applications').update({ status: 'In Progress' }).eq('appId', appId)
-        .then(() => oldSupabase.from('applications').update({ status: 'In Progress' }).eq('appId', appId).catch(() => {}))
-        .catch(err => writeLog(appId, `Failed to set In Progress status in DB: ${err.message}`, 'WARN'));
 
     // Spawn the Playwright runner
     const runnerDir = path.join(__dirname, '..', 'automation');
@@ -619,50 +498,29 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
         const lines = data.toString().split('\n');
         for (let line of lines) {
             line = line.trim();
-            if (!line) continue;
-
             if (line.startsWith('STATUS:')) {
-                const statusMsg = line.replace('STATUS:', '').trim();
-                writeLog(appId, statusMsg, 'STATUS');
+                const statusMsg = line.replace('STATUS:', '');
                 io.to(appId).emit('automation_update', { status: statusMsg });
             } else if (line.startsWith('CAPTCHA_IMAGE:')) {
                 const imageSrc = line.replace('CAPTCHA_IMAGE:', '');
-                writeLog(appId, 'Captcha image received and broadcast to client', 'INFO');
                 io.to(appId).emit('automation_captcha_image', imageSrc);
             } else if (line.startsWith('SCREENSHOT:')) {
                 const base64 = line.replace('SCREENSHOT:', '');
                 io.to(appId).emit('automation_screenshot', { appId, image: base64 });
             } else if (line.startsWith('WAITING_FOR_WARNING_RESPONSE')) {
-                let warningPayload = {
-                    title: 'Address Warning',
-                    message: 'Locality/Sub-Locality is not matching with the Pin-Code. Do you want to save the details?',
-                    buttons: ['YES', 'NO']
-                };
-                if (line.includes(':')) {
-                    const raw = line.substring(line.indexOf(':') + 1).trim();
-                    try {
-                        warningPayload = JSON.parse(raw);
-                    } catch (e) {
-                        warningPayload.message = raw;
-                    }
-                }
-                writeLog(appId, `Portal Warning prompt: ${warningPayload.message}`, 'WARN');
-                io.to(appId).emit('automation_warning', warningPayload);
-            } else {
-                writeLog(appId, line, 'RUNNER');
+                io.to(appId).emit('automation_warning');
+            } else if (line) {
+                console.log(`[Runner Log]: ${line}`);
             }
         }
     });
 
     child.stderr.on('data', (data) => {
-        const errText = data.toString().trim();
-        if (errText) {
-            writeLog(appId, errText, 'ERROR');
-        }
+        console.error(`[Runner Error]: ${data.toString()}`);
     });
 
     child.on('close', (code) => {
-        writeLog(appId, `Process finished with exit code ${code}`, code === 0 ? 'INFO' : 'WARN');
+        console.log(`[Automation] Process exited with code ${code}`);
         activeAutomations.delete(appId);
         if (code !== 0) {
             io.to(appId).emit('automation_update', { status: 'Failed: Automation process crashed unexpectedly.' });
@@ -675,15 +533,13 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
 // POST /api/automation/stop
 app.post('/api/automation/stop', (req, res) => {
     const { appId } = req.body;
-    writeLog(appId, 'Received request to stop automation', 'ACTION');
+    console.log(`[Automation] Stopping automation for App ID: ${appId}`);
 
     const child = activeAutomations.get(appId);
     if (child) {
         child.kill(); // Kill the playwright runner process
         activeAutomations.delete(appId);
-        writeLog(appId, 'Process killed successfully', 'INFO');
-    } else {
-        writeLog(appId, 'No active process found to kill', 'WARN');
+        console.log(`[Automation] Process killed for App ID: ${appId}`);
     }
     res.json({ message: 'Automation stopped successfully' });
 });
@@ -691,13 +547,14 @@ app.post('/api/automation/stop', (req, res) => {
 // POST /api/automation/captcha
 app.post('/api/automation/captcha', (req, res) => {
     const { appId, captcha } = req.body;
-    writeLog(appId, `Captcha received from user: ${captcha}`, 'ACTION');
+    console.log(`[Automation] Captcha received for App ID: ${appId} - Captcha: ${captcha}`);
 
     const child = activeAutomations.get(appId);
     if (child) {
+        // Send the captcha text directly to the running headless browser script
         child.stdin.write(captcha + '\n');
     } else {
-        writeLog(appId, 'No active process found for App ID on captcha submission', 'WARN');
+        console.log(`[Automation] No active process found for App ID: ${appId}`);
     }
 
     res.json({ message: 'Captcha received successfully' });
@@ -706,13 +563,14 @@ app.post('/api/automation/captcha', (req, res) => {
 // POST /api/automation/warning_response
 app.post('/api/automation/warning_response', (req, res) => {
     const { appId, choice } = req.body;
-    writeLog(appId, `Warning modal choice received from user: ${choice}`, 'ACTION');
+    console.log(`[Automation] Warning response received for App ID: ${appId} - Choice: ${choice}`);
 
     const child = activeAutomations.get(appId);
     if (child) {
+        // Send the choice directly to the running headless browser script
         child.stdin.write(choice + '\n');
     } else {
-        writeLog(appId, 'No active process found for App ID on warning response', 'WARN');
+        console.log(`[Automation] No active process found for App ID: ${appId}`);
     }
 
     res.json({ message: 'Warning response received successfully' });
@@ -721,13 +579,14 @@ app.post('/api/automation/warning_response', (req, res) => {
 // POST /api/automation/otp
 app.post('/api/automation/otp', (req, res) => {
     const { appId, mobileOtp, emailOtp } = req.body;
-    writeLog(appId, 'Part A OTPs received from user: Mobile & Email', 'ACTION');
+    console.log(`[Automation] OTPs received for App ID: ${appId}`);
 
     const child = activeAutomations.get(appId);
     if (child) {
+        // Send both OTPs comma-separated to the running headless browser script
         child.stdin.write(`${mobileOtp},${emailOtp}\n`);
     } else {
-        writeLog(appId, 'No active process found for App ID on OTP submission', 'WARN');
+        console.log(`[Automation] No active process found for App ID: ${appId}`);
     }
 
     res.json({ message: 'OTPs received successfully' });
@@ -736,13 +595,13 @@ app.post('/api/automation/otp', (req, res) => {
 // POST /api/automation/evc_otp
 app.post('/api/automation/evc_otp', (req, res) => {
     const { appId, otp } = req.body;
-    writeLog(appId, `Final EVC OTP received from user: ${otp}`, 'ACTION');
+    console.log(`[Automation] EVC OTP received for App ID: ${appId} - OTP: ${otp}`);
 
     const child = activeAutomations.get(appId);
     if (child) {
         child.stdin.write(`${(otp || '').trim()}\n`);
     } else {
-        writeLog(appId, 'No active process found for App ID on EVC OTP submission', 'WARN');
+        console.log(`[Automation] No active process found for App ID: ${appId}`);
     }
 
     res.json({ message: 'EVC OTP received successfully' });

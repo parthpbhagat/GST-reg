@@ -3,8 +3,10 @@ backend/database.sqlite
 backend/uploads/
 backend/data/
 backend/logs/
-.DS_Store
-.env
 frontend/public/config.js
-frontend/dist/config.js
+frontend/dist/
+*.log
 *.zip
+*.sqlite
+.env
+.DS_Store

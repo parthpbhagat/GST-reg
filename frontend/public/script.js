@@ -1,4 +1,4 @@
-window.resetFormDraft = function() {
+window.resetFormDraft = function () {
     if (confirm("Are you sure you want to clear this draft and start fresh? All unsaved inputs will be erased.")) {
         if (typeof window.clearAutosave === "function") window.clearAutosave();
         localStorage.removeItem("gst_autosave");
@@ -30,7 +30,7 @@ if (window.supabase) {
 }
 
 
-window.getFreshToken = async function() {
+window.getFreshToken = async function () {
     if (!supabaseClient) return localStorage.getItem('sb_token');
     try {
         const { data: { session } } = await supabaseClient.auth.getSession();
@@ -38,7 +38,7 @@ window.getFreshToken = async function() {
             localStorage.setItem('sb_token', session.access_token);
             return session.access_token;
         }
-    } catch(e) {}
+    } catch (e) { }
     return localStorage.getItem('sb_token');
 };
 
@@ -61,7 +61,7 @@ async function checkAuth() {
     }
 
     let { data: { session }, error } = await supabaseClient.auth.getSession();
-    
+
     if (!session) {
         const res2 = await oldSupabaseClient.auth.getSession();
         if (res2.data && res2.data.session) {
@@ -139,7 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const { data, error } = await supabaseClient.auth.resetPasswordForEmail(email, {
                 redirectTo: window.location.origin + '/reset-password.html',
             });
-            await oldSupabaseClient.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '/reset-password.html' }).catch(e=>console.error(e));
+            await oldSupabaseClient.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '/reset-password.html' }).catch(e => console.error(e));
 
             if (error) {
                 errorMsg.style.color = '#dc2626';
@@ -183,10 +183,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (error) {
                         const res2 = await oldSupabaseClient.auth.signInWithPassword({ email, password });
                         if (res2.data && res2.data.session) {
-                             data = res2.data;
-                             error = null;
+                            data = res2.data;
+                            error = null;
                         } else if (res2.error && res2.error.message !== 'Invalid login credentials') {
-                             error = res2.error;
+                            error = res2.error;
                         }
                     }
                     if (error) throw error;
@@ -196,12 +196,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     checkAuth();
                 } else {
                     const { data, error } = await supabaseClient.auth.signUp({ email, password });
-                    await oldSupabaseClient.auth.signUp({ email, password }).catch(e=>console.error(e));
+                    await oldSupabaseClient.auth.signUp({ email, password }).catch(e => console.error(e));
                     if (error) throw error;
 
                     // Save password and mobile in database
                     await supabaseClient.from('user_credentials').insert([{ email: email, mobile: mobile, password: password }]);
-                    try { await oldSupabaseClient.from('user_credentials').insert([{ email: email, mobile: mobile, password: password }]); } catch(e) { console.error(e); }
+                    try { await oldSupabaseClient.from('user_credentials').insert([{ email: email, mobile: mobile, password: password }]); } catch (e) { console.error(e); }
 
                     if (data.session) {
                         localStorage.setItem('sb_token', data.session.access_token);
@@ -795,7 +795,7 @@ window.form = {
 };
 
 // ---------------- FORM AUTO-SAVE ENGINE ----------------
-window.saveAutosave = function() {
+window.saveAutosave = function () {
     try {
         if (!window.form) return;
         const stateToSave = {
@@ -814,12 +814,12 @@ window.saveAutosave = function() {
                 if (indicator) indicator.style.opacity = '0.6';
             }, 2500);
         }
-    } catch(e) {
+    } catch (e) {
         console.warn('Autosave error:', e);
     }
 };
 
-window.loadAutosave = function() {
+window.loadAutosave = function () {
     try {
         const raw = localStorage.getItem('gst_autosave');
         if (!raw) return;
@@ -834,15 +834,15 @@ window.loadAutosave = function() {
             if (typeof renderSidebar === 'function') renderSidebar();
             if (typeof renderContent === 'function') renderContent();
         }
-    } catch(e) {
+    } catch (e) {
         console.warn('Load autosave error:', e);
     }
 };
 
-window.clearAutosave = function() {
+window.clearAutosave = function () {
     try {
         localStorage.removeItem('gst_autosave');
-    } catch(e) {}
+    } catch (e) { }
 };
 
 // Auto-restore on load
@@ -973,7 +973,7 @@ function validateStep(targetStep) {
     return true;
 }
 
-window.validateFullForm = function() {
+window.validateFullForm = function () {
     for (let s = 0; s <= 4; s++) {
         if (s === 3) continue; // Authorized representative is optional
         if (!validateStep(s)) {
@@ -1294,8 +1294,8 @@ window.submitApplication = async function () {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer ' + token
             },
-            body: JSON.stringify({ 
-                appId, 
+            body: JSON.stringify({
+                appId,
                 data: payload,
                 userEmail: payload.email || undefined
             })
@@ -1340,9 +1340,9 @@ window.submitApplication = async function () {
                         status: form._originalStatus || 'Pending',
                         userEmail: payload.email || null,
                         trn: null
-                    }, { onConflict: 'appId' }).catch(() => {});
+                    }, { onConflict: 'appId' }).catch(() => { });
                 }
-            } catch(fallbackErr) {
+            } catch (fallbackErr) {
                 console.error("Client fallback submit save error:", fallbackErr);
             }
 
@@ -1563,39 +1563,6 @@ function formatStateWiseTrnsHtml(app) {
     return html;
 }
 
-window.createNewApplication = function () {
-    if (typeof window.clearAutosave === 'function') {
-        window.clearAutosave();
-    } else {
-        localStorage.removeItem('gst_autosave');
-    }
-    if (window.form) {
-        delete window.form._appId;
-        delete window.form._originalStatus;
-    }
-    window.form = {
-        goods_hsn: [], goods_sac: [],
-        taxpayerType: "", legalName: "", tradeName: "", pan: "", email: "", mobile: "", state: "", district: "",
-        businessConstitution: "", dateOfCommencement: "", dateOfLiability: "", reasonToObtainRegistration: "", businessDistrict: "",
-        rule14A: "",
-        existingRegistrationType: "", existingRegistrationNo: "", existingRegistrationDate: "",
-        proofOfConstitutionType: "", proofOfConstitutionFile: "", documentForTradeNameFile: "",
-        ppob_building: "", ppob_flatNo: "", ppob_floor: "", ppob_street: "", ppob_locality: "", ppob_city: "",
-        ppob_state: "", ppob_district: "", ppob_pincode: "", ppob_country: "India", ppob_landmark: "", ppob_latitude: "", ppob_longitude: "",
-        ppob_stateJurisdiction: "", ppob_commissionerate: "", ppob_division: "", ppob_range: "",
-        ppob_email: "", ppob_stdCode: "", ppob_telephone: "", ppob_mobile: "", ppob_faxStdCode: "", ppob_fax: "",
-        ppob_natureOfPossession: "", ppob_doc: "", ppob_docFile: "",
-        ppob_natureOfBusiness: { bondedWarehouse: false, factoryManufacturing: false, leasingBusiness: false, retailBusiness: false, worksContract: false, eouStpEhtp: false, import: false, officeSaleOffice: false, warehouseDepot: false, others: false, export: false, supplierOfServices: false, recipientOfGoodsOrServices: false, wholesaleBusiness: false },
-        p1: JSON.parse(JSON.stringify(window.defaultPromoter)),
-        a1: JSON.parse(JSON.stringify(window.defaultAuthSig)),
-        stateSpecific_electricityBoard: "", stateSpecific_electricityConsumerNo: "",
-        stateSpecific_ptEcNo: "", stateSpecific_ptRcNo: "",
-        stateSpecific_exciseLicenseNo: "", stateSpecific_exciseLicenseHolder: ""
-    };
-    if (typeof isPreview !== 'undefined') isPreview = false;
-    navigateTo('/form');
-    if (typeof setStep === 'function') setStep(0);
-};
 
 window.renderAdminDashboard = async function () {
     const container = document.getElementById('admin-dashboard-container');
@@ -1604,30 +1571,31 @@ window.renderAdminDashboard = async function () {
         const app = allApps.find(a => a.appId === currentPreviewAppId);
         if (!app) return;
 
-        const isUserAdmin = (localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz') || 
-                            (document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com');
+        const isUserAdmin = (localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz') ||
+            (document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com');
 
         let actionButtons = '';
         if (isUserAdmin) {
-            actionButtons = `
-                <button class="btn accent" style="background: #2563eb; border-color: #2563eb; color: white; font-weight: 600; margin-right: 5px;" onclick="registerApplication('${app.appId}')" title="Run Regular Single-State GST Automation">⚡ Register (Only Registration)</button>
-                <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-right: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
-                <button class="btn accent" style="background: #0284c7; border-color: #0284c7; color: white; margin-right: 5px;" onclick="downloadGstJson('${app.appId}')" title="Download Official GST Portal JSON Payload">📄 GST Portal JSON</button>
-                <button class="btn accent" style="background: #16a34a; border-color: #16a34a; color: white; margin-right: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit / Submit</button>
-                <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-right: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate</button>`;
+            actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-right: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
+                             <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-right: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>`;
             if (app.status === 'Pending') {
-                actionButtons += `<button class="btn accent" style="background: #22c55e; border-color: #22c55e; margin-right: 5px;" onclick="updateAppStatus('${app.appId}', 'Accepted')">Accept</button>
-                         <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-right: 5px;" onclick="updateAppStatus('${app.appId}', 'Rejected')">Reject</button>`;
+                actionButtons += `<button class="btn accent" style="background: #22c55e; border-color: #22c55e;" onclick="updateAppStatus('${app.appId}', 'Accepted')">Accept</button>
+                         <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-left: 5px;" onclick="updateAppStatus('${app.appId}', 'Rejected')">Reject</button>`;
+            } else if (app.status === 'Accepted' || app.status === 'Registered') {
+                actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6;" onclick="registerApplication('${app.appId}')">Register Automatically</button>
+                         <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
+                         <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>
+                         <button class="btn accent" style="margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
+                         <button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>`;
+            } else if (app.status === 'Rejected') {
+                actionButtons = `<button class="btn accent" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
+                         <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')">📋 Duplicate / Multi-State</button>`;
             }
-            actionButtons += `<button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-right: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>
-                             <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white;" onclick="deleteApplication('${app.appId}')">🗑️ Delete Application</button>`;
         } else {
             actionButtons = `
-                <button class="btn accent" style="background: #2563eb; border-color: #2563eb; color: white; font-weight: 600;" onclick="registerApplication('${app.appId}')" title="Run Regular Single-State GST Automation">⚡ Register (Only Registration)</button>
-                <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
-                <button class="btn accent" style="background: #0284c7; border-color: #0284c7; color: white; margin-left: 5px;" onclick="downloadGstJson('${app.appId}')" title="Download Official GST Portal JSON Payload">📄 GST Portal JSON</button>
-                <button class="btn accent" style="background: #16a34a; border-color: #16a34a; color: white; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit / Submit</button>
-                <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate</button>
+                <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
+                <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>
+                <button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
                 <button class="btn accent" style="background: #6366f1; border-color: #6366f1; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Print Declaration</button>
                 <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">🗑️ Delete Application</button>
             `;
@@ -1676,27 +1644,16 @@ window.renderAdminDashboard = async function () {
     if (typeof window.hideLoader === 'function') window.hideLoader();
 
     let html = `<div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <div>
                 <h2 style="margin: 0;">${(localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz' || document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com') ? 'Admin Dashboard - Applications' : 'My Applications'}</h2>
                 <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">${(localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz' || document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com') ? 'Review, edit, accept, or reject applicant submissions.' : 'Manage, edit, update, or delete your submitted applications.'}</p>
             </div>
-            <div style="display: flex; gap: 10px; align-items: center;">
-                <button class="btn accent" style="font-size: 14px; padding: 8px 16px; background: #16a34a; border-color: #16a34a; color: white; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;" onclick="createNewApplication()" title="Fill and submit a new GST application">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Submit Application
-                </button>
-                <button class="btn" style="font-size: 14px; padding: 8px 16px; background: #3b82f6; border-color: #3b82f6; color: white; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;" onclick="navigateTo('/form')">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg> Home
-                </button>
-            </div>
-        </div>
-        ${allApps.length === 0 ? `
-        <div style="padding: 30px; text-align: center; background: #f8fafc; border-radius: 8px; border: 1px dashed #cbd5e1; margin-top: 20px;">
-            <p style="color: #64748b; font-size: 15px; margin-bottom: 15px;">No applications submitted yet.</p>
-            <button class="btn accent" style="font-size: 14px; padding: 10px 20px; background: #16a34a; border-color: #16a34a; color: white; font-weight: 600; cursor: pointer;" onclick="createNewApplication()">
-                ➕ Submit Application
+            <button class="btn accent" style="font-size: 14px; padding: 8px 16px; background: #3b82f6; border-color: #3b82f6; color: white;" onclick="navigateTo('/form')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg> Home
             </button>
-        </div>` : `
+        </div>
+        ${allApps.length === 0 ? '<p>No applications submitted yet.</p>' : `
         <table style="width: 100%; border-collapse: collapse; margin-top: 20px; text-align: left;">
             <thead>
                 <tr style="border-bottom: 2px solid var(--border-color);">
@@ -1720,11 +1677,9 @@ window.renderAdminDashboard = async function () {
                         <td style="padding: 10px;"><span style="padding: 2px 6px; border-radius: 4px; font-size: 12px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span></td>
                         <td style="padding: 10px;">
                             <button class="btn" style="padding: 4px 10px; font-size: 13px;" onclick="previewApplication('${app.appId}')">Preview</button>
-                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #2563eb; border: none; margin-left: 5px; font-weight: 600;" onclick="registerApplication('${app.appId}')" title="Run Regular Single-State GST Automation">⚡ Register</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #0ea5e9; border: none; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #8b5cf6; border: none; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate application for Multi-State Registration">📋 Duplicate</button>
-                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #0284c7; border: none; margin-left: 5px;" onclick="downloadGstJson('${app.appId}')" title="Download Official GST Portal JSON Payload">📄 JSON</button>
-                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #3b82f6; border: none; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit / Submit</button>
+                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #3b82f6; border: none; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #6366f1; border: none; margin-left: 5px;" onclick="window.open('/declaration_template.html?appId=${app.appId}', '_blank')">Declaration Form</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #ef4444; border: none; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">Delete</button>
                         </td>
@@ -1735,35 +1690,6 @@ window.renderAdminDashboard = async function () {
         `}
     </div>`;
     container.innerHTML = html;
-};
-
-window.downloadGstJson = async function (id) {
-    try {
-        if (typeof window.showLoader === 'function') window.showLoader();
-        const token = await window.getFreshToken();
-        const res = await fetch(`${API_BASE_URL}/api/applications/${id}/gst-json`, {
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        if (typeof window.hideLoader === 'function') window.hideLoader();
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.error || 'Failed to fetch GST JSON');
-        }
-        const json = await res.json();
-        const jsonStr = JSON.stringify(json, null, 2);
-        const blob = new Blob([jsonStr], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `gst_application_${id}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    } catch (e) {
-        if (typeof window.hideLoader === 'function') window.hideLoader();
-        alert('Could not download GST JSON: ' + e.message);
-    }
 };
 
 window.previewApplication = function (id) {
@@ -1800,9 +1726,9 @@ window.deleteApplication = async function (id) {
                     if (!clErr) deletedViaClient = true;
                 }
                 if (typeof oldSupabaseClient !== 'undefined' && oldSupabaseClient) {
-                    await oldSupabaseClient.from('applications').delete().eq('appId', id).catch(() => {});
+                    await oldSupabaseClient.from('applications').delete().eq('appId', id).catch(() => { });
                 }
-            } catch(fallbackErr) {
+            } catch (fallbackErr) {
                 console.error("Client fallback delete error:", fallbackErr);
             }
 
@@ -1933,9 +1859,9 @@ window.duplicateApplication = async function (id) {
                         status: 'Accepted',
                         userEmail: userEmail || null,
                         trn: null
-                    }, { onConflict: 'appId' }).catch(() => {});
+                    }, { onConflict: 'appId' }).catch(() => { });
                 }
-            } catch(fallbackErr) {
+            } catch (fallbackErr) {
                 console.error("Client fallback duplicate save error:", fallbackErr);
             }
 
@@ -2344,20 +2270,6 @@ window.startAutomationPipeline = async function (id, mode = 'regular', multiStat
                 badge.style.color = '#facc15';
                 document.getElementById('trn-otp-card').classList.remove('hidden');
                 document.getElementById('trn-otp-input').focus();
-            } else if (status === 'WAITING_FOR_FINAL_EVC_OTP' || status === 'WAITING_FOR_EVC_OTP') {
-                setPipelineActiveStep(5);
-                badge.innerText = 'EVC OTP REQUIRED';
-                badge.style.color = '#10b981';
-                document.getElementById('evc-otp-card').classList.remove('hidden');
-                document.getElementById('evc-otp-input').focus();
-            } else if (status.startsWith('WAITING_FOR_WARNING_RESPONSE') || status.includes('PORTAL WARNING DETECTED')) {
-                const card = document.getElementById('warning-card');
-                if (card) {
-                    card.classList.remove('hidden');
-                    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                }
-                badge.innerText = 'WARNING: ACTION REQUIRED';
-                badge.style.color = '#f97316';
             } else if (status === 'COMPLETED') {
                 setPipelineActiveStep(5);
                 badge.innerText = 'REGISTRATION SUCCESS';
@@ -2401,50 +2313,11 @@ window.startAutomationPipeline = async function (id, mode = 'regular', multiStat
             }
         });
 
-        socket.on('automation_warning', (data) => {
+        socket.on('automation_warning', () => {
             const badge = document.getElementById('auto-status-badge');
-            if (badge) {
-                badge.innerText = 'WARNING: ACTION REQUIRED';
-                badge.style.color = '#f97316';
-            }
-            const card = document.getElementById('warning-card');
-            if (card) {
-                card.classList.remove('hidden');
-                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-            if (data && data.title) {
-                const titleEl = document.getElementById('warning-card-title');
-                if (titleEl) titleEl.innerText = data.title;
-            }
-            if (data && data.message) {
-                const msgEl = document.getElementById('warning-card-message');
-                if (msgEl) msgEl.innerText = data.message;
-            }
-            if (data && data.buttons && Array.isArray(data.buttons) && data.buttons.length > 0) {
-                const btnContainer = document.getElementById('warning-card-buttons');
-                if (btnContainer) {
-                    btnContainer.innerHTML = '';
-                    data.buttons.forEach((bText) => {
-                        const btn = document.createElement('button');
-                        btn.className = 'btn';
-                        btn.style.padding = '10px 24px';
-                        btn.style.flex = '1';
-                        btn.innerText = bText.toUpperCase();
-                        const isPos = ['yes', 'continue', 'ok', 'save', 'proceed', 'accept'].includes(bText.toLowerCase().trim());
-                        if (isPos) {
-                            btn.style.background = '#22c55e';
-                            btn.style.borderColor = '#22c55e';
-                            btn.style.color = 'white';
-                        } else {
-                            btn.style.background = '#ef4444';
-                            btn.style.borderColor = '#ef4444';
-                            btn.style.color = 'white';
-                        }
-                        btn.onclick = () => window.submitWarningResponse(bText.toLowerCase().trim());
-                        btnContainer.appendChild(btn);
-                    });
-                }
-            }
+            badge.innerText = 'ADDRESS WARNING';
+            badge.style.color = '#f97316';
+            document.getElementById('warning-card').classList.remove('hidden');
         });
     }
     socket.emit('join_application', id);
@@ -2536,40 +2409,11 @@ window.submitTrnOtp = async function () {
     }
 };
 
-window.submitEvcOtp = async function () {
-    const otp = document.getElementById('evc-otp-input').value;
-    if (!otp) return;
-
-    document.getElementById('evc-otp-card').classList.add('hidden');
-    document.getElementById('evc-otp-input').value = '';
-
-    document.getElementById('auto-status-badge').innerText = 'VALIDATING EVC OTP';
-    document.getElementById('auto-status-badge').style.color = '#10b981';
-
-    addTerminalLog(`[User Action]: Submitted EVC OTP: ${otp.substring(0, 2)}****. Validating with GST Portal...`);
-
-    try {
-        await fetch(`${API_BASE_URL}/api/automation/evc_otp`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (await window.getFreshToken()) },
-            body: JSON.stringify({ appId: activeAutomationAppId, otp })
-        });
-    } catch (e) {
-        console.error(e);
-    }
-};
-
 window.submitWarningResponse = async function (choice) {
-    const card = document.getElementById('warning-card');
-    if (card) card.classList.add('hidden');
+    document.getElementById('warning-card').classList.add('hidden');
 
-    const badge = document.getElementById('auto-status-badge');
-    if (badge) {
-        badge.innerText = 'RESUMING PIPELINE';
-        badge.style.color = '#60a5fa';
-    }
-
-    addTerminalLog(`[User Action]: Clicked '${choice.toUpperCase()}'. Submitting manual choice to GST portal...`);
+    document.getElementById('auto-status-badge').innerText = 'RESUMING PIPELINE';
+    document.getElementById('auto-status-badge').style.color = '#60a5fa';
 
     try {
         await fetch(`${API_BASE_URL}/api/automation/warning_response`, {
@@ -2579,7 +2423,6 @@ window.submitWarningResponse = async function (choice) {
         });
     } catch (e) {
         console.error(e);
-        addTerminalLog(`❌ Failed to send warning choice: ${e.message}`);
     }
 };
 
@@ -2936,105 +2779,6 @@ window.showAuthSigList = function () {
 window.showPromoterList = function () {
     isPromoterListView = true;
     renderContent();
-};
-
-window.openSelfieModal = function(key) {
-    let modal = document.getElementById('selfie-camera-modal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'selfie-camera-modal';
-        modal.className = 'modal-overlay';
-        modal.innerHTML = `
-        <div class="modal" style="width: 460px; max-width: 92vw; text-align: center; border-radius: 8px; background: #ffffff; padding: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.25);">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 12px; margin-bottom: 15px;">
-                <h3 style="margin: 0; color: #1e3a8a; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                    Take Picture (Device Camera / Selfie)
-                </h3>
-                <button type="button" onclick="window.closeSelfieModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #64748b; font-weight: bold;">✕</button>
-            </div>
-            <div style="position: relative; width: 100%; height: 280px; background: #0f172a; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-                <video id="selfieVideo" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
-                <canvas id="selfieCanvas" style="display: none;"></canvas>
-            </div>
-            <p style="font-size: 12px; color: #64748b; margin: 10px 0 15px; text-align: left;">
-                <span class="gst-info-circle">i</span> Position your face clearly within the frame before capturing.
-            </p>
-            <div style="display: flex; justify-content: flex-end; gap: 10px;">
-                <button type="button" class="btn ghost" onclick="window.closeSelfieModal()">Cancel</button>
-                <button type="button" class="btn primary" id="captureSelfieBtn" style="background-color: #244b7a; border-color: #244b7a; font-weight: 600;">📷 Capture Photo</button>
-            </div>
-        </div>`;
-        document.body.appendChild(modal);
-    }
-    
-    modal.classList.remove('hidden');
-    modal.style.display = 'flex';
-    
-    const video = document.getElementById('selfieVideo');
-    const captureBtn = document.getElementById('captureSelfieBtn');
-    
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } })
-            .then(stream => {
-                window._selfieStream = stream;
-                if (video) {
-                    video.srcObject = stream;
-                    video.play().catch(() => {});
-                }
-            })
-            .catch(err => {
-                console.error("Camera access error:", err);
-                alert("Camera access error: " + (err.message || err.name) + "\nPlease use file upload to choose your photograph.");
-                window.closeSelfieModal();
-            });
-    } else {
-        alert("Camera is not supported on this browser or connection. Please use file upload.");
-        window.closeSelfieModal();
-    }
-    
-    if (captureBtn) {
-        captureBtn.onclick = function() {
-            if (!video || !video.videoWidth) {
-                alert("Camera feed is not ready yet. Please wait a moment.");
-                return;
-            }
-            const canvas = document.getElementById('selfieCanvas');
-            canvas.width = 400;
-            canvas.height = 400;
-            const ctx = canvas.getContext('2d');
-            const minDim = Math.min(video.videoWidth, video.videoHeight);
-            const sx = (video.videoWidth - minDim) / 2;
-            const sy = (video.videoHeight - minDim) / 2;
-            ctx.drawImage(video, sx, sy, minDim, minDim, 0, 0, 400, 400);
-            
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
-            
-            if (key && window.form[key]) {
-                if (key.startsWith('p')) {
-                    window.form[key].promoterPhotoFile = dataUrl;
-                    window.form[key].promoterPhotoFileName = 'selfie_photograph.jpg';
-                } else {
-                    window.form[key].authSigPhotoFile = dataUrl;
-                    window.form[key].authSigPhotoFileName = 'selfie_photograph.jpg';
-                }
-            }
-            window.closeSelfieModal();
-            renderContent();
-        };
-    }
-};
-
-window.closeSelfieModal = function() {
-    const modal = document.getElementById('selfie-camera-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-        modal.style.display = 'none';
-    }
-    if (window._selfieStream) {
-        window._selfieStream.getTracks().forEach(track => track.stop());
-        window._selfieStream = null;
-    }
 };
 
 function renderContent() {
@@ -3397,93 +3141,57 @@ function renderContent() {
                 ${field('Floor No.', `<input type="text" placeholder="Enter Floor No." value="${pForm.res_floor || ''}" onchange="window.updateForm('${currentPromoterKey}.res_floor', this.value)" />`)}
                 ${field('Nearby Landmark', `<input type="text" placeholder="Enter Nearby Landmark" value="${pForm.res_landmark || ''}" onchange="window.updateForm('${currentPromoterKey}.res_landmark', this.value)" />`)}
             </div>
-            </div>
-
-            <!-- Document Upload Section matching Official GST Portal (Image 2) -->
-            <div style="margin-top: 28px; border-top: 1px solid #cbd5e1; padding-top: 16px;">
-                <h3 style="font-size: 16px; font-weight: 600; color: #1e3a8a; margin: 0 0 16px 0; display: flex; align-items: center; gap: 6px;">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#1e3a8a" style="vertical-align: text-bottom;"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
-                    Document Upload
-                    <span class="gst-info-circle" title="Document Upload Details">i</span>
-                </h3>
-
-                <div style="border-top: 1px solid #e2e8f0; padding-top: 14px;">
-                    <div style="font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 12px;">
-                        Upload Photograph (of person whose information has been given above) <span style="color: #ef4444">*</span>
+            <h3 style="font-size: 18px; font-weight: 600; color: #1e3a8a; margin: 32px 0 20px;">
+                Other Information
+            </h3>
+            <div style="border: 1px solid #e2e8f0; padding: 20px; border-radius: var(--radius-md); margin-bottom: 20px; background: #f8fafc;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div>
+                        <div style="font-size: 15px; font-weight: 600; color: #1e293b;">Also Authorized Signatory</div>
+                        <p style="font-size: 13px; color: #64748b; margin-top: 4px;">Is this promoter also an authorized signatory?</p>
                     </div>
-
-                    <div style="display: flex; align-items: stretch; justify-content: space-between; flex-wrap: wrap; gap: 20px; background: #fff;">
-                        <!-- Left: File upload -->
-                        <div style="flex: 1; min-width: 280px; padding-right: 15px;">
-                            <div style="font-size: 13px; color: #475569; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-                                <span class="gst-info-circle">i</span>
-                                Only JPEG file format is allowed
-                            </div>
-                            <div style="font-size: 13px; color: #475569; margin-bottom: 14px; display: flex; align-items: center; gap: 6px;">
-                                <span class="gst-info-circle">i</span>
-                                Maximum file size for upload is 100 KB
-                            </div>
-                            <div>
-                                <input type="file" id="promoterPhotoInput" accept="image/jpeg, image/jpg" onchange="window.handleFileUpload(this, 'jpeg', 100, (data, filename) => { window.form['${currentPromoterKey}'].promoterPhotoFile = data; window.form['${currentPromoterKey}'].promoterPhotoFileName = filename; renderContent(); })" style="font-size: 14px; ${pForm.promoterPhotoFile ? 'display: none;' : ''}" />
-                                ${pForm.promoterPhotoFile ? `
-                                <div style="margin-top: 4px; font-size: 13px; color: #166534; font-weight: 500; display: inline-flex; align-items: center; gap: 12px; padding: 6px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;">
-                                    <span>📄 ${pForm.promoterPhotoFileName || 'Uploaded Photograph'}</span>
-                                    <button type="button" onclick="window.deleteFile(window.form['${currentPromoterKey}'].promoterPhotoFile, () => { window.form['${currentPromoterKey}'].promoterPhotoFile = ''; window.form['${currentPromoterKey}'].promoterPhotoFileName = ''; renderContent(); }); return false;" class="btn-doc-delete" style="padding: 2px 8px; font-size: 12px; cursor: pointer;">Delete</button>
-                                    <button type="button" onclick="window.viewDocument(window.form['${currentPromoterKey}'].promoterPhotoFile); return false;" class="btn-doc-view" style="padding: 2px 8px; font-size: 12px; cursor: pointer;">View</button>
-                                </div>` : ''}
-                            </div>
-                        </div>
-
-                        <!-- Center Divider with OR badge -->
-                        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding: 0 10px; min-height: 80px;">
-                            <div style="position: absolute; top: 0; bottom: 0; width: 1px; background-color: #cbd5e1;"></div>
-                            <span style="position: relative; z-index: 1; background: #fff; padding: 2px 8px; font-size: 11px; font-weight: 700; color: #94a3b8; border: 1px solid #e2e8f0; border-radius: 3px; text-transform: uppercase;">OR</span>
-                        </div>
-
-                        <!-- Right: Take Picture -->
-                        <div style="flex: 1; min-width: 280px; padding-left: 15px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;">
-                            <button type="button" onclick="window.openSelfieModal('${currentPromoterKey}')" style="display: inline-flex; align-items: center; gap: 8px; background-color: #244b7a; color: #ffffff; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; padding: 9px 24px; border: none; border-radius: 2px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.15);">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                                TAKE PICTURE
-                            </button>
-                            <div style="font-size: 12px; color: #475569; margin-top: 10px; display: flex; align-items: center; gap: 6px;">
-                                <span class="gst-info-circle">i</span>
-                                You can use your device camera to take selfie photograph.
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Other Information Section matching Official GST Portal (Image 2) -->
-            <div style="margin-top: 28px; border-top: 1px solid #cbd5e1; padding-top: 16px;">
-                <h3 style="font-size: 16px; font-weight: 600; color: #1e3a8a; margin: 0 0 12px 0;">
-                    Other Information
-                </h3>
-                <div style="border-top: 1px solid #e2e8f0; padding-top: 12px;">
-                    <div style="font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-                        Also Authorized Signatory
-                        <span class="gst-info-circle" title="Promoter is also an authorized signatory">i</span>
-                    </div>
-                    <div style="margin-top: 6px;">
-                        <label class="gst-toggle-switch">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="font-size: 14px; font-weight: 600; color: ${pForm.alsoAuthorizedSignatory ? '#22c55e' : '#94a3b8'};">${pForm.alsoAuthorizedSignatory ? 'Yes' : 'No'}</span>
+                        <label class="switch">
                             <input type="checkbox" ${pForm.alsoAuthorizedSignatory ? 'checked' : ''} onchange="window.updateForm('${currentPromoterKey}.alsoAuthorizedSignatory', this.checked); renderContent();">
-                            <span class="gst-toggle-slider">
-                                <span class="toggle-text-yes">Yes</span>
-                                <span class="toggle-text-no">No</span>
-                                <span class="toggle-knob"></span>
-                            </span>
+                            <span class="slider"></span>
                         </label>
                     </div>
                 </div>
+                ${pForm.alsoAuthorizedSignatory ? `
+                <hr style="border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+                <div style="margin-bottom: 12px;">
+                    ${field('Proof of details of authorized signatory <span style="color: #ef4444">*</span>', `<select style="width: 100%; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 14px; margin-bottom: 8px; outline: none;" onchange="window.form['${currentPromoterKey}'].authSigProofType = this.value; renderContent();"><option value="">Select</option><option value="Letter of Authorisation" ${pForm.authSigProofType === 'Letter of Authorisation' ? 'selected' : ''}>Letter of Authorisation</option><option value="Copy of resolution passed by BoD / Managing Committee" ${pForm.authSigProofType === 'Copy of resolution passed by BoD / Managing Committee' ? 'selected' : ''}>Copy of resolution passed by BoD / Managing Committee</option></select>`)}
+                    <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ File with PDF or JPEG format is only allowed. Max size 1 MB.</p>
+                    <div style="display: flex; gap: 10px; align-items: center; margin-top: 4px;">
+                        <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form['${currentPromoterKey}'].authSigProofFile = data; window.form['${currentPromoterKey}'].authSigProofFileName = filename; renderContent(); })" style="font-size: 14px; ${pForm.authSigProofFile ? 'display: none;' : ''}" />
+                        ${!pForm.authSigProofFile ? `<button class="btn accent" style="padding: 6px 12px; font-size: 13px;" onclick="window.openDeclarationModal('${currentPromoterKey}')">Auto-Generate Declaration</button>` : ''}
+                    </div>
+                    ${pForm.authSigProofFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${pForm.authSigProofFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentPromoterKey}'].authSigProofFile, () => { window.form['${currentPromoterKey}'].authSigProofFile = ''; window.form['${currentPromoterKey}'].authSigProofFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentPromoterKey}'].authSigProofFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
+                </div>
+                ` : ''}
             </div>
-
-            <!-- Bottom Action Buttons matching Image 2 -->
-            <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #cbd5e1; display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
-                <button type="button" class="gst-portal-btn-secondary" onclick="setStep(0)">BACK</button>
-                <button type="button" class="gst-portal-btn-secondary" onclick="window.showPromoterList()">SHOW LIST</button>
-                <button type="button" class="gst-portal-btn-disabled" onclick="window.addPromoter()">ADD NEW</button>
-                <button type="button" class="gst-portal-btn-primary" onclick="setStep(2)">SAVE & CONTINUE</button>
+            <h3 style="font-size: 18px; font-weight: 600; color: #1e3a8a; margin: 32px 0 20px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="vertical-align: text-bottom; margin-right: 8px;"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+                Document Upload
+            </h3>
+            <div style="border: 1px solid #e2e8f0; padding: 20px; border-radius: var(--radius-md);">
+                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
+                    <div style="flex: 1; min-width: 300px;">
+                        <div style="font-size: 14px; font-weight: 500; color: #1e293b; margin-bottom: 8px;">Upload Photograph (of person whose information has been given above) <span style="color: #ef4444">*</span></div>
+                        <p style="font-size: 12px; color: #64748b; margin-top: 8px;">ℹ Only JPEG file format is allowed</p>
+                        <p style="font-size: 12px; color: #64748b; margin-bottom: 8px;">ℹ Maximum file size for upload is 100 KB</p>
+                        <input type="file" accept="image/jpeg, image/jpg" onchange="window.handleFileUpload(this, 'jpeg', 100, (data, filename) => { window.form['${currentPromoterKey}'].promoterPhotoFile = data; window.form['${currentPromoterKey}'].promoterPhotoFileName = filename; renderContent(); })" style="font-size: 14px; margin-top: 5px; ${pForm.promoterPhotoFile ? 'display: none;' : ''}" />
+                        ${pForm.promoterPhotoFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${pForm.promoterPhotoFileName || 'Uploaded Photograph'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentPromoterKey}'].promoterPhotoFile, () => { window.form['${currentPromoterKey}'].promoterPhotoFile = ''; window.form['${currentPromoterKey}'].promoterPhotoFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentPromoterKey}'].promoterPhotoFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 20px; text-align: left; padding-top: 20px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <button class="btn accent" style="padding: 10px 20px; font-weight: 600;" onclick="window.showPromoterList()">Save Promoter & Show list</button>
+                </div>
+            </div>
+            </div>
             </div>
             </section>`;
         }
@@ -3683,64 +3391,23 @@ function renderContent() {
                 <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ File with PDF or JPEG format is only allowed. Max size 1 MB.</p>
                 <div style="display: flex; gap: 10px; align-items: center; margin-top: 4px;">
                     <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form['${currentAuthSigKey}'].authSigProofFile = data; window.form['${currentAuthSigKey}'].authSigProofFileName = filename; renderContent(); })" style="font-size: 14px; ${aForm.authSigProofFile ? 'display: none;' : ''}" />
-                    ${'' /* Auto-Generate Declaration commented out as requested */}
+                    ${!aForm.authSigProofFile ? `<button class="btn accent" style="padding: 6px 12px; font-size: 13px;" onclick="window.openDeclarationModal('${currentAuthSigKey}')">Auto-Generate Declaration</button>` : ''}
                 </div>
                 ${aForm.authSigProofFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${aForm.authSigProofFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentAuthSigKey}'].authSigProofFile, () => { window.form['${currentAuthSigKey}'].authSigProofFile = ''; window.form['${currentAuthSigKey}'].authSigProofFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentAuthSigKey}'].authSigProofFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
             </div>
-            <hr style="border-top: 1px solid #e2e8f0; margin-bottom: 16px;" />
-            <div style="font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 12px;">
-                Upload Photograph (of person whose information has been given above) <span style="color: #ef4444">*</span>
-            </div>
-            <div style="display: flex; align-items: stretch; justify-content: space-between; flex-wrap: wrap; gap: 20px; background: #fff;">
-                <!-- Left: File upload -->
-                <div style="flex: 1; min-width: 280px; padding-right: 15px;">
-                    <div style="font-size: 13px; color: #475569; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-                        <span class="gst-info-circle">i</span>
-                        Only JPEG file format is allowed
-                    </div>
-                    <div style="font-size: 13px; color: #475569; margin-bottom: 14px; display: flex; align-items: center; gap: 6px;">
-                        <span class="gst-info-circle">i</span>
-                        Maximum file size for upload is 100 KB
-                    </div>
-                    <div>
-                        <input type="file" id="authSigPhotoInput" accept="image/jpeg, image/jpg" onchange="window.handleFileUpload(this, 'jpeg', 100, (data, filename) => { window.form['${currentAuthSigKey}'].authSigPhotoFile = data; window.form['${currentAuthSigKey}'].authSigPhotoFileName = filename; renderContent(); })" style="font-size: 14px; ${aForm.authSigPhotoFile ? 'display: none;' : ''}" />
-                        ${aForm.authSigPhotoFile ? `
-                        <div style="margin-top: 4px; font-size: 13px; color: #166534; font-weight: 500; display: inline-flex; align-items: center; gap: 12px; padding: 6px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;">
-                            <span>📄 ${aForm.authSigPhotoFileName || 'Uploaded Photograph'}</span>
-                            <button type="button" onclick="window.deleteFile(window.form['${currentAuthSigKey}'].authSigPhotoFile, () => { window.form['${currentAuthSigKey}'].authSigPhotoFile = ''; window.form['${currentAuthSigKey}'].authSigPhotoFileName = ''; renderContent(); }); return false;" class="btn-doc-delete" style="padding: 2px 8px; font-size: 12px; cursor: pointer;">Delete</button>
-                            <button type="button" onclick="window.viewDocument(window.form['${currentAuthSigKey}'].authSigPhotoFile); return false;" class="btn-doc-view" style="padding: 2px 8px; font-size: 12px; cursor: pointer;">View</button>
-                        </div>` : ''}
-                    </div>
-                </div>
-
-                <!-- Center Divider with OR badge -->
-                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding: 0 10px; min-height: 80px;">
-                    <div style="position: absolute; top: 0; bottom: 0; width: 1px; background-color: #cbd5e1;"></div>
-                    <span style="position: relative; z-index: 1; background: #fff; padding: 2px 8px; font-size: 11px; font-weight: 700; color: #94a3b8; border: 1px solid #e2e8f0; border-radius: 3px; text-transform: uppercase;">OR</span>
-                </div>
-
-                <!-- Right: Take Picture -->
-                <div style="flex: 1; min-width: 280px; padding-left: 15px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;">
-                    <button type="button" onclick="window.openSelfieModal('${currentAuthSigKey}')" style="display: inline-flex; align-items: center; gap: 8px; background-color: #244b7a; color: #ffffff; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; padding: 9px 24px; border: none; border-radius: 2px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.15);">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
-                        TAKE PICTURE
-                    </button>
-                    <div style="font-size: 12px; color: #475569; margin-top: 10px; display: flex; align-items: center; gap: 6px;">
-                        <span class="gst-info-circle">i</span>
-                        You can use your device camera to take selfie photograph.
-                    </div>
+            <hr style="border-top: 1px solid #e2e8f0; margin-bottom: 12px;" />
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                <div style="flex: 1; min-width: 300px;">
+                    <div style="font-size: 14px; font-weight: 500; color: #1e293b; margin-bottom: 4px;">Upload Photograph (of person whose information has been given above) <span style="color: #ef4444">*</span></div>
+                    <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ Only JPEG file format is allowed. Max size 100 KB.</p>
+                    <input type="file" accept="image/jpeg, image/jpg" onchange="window.handleFileUpload(this, 'jpeg', 100, (data, filename) => { window.form['${currentAuthSigKey}'].authSigPhotoFile = data; window.form['${currentAuthSigKey}'].authSigPhotoFileName = filename; renderContent(); })" style="font-size: 14px; margin-top: 4px; ${aForm.authSigPhotoFile ? 'display: none;' : ''}" />
+                    ${aForm.authSigPhotoFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${aForm.authSigPhotoFileName || 'Uploaded Photograph'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentAuthSigKey}'].authSigPhotoFile, () => { window.form['${currentAuthSigKey}'].authSigPhotoFile = ''; window.form['${currentAuthSigKey}'].authSigPhotoFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentAuthSigKey}'].authSigPhotoFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
                 </div>
             </div>
         </div>
         </div>
         </div>
-        <!-- Bottom Action Buttons matching Image 2 -->
-        <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #cbd5e1; display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
-            <button type="button" class="gst-portal-btn-secondary" onclick="setStep(1)">BACK</button>
-            <button type="button" class="gst-portal-btn-secondary" onclick="window.showAuthSigList()">SHOW LIST</button>
-            <button type="button" class="gst-portal-btn-disabled" onclick="window.addAuthSig()">ADD NEW</button>
-            <button type="button" class="gst-portal-btn-primary" onclick="setStep(3)">SAVE & CONTINUE</button>
-        </div>
+        <div><button class="btn accent" style="padding: 10px 20px; font-weight: 600; margin-top: 20px;" onclick="window.showAuthSigList()">Save Signatory & Show list</button></div>
         </section>`;
         }
     } else if (step === 3) {
@@ -3990,129 +3657,22 @@ function renderContent() {
         </div>
         </section>`;
     } else if (step === 9) {
-        // Collect available signatories from form
-        const signatoriesList = [];
-        for (let i = 1; i <= 10; i++) {
-            const a = form['a' + i];
-            if (a && (a.firstName || a.lastName)) {
-                const fullName = [a.firstName, a.middleName, a.lastName].filter(Boolean).join(' ');
-                signatoriesList.push({ name: fullName, pan: a.pan, designation: a.designation || 'Authorized Signatory' });
-            }
-            const p = form['p' + i];
-            if (p && (p.firstName || p.lastName) && p.alsoAuthorizedSignatory) {
-                const fullName = [p.firstName, p.middleName, p.lastName].filter(Boolean).join(' ');
-                if (!signatoriesList.some(s => s.pan === p.pan && s.name === fullName)) {
-                    signatoriesList.push({ name: fullName, pan: p.pan, designation: p.designation || 'Partner/Director' });
-                }
-            }
-        }
-        if (signatoriesList.length === 0 && form.legalName) {
-            signatoriesList.push({ name: form.legalName, pan: form.pan, designation: 'Proprietor/Director' });
-        }
-
-        const selectedSig = form.verification_signatory || (signatoriesList[0] ? signatoriesList[0].name : '');
-        const currentSigObj = signatoriesList.find(s => s.name === selectedSig) || signatoriesList[0] || {};
-        const currentDesignation = form.verification_designation || currentSigObj.designation || form.a1?.designation || form.p1?.designation || 'Director';
-        const currentPlace = form.verification_place !== undefined ? form.verification_place : (form.ppob_city || form.ppob_district || '');
-
-        const sigOptionsHtml = signatoriesList.map(s => {
-            const label = s.pan ? `${s.name} [${s.pan.toUpperCase()}]` : s.name;
-            const isSel = (form.verification_signatory === s.name || (!form.verification_signatory && s === signatoriesList[0])) ? 'selected' : '';
-            return `<option value="${s.name}" data-designation="${s.designation}" ${isSel}>${label}</option>`;
-        }).join('');
-
-        html = `
-        <section class="card" style="box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; border-bottom: 1px solid #e2e8f0; padding-bottom: 16px;">
-                <div>
-                    <h2 style="margin: 0 0 4px 0; font-size: 20px; color: #1e3a8a; display: flex; align-items: center; gap: 8px;">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                        Verification
-                    </h2>
-                    <p style="margin: 0; font-size: 13px; color: #64748b;">Review and complete legal declaration for GST Registration application</p>
-                </div>
-                <span style="font-size: 13px; color: #ef4444; font-weight: 500;">* indicates mandatory fields</span>
-            </div>
-
-            <!-- Declaration Affirmation Checkbox -->
-            <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 18px; margin-bottom: 24px;">
-                <label style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer; font-size: 14px; color: #1e293b; line-height: 1.5;">
-                    <input type="checkbox" id="verification-declaration" style="width: 20px; height: 20px; margin-top: 2px; accent-color: #2563eb; cursor: pointer;" 
-                        ${form.verification_declaration !== false ? 'checked' : ''} 
-                        onchange="window.updateForm('verification_declaration', this.checked)">
-                    <span>
-                        I hereby solemnly affirm and declare that the information given herein above is true and correct to the best of my knowledge and belief and nothing has been concealed therefrom. <span style="color: #ef4444">*</span>
-                    </span>
-                </label>
-            </div>
-
-            <!-- Verification Fields Grid -->
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 28px;">
-                <div>
-                    <label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">
-                        Name of Authorized Signatory <span style="color: #ef4444">*</span>
-                    </label>
-                    <select style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; background: white; outline: none;"
-                        onchange="window.updateForm('verification_signatory', this.value); const d = this.options[this.selectedIndex].getAttribute('data-designation'); if (d) window.updateForm('verification_designation', d); renderContent();">
-                        ${sigOptionsHtml}
-                    </select>
-                </div>
-
-                <div>
-                    <label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">
-                        Place <span style="color: #ef4444">*</span>
-                    </label>
-                    <input type="text" placeholder="Enter Place (e.g. Ahmedabad)" 
-                        value="${currentPlace}"
-                        style="width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; outline: none;"
-                        oninput="window.updateForm('verification_place', this.value)">
-                </div>
-
-                <div>
-                    <label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">
-                        Designation / Status
-                    </label>
-                    <input type="text" readonly 
-                        value="${currentDesignation}"
-                        style="width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 14px; background: #f1f5f9; color: #64748b; cursor: not-allowed;">
-                </div>
-
-                <div>
-                    <label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">
-                        Date
-                    </label>
-                    <input type="text" readonly 
-                        value="${new Date().toLocaleDateString('en-GB')}"
-                        style="width: 100%; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 14px; background: #f1f5f9; color: #64748b; cursor: not-allowed;">
-                </div>
-            </div>
-
-            <!-- Complete Application Callout -->
-            <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
-                <div>
-                    <h4 style="margin: 0 0 4px 0; color: #166534; font-size: 16px; font-weight: 600;">Ready to Complete Application?</h4>
-                    <p style="margin: 0; color: #15803d; font-size: 13px;">Review your entered details and submit to Admin / GST Automation Pipeline.</p>
-                </div>
-                <button class="btn accent" style="padding: 10px 24px; font-size: 14px; font-weight: 600; background: #16a34a; border-color: #16a34a;" onclick="showPreview();">
-                    Preview & Submit Application →
-                </button>
-            </div>
+        html = `<section class="card"><h2>Review</h2>
+        <button class="btn accent" onclick="showPreview();">Complete Application</button>
         </section>`;
     }
 
-    if (!(step === 1 && !isPromoterListView) && !(step === 2 && !isAuthSigListView)) {
-        html += `
-        <div class="nav" style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
-            <div style="display: flex; gap: 12px; align-items: center;">
-                ${step > 0 ? `<button class="btn ghost" onclick="setStep(${step - 1})">Back</button>` : '<div></div>'}
-                <button class="btn ghost" style="color: #ef4444; border-color: #fca5a5; font-size: 13px;" onclick="window.resetFormDraft()">🗑️ Clear Draft</button>
-            </div>
-            <div style="display: flex; gap: 12px; align-items: center;">
-                ${(window.form && window.form._appId) ? `<button class="btn accent" style="background: #10b981; border-color: #10b981;" onclick="submitApplication()">💾 Save / Update Application</button>` : ''}
-                ${step < STEPS.length - 1 ? `<button class="btn primary" onclick="setStep(${step + 1})">Next</button>` : ''}
-            </div>
-        </div>`;
-    }
+    html += `
+    <div class="nav" style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
+        <div style="display: flex; gap: 12px; align-items: center;">
+            ${step > 0 ? `<button class="btn ghost" onclick="setStep(${step - 1})">Back</button>` : '<div></div>'}
+            <button class="btn ghost" style="color: #ef4444; border-color: #fca5a5; font-size: 13px;" onclick="window.resetFormDraft()">🗑️ Clear Draft</button>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+            ${(window.form && window.form._appId) ? `<button class="btn accent" style="background: #10b981; border-color: #10b981;" onclick="submitApplication()">💾 Save / Update Application</button>` : ''}
+            ${step < STEPS.length - 1 ? `<button class="btn primary" onclick="setStep(${step + 1})">Next</button>` : ''}
+        </div>
+    </div>`;
     content.innerHTML = editBannerHtml + html;
 
     if (step === 2 && !isAuthSigListView && window.isViewingPromoter) {
@@ -5181,29 +4741,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-window.processOCR = async function(input, type) {
+window.processOCR = async function (input, type) {
     if (!input.files || input.files.length === 0) return;
     const file = input.files[0];
     const statusDiv = document.getElementById('ocrStatus');
     statusDiv.innerText = "Scanning " + type.toUpperCase() + " card... Please wait.";
     statusDiv.style.color = "#0369a1";
-    
+
     try {
         if (typeof Tesseract === 'undefined') throw new Error("Tesseract not loaded.");
-        
+
         const img = new Image();
         img.src = URL.createObjectURL(file);
         await new Promise(r => img.onload = r);
-        
+
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
         canvas.height = img.height;
         const ctx = canvas.getContext('2d');
-        
+
         ctx.drawImage(img, 0, 0);
         let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         let data = imgData.data;
-        
+
         const contrast = 70;
         const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
         for (let i = 0; i < data.length; i += 4) {
@@ -5211,27 +4771,27 @@ window.processOCR = async function(input, type) {
             avg = factor * (avg - 128) + 128;
             if (avg > 255) avg = 255;
             if (avg < 0) avg = 0;
-            data[i] = data[i+1] = data[i+2] = avg;
+            data[i] = data[i + 1] = data[i + 2] = avg;
         }
         ctx.putImageData(imgData, 0, 0);
-        
+
         const preprocessedDataUrl = canvas.toDataURL('image/jpeg');
         const worker = await Tesseract.createWorker('eng');
         await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.BLOCK });
-        
+
         const ret = await worker.recognize(preprocessedDataUrl);
         let text = ret.data.text.toUpperCase();
         console.log("--- OCR RAW TEXT ---");
         console.log(text);
-        
+
         let foundData = false;
-        
+
         if (!window.form.p1) window.form.p1 = JSON.parse(JSON.stringify(window.defaultPromoter || {}));
-        
+
         if (type === 'pan') {
             let cleanForPan = text.replace(/[^A-Z0-9]/g, '');
             let panMatch = cleanForPan.match(/[A-Z]{5}[0-9]{4}[A-Z]/);
-            
+
             let cleanText = text.replace(/[^A-Z0-9\n \/]/g, '');
             const lines = cleanText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
             let nameFound = false;
@@ -5240,51 +4800,51 @@ window.processOCR = async function(input, type) {
 
             for (let i = 0; i < lines.length; i++) {
                 if (lines[i].includes('GOVT') || lines[i].includes('INDIA') || lines[i].includes('GOVERNMENT')) {
-                    if (lines[i+1] && lines[i+1].length > 3) {
-                        extractedName = lines[i+1];
+                    if (lines[i + 1] && lines[i + 1].length > 3) {
+                        extractedName = lines[i + 1];
                         nameFound = true;
-                        if (lines[i+2] && lines[i+2].length > 3 && !lines[i+2].includes('/')) {
-                            fatherName = lines[i+2];
+                        if (lines[i + 2] && lines[i + 2].length > 3 && !lines[i + 2].includes('/')) {
+                            fatherName = lines[i + 2];
                         }
                         break;
                     }
                 }
             }
-            
+
             if (!nameFound) {
                 const validLines = lines.filter(l => !l.includes('INCOME TAX') && !l.includes('GOVT') && !l.includes('INDIA') && !l.includes('DEPARTMENT') && !l.includes('CARD') && !l.includes('INCOMETAX'));
-                if(validLines.length > 0) extractedName = validLines[0]; 
-                if(validLines.length > 1) fatherName = validLines[1];
+                if (validLines.length > 0) extractedName = validLines[0];
+                if (validLines.length > 1) fatherName = validLines[1];
             }
 
             // DOB
             let dobMatch = cleanText.match(/[0-9]{2}\/[0-9]{2}\/[0-9]{4}/);
-            
+
             if (panMatch || extractedName) {
                 foundData = true;
                 if (panMatch) {
                     window.form.pan = panMatch[0];
                     window.form.p1.pan = panMatch[0];
                 }
-                
+
                 extractedName = extractedName.replace(/[^A-Z ]/g, '').replace(/\s*(FON|PON|FW|POW|FOW|FQN|PQN)$/i, '').trim();
                 fatherName = fatherName.replace(/[^A-Z ]/g, '').trim();
-                
+
                 if (extractedName.length > 2) {
                     window.form.legalName = extractedName;
                     let parts = extractedName.split(' ');
                     window.form.p1.firstName = parts[0] || '';
                     window.form.p1.middleName = parts.length > 2 ? parts.slice(1, -1).join(' ') : '';
-                    window.form.p1.lastName = parts.length > 1 ? parts[parts.length-1] : '';
+                    window.form.p1.lastName = parts.length > 1 ? parts[parts.length - 1] : '';
                 }
-                
+
                 if (fatherName.length > 2 && !fatherName.match(/[0-9]{4}/)) {
                     let fParts = fatherName.split(' ');
                     window.form.p1.fatherFirstName = fParts[0] || '';
                     window.form.p1.fatherMiddleName = fParts.length > 2 ? fParts.slice(1, -1).join(' ') : '';
-                    window.form.p1.fatherLastName = fParts.length > 1 ? fParts[fParts.length-1] : '';
+                    window.form.p1.fatherLastName = fParts.length > 1 ? fParts[fParts.length - 1] : '';
                 }
-                
+
                 if (dobMatch) {
                     let [dd, mm, yyyy] = dobMatch[0].split('/');
                     window.form.p1.dob = `${yyyy}-${mm}-${dd}`;
@@ -5295,14 +4855,14 @@ window.processOCR = async function(input, type) {
             let cleanText = text.replace(/[^A-Z0-9\n \/]/g, '');
             const aadharMatch = cleanText.replace(/\s/g, '').match(/[0-9]{12}/);
             const pinMatch = cleanText.match(/[0-9]{6}/);
-            
+
             let gender = "";
             if (cleanText.includes('MALE') && !cleanText.includes('FEMALE')) gender = "Male";
             if (cleanText.includes('FEMALE')) gender = "Female";
-            
+
             let dobMatch = cleanText.match(/[0-9]{2}\/[0-9]{2}\/[0-9]{4}/);
             let yobMatch = cleanText.match(/YEAR OF BIRTH.*?([0-9]{4})/i);
-            
+
             if (aadharMatch || pinMatch || gender || dobMatch || yobMatch) {
                 foundData = true;
                 if (aadharMatch) {
@@ -5319,9 +4879,9 @@ window.processOCR = async function(input, type) {
                 }
             }
         }
-        
+
         await worker.terminate();
-        
+
         try {
             fetch(API_BASE_URL + '/api/log-ocr', {
                 method: 'POST',
@@ -5332,7 +4892,7 @@ window.processOCR = async function(input, type) {
                     extractedData: foundData ? { pan: window.form.pan, name: window.form.legalName, pincode: window.form.ppob_pincode, aadhar: window.form.aadhar, dob: window.form.p1.dob } : null
                 })
             }).catch(e => console.log('Log fail'));
-        } catch(e) {}
+        } catch (e) { }
 
         if (foundData) {
             statusDiv.innerText = "Successfully extracted data!";
@@ -5342,7 +4902,7 @@ window.processOCR = async function(input, type) {
             statusDiv.innerText = "Could not read clearly. Please upload a clear photo without glare.";
             statusDiv.style.color = "#b91c1c";
         }
-    } catch(err) {
+    } catch (err) {
         console.error(err);
         statusDiv.innerText = "Error during scanning.";
         statusDiv.style.color = "#b91c1c";

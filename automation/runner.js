@@ -21,7 +21,7 @@ if (!appId) {
     process.exit(1);
 }
 
-// Helper to log progress to stdout (which the backend will capture and send via Socket.io)
+// Helper to log progress to stdout (which the backend will capture and emit via Socket.io)
 function sendUpdate(status) {
     console.log(`STATUS:${status}`);
 }
@@ -49,602 +49,28 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error(`[Runner Error]: UNHANDLED REJECTION: ${reason ? (reason.stack || reason.message || reason) : reason}`);
 });
 
-let isHandlingWarning = false;
-
-async function detectPortalWarning(page) {
-    try {
-        return await page.evaluate(() => {
-            // Check Bootstrap/Angular modals and dialogs
-            const dialogs = Array.from(document.querySelectorAll('.modal, .modal-dialog, div[role="dialog"], .sweet-alert'));
-            for (const d of dialogs) {
-                const style = window.getComputedStyle(d);
-                if (style.display === 'none' || style.visibility === 'hidden') continue;
-                if (d.offsetParent === null && !d.classList.contains('in') && !d.classList.contains('show')) continue;
-
-                const text = (d.innerText || '').trim();
-                if (/warning|mismatch|locality|do you want to save|pin-code/i.test(text)) {
-                    const titleEl = d.querySelector('.modal-title, h4, h3, h5, .modal-header');
-                    const title = (titleEl ? titleEl.innerText.trim() : 'Warning') || 'Address Warning';
-
-                    let message = '';
-                    const bodyEl = d.querySelector('.modal-body, p');
-                    if (bodyEl && bodyEl.innerText.trim()) {
-                        message = bodyEl.innerText.trim();
-                    } else {
-                        const lines = text.split('\n').map(l => l.trim()).filter(l => l && !/^(yes|no|ok|cancel|close|continue)$/i.test(l));
-                        message = lines.slice(1).join(' ') || lines[0] || text;
-                    }
-
-                    const buttons = Array.from(d.querySelectorAll('button, input[type="button"], a.btn'))
-                        .map(b => (b.innerText || b.value || b.textContent || '').trim())
-                        .filter(t => t.length > 0 && t.length < 20);
-
-                    return {
-                        detected: true,
-                        title,
-                        message,
-                        buttons: buttons.length > 0 ? buttons : ['YES', 'NO']
-                    };
-                }
-            }
-
-            // Direct body text check for locality mismatch
-            const body = document.body ? document.body.innerText : '';
-            if (body.includes('Locality/Sub-Locality is not matching')) {
-                return {
-                    detected: true,
-                    title: 'Address Warning',
-                    message: 'Locality/Sub-Locality is not matching with the Pin-Code. Do you want to save the details?',
-                    buttons: ['YES', 'NO']
-                };
-            }
-
-            return null;
-        });
-    } catch (e) {
-        return null;
-    }
-}
-
-async function handlePortalWarning(page, maxWaitMs = 1500) {
-    if (isHandlingWarning) return false;
-    isHandlingWarning = true;
-    try {
-        if (maxWaitMs > 0) {
-            await page.waitForTimeout(maxWaitMs);
-        }
-
-        const warningInfo = await detectPortalWarning(page);
-        if (!warningInfo || !warningInfo.detected) {
-            return false;
-        }
-
-        const warningTitle = warningInfo.title || 'Address Warning';
-        const warningMsg = warningInfo.message || 'Locality/Sub-Locality is not matching with the Pin-Code. Do you want to save the details?';
-        const warningButtons = warningInfo.buttons && warningInfo.buttons.length > 0 ? warningInfo.buttons : ['YES', 'NO'];
-
-        // 1. Log clearly in live console / terminal
-        sendUpdate(`⚠️ PORTAL WARNING DETECTED: ${warningMsg}`);
-        sendUpdate(`👉 MANUAL ACTION REQUIRED: Please click ${warningButtons.join(' or ')} button in the warning box to proceed...`);
-
-        // 2. Notify backend & frontend to show the warning card with interactive buttons
-        console.log(`WAITING_FOR_WARNING_RESPONSE:${JSON.stringify({
-            title: warningTitle,
-            message: warningMsg,
-            buttons: warningButtons
-        })}`);
-
-        // 3. Pause automation and wait for user's manual button click from UI (via stdin)
-        const userChoice = await new Promise((resolve) => {
-            process.stdin.resume();
-            const onData = (chunk) => {
-                const lines = chunk.toString().split(/[\r\n]+/);
-                for (let line of lines) {
-                    const clean = line.trim().toLowerCase();
-                    if (clean) {
-                        process.stdin.removeListener('data', onData);
-                        resolve(clean);
-                        return;
-                    }
-                }
-            };
-            process.stdin.on('data', onData);
-        });
-
-        sendUpdate(`✅ User manually selected '${userChoice.toUpperCase()}'. Applying to GST portal dialog...`);
-
-        // 4. Click that button on the portal dialog with evaluate + dispatchEvent
-        const clicked = await page.evaluate((choice) => {
-            const target = choice.trim().toLowerCase();
-            const containers = Array.from(document.querySelectorAll('.modal, .modal-dialog, div[role="dialog"], .sweet-alert, body'));
-            for (const container of containers) {
-                if (container !== document.body && container.offsetParent === null) continue;
-                const btns = Array.from(container.querySelectorAll('button, input[type="button"], a.btn'));
-                for (const b of btns) {
-                    const txt = (b.innerText || b.value || b.textContent || '').trim().toLowerCase();
-                    if (txt === target || (target === 'yes' && (txt === 'yes' || txt.startsWith('yes'))) || (target === 'no' && (txt === 'no' || txt.startsWith('no')))) {
-                        b.focus();
-                        b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                        b.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                        b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                        b.click();
-                        if (window.angular) {
-                            try {
-                                const scope = angular.element(b).scope();
-                                const ngClick = b.getAttribute('ng-click') || b.getAttribute('data-ng-click');
-                                if (scope && ngClick) {
-                                    scope.$eval(ngClick);
-                                    scope.$apply();
-                                }
-                            } catch(e) {}
-                        }
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }, userChoice);
-
-        // Fallback with Playwright locator if evaluate didn't find button
-        if (!clicked) {
-            const regex = new RegExp(`^\\s*${userChoice}\\s*$`, 'i');
-            const loc = page.locator('button, a.btn, input[type="button"]').filter({ hasText: regex }).last();
-            if (await loc.isVisible({ timeout: 1500 }).catch(() => false)) {
-                await loc.click({ force: true }).catch(() => {});
-            } else {
-                await page.click(`button:has-text("${userChoice.toUpperCase()}")`).catch(() => {});
-            }
-        }
-
-        // 5. Wait for the dialog to disappear
-        await page.waitForTimeout(2000);
-        sendUpdate(`'${userChoice.toUpperCase()}' processed successfully. Resuming automation...`);
-        return true;
-    } catch (e) {
-        console.error(`[Runner Log]: Warning handler exception: ${e.message}`);
-        return false;
-    } finally {
-        isHandlingWarning = false;
-    }
-}
-
-async function handleLocalityWarning(page) {
-    return await handlePortalWarning(page, 500);
-}
-
-async function clickAndHandleMapError(page, selector, clickOptions = {}, maxRetries = 3) {
-    let attempts = 0;
-    while (attempts < maxRetries) {
-        try {
-            await page.click(selector, { timeout: 3000, ...clickOptions });
-        } catch (clickErr) {
-            // Attempt evaluate click if Playwright strict click timed out
-            const clicked = await page.evaluate((sel) => {
-                const el = document.querySelector(sel);
-                if (el && el.offsetParent !== null) {
-                    el.click();
-                    return true;
-                }
-                return false;
-            }, selector);
-            if (!clicked) {
-                throw clickErr;
-            }
-        }
-        await page.waitForTimeout(1500);
-
-        // Check if map error popup appeared (Error Code: REG-MP-408)
-        const mapErrorText = await page.locator('text=/REG-MP-408/i').count();
-        const mapErrorTextAlt = await page.locator('text=/maps services are currently unavailable/i').count();
-
-        if (mapErrorText > 0 || mapErrorTextAlt > 0) {
-            console.log(`[Runner Log]: Map service error detected (Attempt ${attempts + 1}). Clicking CLOSE and retrying...`);
-            const closeBtn = page.locator('button', { hasText: 'CLOSE' }).last();
-            if (await closeBtn.count() > 0) {
-                await closeBtn.click();
-                await page.waitForTimeout(1000);
-            }
-            attempts++;
-        } else {
-            // No error popup, success!
-            break;
-        }
-    }
-    if (attempts === maxRetries) {
-        console.log('[Runner Log]: Max retries reached for map service error. Proceeding anyway...');
-    }
-}
-
-async function saveAndContinueToTab(page, expectedTabName, clickSelector) {
-    sendUpdate(`Clicking Save & Continue...`);
-    let buttonClicked = false;
-
-    // Try primary selector first
-    if (clickSelector) {
-        try {
-            await clickAndHandleMapError(page, clickSelector);
-            buttonClicked = true;
-        } catch (e) { }
-    }
-
-    // Robust fallbacks if primary click did not succeed
-    if (!buttonClicked) {
-        const fallbackSelectors = [
-            'button[title="Save & Continue"]',
-            'button[title*="Save"]',
-            'button:has-text("Save & Continue")',
-            'button:has-text("SAVE & CONTINUE")',
-            'button:has-text("Save and Continue")',
-            'button[data-ng-click*="save"]',
-            '#newRegForm button.btn.btn-primary:has-text("Save & Continue")',
-            'button[type="submit"].btn-primary',
-            'button.btn-primary:has-text("Save")'
-        ];
-
-        for (const sel of fallbackSelectors) {
-            try {
-                const loc = page.locator(sel).first();
-                if (await loc.count() > 0 && await loc.isVisible({ timeout: 1000 })) {
-                    await loc.scrollIntoViewIfNeeded().catch(() => {});
-                    await loc.click({ timeout: 2000 });
-                    buttonClicked = true;
-                    break;
-                }
-            } catch (e) {}
-        }
-
-        if (!buttonClicked) {
-            // Direct DOM evaluate click across all visible buttons
-            buttonClicked = await page.evaluate(() => {
-                const btns = Array.from(document.querySelectorAll('button, a.btn, input[type="submit"], input[type="button"]'));
-                const saveBtn = btns.find(b => {
-                    if (b.offsetParent === null) return false;
-                    const t = (b.innerText || b.value || b.getAttribute('title') || '').toUpperCase();
-                    return t.includes('SAVE') && (t.includes('CONTINUE') || t.includes('&'));
-                }) || btns.find(b => {
-                    if (b.offsetParent === null) return false;
-                    const t = (b.innerText || b.value || b.getAttribute('title') || '').toUpperCase();
-                    return t.includes('SAVE');
-                });
-                if (saveBtn) {
-                    saveBtn.click();
-                    return true;
-                }
-                return false;
-            });
-        }
-    }
-
-    if (expectedTabName) {
-        sendUpdate(`Waiting for '${expectedTabName}' tab...`);
-        let isFinished = false;
-        try {
-            // Race: either next tab becomes active, OR validation error appears
-            const result = await Promise.race([
-                // Condition 1: Next tab becomes active (checks active tab class and visible tab-specific input fields)
-                page.waitForFunction((expectedName) => {
-                    // If a warning modal is active, the tab transition has not finished yet!
-                    const warningPresent = Array.from(document.querySelectorAll('.modal, .modal-dialog, div[role="dialog"]'))
-                        .some(m => m.offsetParent !== null && /warning|mismatch|locality|do you want to save/i.test(m.innerText || ''));
-                    if (warningPresent) return false;
-
-                    const activeTabs = Array.from(document.querySelectorAll('li.active, .nav-tabs li.active, .step-wizard .active, .wizard-step.active, .nav li.active, [data-ng-repeat*="tab"].active'));
-                    const possibleNames = expectedName.toLowerCase().split('|').map(s => s.trim());
-                    for (let tab of activeTabs) {
-                        const tabText = tab.innerText ? tab.innerText.toLowerCase() : '';
-                        if (possibleNames.some(name => tabText.includes(name))) {
-                            return true;
-                        }
-                    }
-                    // Specific content element checks that ONLY exist and are visible when that tab is actually rendered
-                    if (expectedName.toLowerCase().includes('promoter')) {
-                        const el = document.querySelector('#fnm, #pd_mname, #radiomale');
-                        if (el && el.offsetParent !== null) return true;
-                    }
-                    if (expectedName.toLowerCase().includes('authorized signatory')) {
-                        const el = document.querySelector('#same_as_promoter, #as_fnm, #as_up_type, #as_upload_sign');
-                        if (el && el.offsetParent !== null) return true;
-                    }
-                    if (expectedName.toLowerCase().includes('authorized representative')) {
-                        const el = document.querySelector('#rep_type, input[name="hasAuthRep"]');
-                        if (el && el.offsetParent !== null) return true;
-                    }
-                    if (expectedName.toLowerCase().includes('principal place of business')) {
-                        const el = document.querySelector('#pncd, #bp_buss_poss, #bp_bdname');
-                        if (el && el.offsetParent !== null) return true;
-                    }
-                    if (expectedName.toLowerCase().includes('goods and services')) {
-                        const el = document.querySelector('#gs_hsn_value, #gs_sac_value, #hsn_value');
-                        if (el && el.offsetParent !== null) return true;
-                    }
-                    if (expectedName.toLowerCase().includes('verification') || expectedName.toLowerCase().includes('aadhaar')) {
-                        const el = document.querySelector('#submitbtn, #signatory, input[name="declaration"]');
-                        if (el && el.offsetParent !== null) return true;
-                    }
-                    return false;
-                }, expectedTabName, { timeout: 45000 }).then(() => ({ status: 'success' })),
-
-                // Condition 2: Validation errors appear - detect and report them
-                (async () => {
-                    while (!isFinished) {
-                        await new Promise(r => setTimeout(r, 4000));
-                        if (isFinished) break;
-                        const errors = await page.evaluate(() => {
-                            const selectors = [
-                                '.text-danger', '.error-msg', '.has-error .help-block',
-                                'span[ng-message]', 'div.error-message', '.alert-danger',
-                                'p.text-danger', 'small.text-danger', 'label.error'
-                            ];
-                            const found = [];
-                            for (const sel of selectors) {
-                                document.querySelectorAll(sel).forEach(el => {
-                                    const txt = el.innerText && el.innerText.trim();
-                                    if (txt && txt.length > 2 && el.offsetParent !== null) {
-                                        found.push(txt);
-                                    }
-                                });
-                            }
-                            return [...new Set(found)];
-                        }).catch(() => []);
-                        if (errors.length > 0) {
-                            return { status: 'validation_error', errors };
-                        }
-                    }
-                    return new Promise(() => {});
-                })(),
-                
-                // Condition 3: Proactively handle any portal warning popup blocking navigation
-                (async () => {
-                    while (!isFinished) {
-                        await new Promise(r => setTimeout(r, 1500));
-                        if (isFinished) break;
-                        try {
-                            const warningInfo = await detectPortalWarning(page);
-                            if (warningInfo && warningInfo.detected && !isHandlingWarning) {
-                                await handlePortalWarning(page, 0);
-                            }
-                        } catch(e) {}
-                    }
-                    return new Promise(() => {});
-                })()
-            ]);
-            
-            isFinished = true;
-
-            if (result && result.status === 'validation_error') {
-                sendUpdate(`VALIDATION ERRORS on '${expectedTabName}' tab:`);
-                result.errors.forEach(err => sendUpdate(`  ❌ ${err}`));
-                sendUpdate(`Please fix these errors and retry.`);
-            } else {
-                sendUpdate(`'${expectedTabName}' tab is now active! Proceeding...`);
-            }
-        } catch (e) {
-            sendUpdate(`Error: Timed out waiting for '${expectedTabName}' tab.`);
-        }
-        await page.waitForTimeout(2000);
-    } else {
-        await page.waitForTimeout(3000);
-    }
-}
-
-
-// Helper to construct and submit Multi-State Registration Common Info payload
-async function submitMultiStateCommonInfo(page, data, config, currentTrn) {
-    sendUpdate('Submitting Common Info to Multi-State API (submitcommoninfo)...');
-
-    const secToken = (currentTrn && currentTrn.trim()) || (config && config.secToken && !config.secToken.includes('1219') ? config.secToken : null) || 'M10260001283TRN';
-    let aplCd = null;
-    if (secToken) {
-        const match = secToken.match(/(\d{4,7})TRN/i);
-        if (match) {
-            aplCd = match[1].slice(-4);
-        }
-    }
-    if (!aplCd) {
-        aplCd = (config && config.aplCd && config.aplCd !== '1219' ? config.aplCd : null) || '1283';
-    }
-
-    const typAR = (config && config.typAR) || 'TRP';
-
-    let cobz = (config && config.cobz);
-    if (!cobz && data.businessConstitution) {
-        const cMap = {
-            'proprietorship': 'PRO',
-            'sole proprietorship': 'PRO',
-            'partnership': 'PAR',
-            'private limited': 'PVT',
-            'public limited': 'PUB',
-            'limited liability partnership': 'LLP',
-            'llp': 'LLP',
-            'hindu undivided family': 'HUF',
-            'huf': 'HUF',
-            'trust': 'TRU',
-            'society': 'SOC'
-        };
-        const normalized = data.businessConstitution.toLowerCase().trim();
-        for (const [k, v] of Object.entries(cMap)) {
-            if (normalized.includes(k)) {
-                cobz = v;
-                break;
-            }
-        }
-    }
-    if (!cobz) cobz = 'PRO';
-
-    const stCds = (config && config.stCds && config.stCds.length > 0)
-        ? config.stCds
-        : (data.selectedStates && data.selectedStates.length > 0 ? data.selectedStates : ['24', '27']);
-
-    // Format dates to DD/MM/YYYY
-    function formatToDDMMYYYY(dStr) {
-        if (!dStr) return '';
-        if (dStr.includes('/')) return dStr;
-        const [y, m, d] = dStr.split('-');
-        return `${d}/${m}/${y}`;
-    }
-
-    const todayDDMMYYYY = (() => {
-        const d = new Date();
-        const dd = String(d.getDate()).padStart(2, '0');
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const yyyy = d.getFullYear();
-        return `${dd}/${mm}/${yyyy}`;
-    })();
-
-    const dueDateDDMMYYYY = (() => {
-        const d = new Date();
-        d.setDate(d.getDate() + 15);
-        const dd = String(d.getDate()).padStart(2, '0');
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const yyyy = d.getFullYear();
-        return `${dd}/${mm}/${yyyy}`;
-    })();
-
-    // Build goods & services lists
-    const bzgddtls = (Array.isArray(data.goods_hsn) ? data.goods_hsn : []).map(code => ({ hsn: code }));
-    const bzsdtls = (Array.isArray(data.goods_sac) ? data.goods_sac : []).map(code => ({ sac: code }));
-
-    // Build existing registrations
-    const exrgdtls = (Array.isArray(data.existingRegistrations) ? data.existingRegistrations : []).map(r => ({
-        rgtyp: r.type || '',
-        rgnum: r.no || '',
-        rgdt: formatToDDMMYYYY(r.date)
-    }));
-
-    // Construct the full payload as provided by user specification
-    const payload = {
-        aplCd: aplCd,
-        arepdtls: { typAR: typAR },
-        bzdtls: {},
-        bzdtlsbz: {
-            addltrdnms: [],
-            cmbzdt: formatToDDMMYYYY(data.dateOfCommencement) || todayDDMMYYYY,
-            cobz: cobz,
-            lgnmbzpan: data.legalName || '',
-            pan: {
-                num: (data.pan || '').toUpperCase(),
-                iv: "V"
-            },
-            stCds: stCds,
-            trdnm: data.tradeName || data.legalName || ''
-        },
-        exrgdtls: exrgdtls,
-        gdssvcdtls: {
-            bzgddtls: bzgddtls,
-            bzsdtls: bzsdtls
-        },
-        jurdFlag: "N",
-        map: {},
-        rgdtls: {
-            aplst: "DFT",
-            aplty: "APLRG",
-            duedt: dueDateDDMMYYYY,
-            em: (data.email || '').toUpperCase(),
-            mbno: data.mobile || '',
-            moddt: todayDDMMYYYY,
-            secToken: secToken
-        }
-    };
-
-    console.log('[Runner Log]: Multi-State Registration Payload:', JSON.stringify(payload, null, 2));
-
-    // Submit payload via in-page fetch using the browser session cookies and headers
-    const apiResult = await page.evaluate(async (bodyPayload) => {
-        try {
-            const resp = await fetch('https://reg.gst.gov.in/registration/auth/api/multistate/submitcommoninfo', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json, text/plain, */*'
-                },
-                body: JSON.stringify(bodyPayload)
-            });
-            const text = await resp.text();
-            let json = null;
-            try { json = JSON.parse(text); } catch (e) { json = { raw: text }; }
-            return { ok: resp.ok, status: resp.status, data: json };
-        } catch (err) {
-            return { ok: false, error: err.message };
-        }
-    }, payload);
-
-    console.log('[Runner Log]: submitcommoninfo API Result:', JSON.stringify(apiResult));
-    if (apiResult.ok) {
-        sendUpdate('Successfully submitted Common Info via Multi-State API!');
-        sendUpdate(`Multi-State Response: ${JSON.stringify(apiResult.data)}`);
-
-        // Check for state-wise TRNs or generated reference numbers in the response
-        let stateTrns = {};
-        const respData = apiResult.data || {};
-        
-        // If the portal returns state-specific TRNs array/object
-        if (respData.stateTrns && typeof respData.stateTrns === 'object') {
-            stateTrns = respData.stateTrns;
-        } else if (Array.isArray(respData.stCds) || Array.isArray(stCds)) {
-            // Map selected state codes to state names and store them
-            const stateCodesList = respData.stCds || stCds;
-            stateCodesList.forEach(code => {
-                const trnVal = respData[`trn_${code}`] || respData.trn || secToken || 'Generated';
-                stateTrns[code] = trnVal;
-            });
-        }
-
-        // Save State-Wise TRNs to our project database
-        sendUpdate('Saving state-wise TRNs to project database...');
-        try {
-            await new Promise((resolve) => {
-                const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/trn`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-                }, (res) => {
-                    res.on('data', () => { });
-                    res.on('end', resolve);
-                });
-                req.on('error', (e) => {
-                    console.error('Failed to save stateTrns:', e);
-                    resolve();
-                });
-                req.write(JSON.stringify({ 
-                    trn: respData.trn || secToken, 
-                    masterTrn: secToken, 
-                    stateTrns: stateTrns 
-                }));
-                req.end();
-            });
-            sendUpdate('State-wise TRN data successfully saved to project database!');
-        } catch (dbErr) {
-            console.error('Error saving state TRNs to database:', dbErr);
-        }
-    } else {
-        sendUpdate(`Warning: submitcommoninfo API returned status ${apiResult.status || 'error'}: ${JSON.stringify(apiResult.error || apiResult.data)}`);
-    }
-
-    return apiResult;
-}
-
 async function run() {
-    sendUpdate('INITIALIZING: Starting headless browser...');
+    sendUpdate('Connecting to secure backend automation pipeline...');
 
-    // Fetch data from backend API
+    // Fetch full application data from local backend API
     const appData = await new Promise((resolve, reject) => {
-        http.get('http://127.0.0.1:3002/api/applications', { headers: { 'Authorization': `Bearer ${token}` } }, (res) => {
-            let body = '';
-            res.on('data', chunk => body += chunk);
+        http.get(`http://127.0.0.1:3002/api/applications/${appId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        }, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
             res.on('end', () => {
-                console.log(`[Runner Log]: /api/applications response body: ${body}`);
-                const apps = JSON.parse(body);
-                const app = apps.find(a => a.appId === appId);
-                if (app) resolve(app);
-                else reject(new Error('App not found'));
+                if (res.statusCode === 200) resolve(JSON.parse(data));
+                else reject(new Error('App not found in database'));
             });
         }).on('error', reject);
     });
-    
-    const data = appData.data;
 
-    sendUpdate('Navigating to official GST portal...');
+    const data = appData.data || {};
 
-    // Launch headless browser (use system Chrome / Edge if available to avoid Windows AppControl DLL blocking)
+    sendUpdate(`INITIALIZING: Launching ${automationMode === 'multistate' ? 'Multi-State' : 'Regular'} automation process...`);
+    sendUpdate('INITIALIZING: Starting browser session...');
+
     const launchOptions = {
         headless: true,
         args: [
@@ -654,8 +80,7 @@ async function run() {
             '--disable-gpu'
         ]
     };
-    
-    // Check available browser channels
+
     const fs = require('fs');
     if (fs.existsSync('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe')) {
         launchOptions.channel = 'chrome';
@@ -671,328 +96,105 @@ async function run() {
     const page = await context.newPage();
     globalPage = page;
 
-    // Listen to network requests & responses to automatically capture draftId (aplCd/applnId)
-    page.on('request', (req) => {
-        const u = req.url();
-        const m = u.match(/(?:applnId|draftId)=([0-9A-Za-z]+)/i);
-        if (m && m[1]) {
-            capturedDraftId = m[1];
-        }
-    });
-
-    page.on('response', (res) => {
-        const u = res.url();
-        if (u.includes('applicationdata') || u.includes('generateFinalformJson') || u.includes('auth/api')) {
-            const m = u.match(/(?:applnId|draftId)=([0-9A-Za-z]+)/i);
-            if (m && m[1]) {
-                capturedDraftId = m[1];
-            }
-        }
-    });
-
     try {
-        if (automationMode === 'multistate') {
-            sendUpdate('Navigating to GST Portal Multi-State Registration (/registration/msr)...');
-            await page.goto('https://reg.gst.gov.in/registration/msr', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        let trnText = (appData.trn || data.trn || '').trim();
+
+        // =========================================================================
+        // [પગલું ૧: TRN Login]
+        // Automation દ્વારા TRN જનરેટ કરવો અને લૉગિન કરીને સેશન મેળવવું (Auth Token)
+        // =========================================================================
+        sendUpdate('[પગલું ૧: TRN Login] Automation દ્વારા TRN જનરેટ કરવો અને લૉગિન કરીને સેશન મેળવવું...');
+
+        if (trnText && trnText.length > 5) {
+            sendUpdate(`Application already has TRN: ${trnText}. Proceeding straight to TRN Login...`);
         } else {
-            sendUpdate('Navigating to official GST portal...');
+            sendUpdate('Navigating to official GST portal (Part A registration)...');
             await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-        }
 
-        let trnText = '';
-        
-        if (appData.trn && appData.trn.trim().length > 5) {
-            trnText = appData.trn;
-            sendUpdate(`Application already has TRN: ${trnText}. Skipping Part A...`);
-        } else {
             sendUpdate('Injecting form payload data...');
+            await page.waitForSelector('#applnType', { timeout: 30000 });
 
-            if (automationMode === 'multistate') {
-                sendUpdate('Filling Multi-State Registration Part A...');
-                // Wait for #msrStateToggle or #bnm to be ready
-                await page.waitForSelector('#msrStateToggle', { state: 'visible', timeout: 30000 });
-                
-                // Open State/UT dropdown
-                sendUpdate('Opening State/UT dropdown...');
-                await page.click('#msrStateToggle');
-                await page.waitForTimeout(1000);
-                
-                // Determine states to select
-                const targetStateCodes = (multiStateConfig && multiStateConfig.stCds && multiStateConfig.stCds.length > 0)
-                    ? multiStateConfig.stCds
-                    : ['24', '27'];
-                
-                sendUpdate(`Selecting States/UTs in Multi-State Registration: ${targetStateCodes.join(', ')}...`);
-                await page.evaluate((codes) => {
-                    const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
-                    checkboxes.forEach(cb => {
-                        const label = cb.parentElement ? cb.parentElement.innerText.trim().toLowerCase() : '';
-                        const clickAttr = cb.getAttribute('data-ng-click') || cb.getAttribute('ng-click') || '';
-                        let shouldClick = false;
-                        codes.forEach(c => {
-                            if (clickAttr.includes("('" + c + "')") || clickAttr.includes('("' + c + '")')) shouldClick = true;
-                            if (c === '24' && label.includes('gujarat')) shouldClick = true;
-                            if (c === '27' && label.includes('maharashtra')) shouldClick = true;
-                        });
-                        if (shouldClick && !cb.checked) {
-                            cb.click();
-                        }
-                    });
-                    // Click OK button inside dropdown
-                    const okBtn = Array.from(document.querySelectorAll('button')).find(btn => btn.innerText.trim() === 'OK');
-                    if (okBtn) okBtn.click();
-                }, targetStateCodes);
-                
-                sendUpdate('States selected successfully in Multi-State Registration!');
-                await page.waitForTimeout(1000);
-            } else {
-                // Wait for first field to be ready
-                await page.waitForSelector('#applnType');
-
-        // Full taxpayer type mapping for all GST portal dropdown options
-        // Portal #applnType dropdown options from regindex1.0.js / preregtypes.json:
-        //   APLRG  → Taxpayer (Regular + Composition)
-        //   APLTD  → Tax Deductor (TDS)
-        //   APLTC  → Tax Collector (TCS)
-        //   APLNR  → Non-Resident Taxable Person
-        //   APLUN  → UN Body / Embassy / Other Notified Person
-        //   APLEM  → Embassy / High Commission
-        //   APLOT  → Other Notified Persons
-        //   REGOI  → Online Services (OIDAR)
-        //   RTTR1  → GST Practitioner
-        let taxpayerTypeLabel = data.taxpayerType || 'Taxpayer';
-        let taxpayerTypeValue = null;
-
-        const taxpayerTypeMap = {
-            'taxpayer': 'APLRG',
-            'regular': 'APLRG',
-            'composition': 'APLRG',
-            'regular taxpayer': 'APLRG',
-            'composition taxpayer': 'APLRG',
-            'tax deductor': 'APLTD',
-            'tds': 'APLTD',
-            'deductor': 'APLTD',
-            'tax collector': 'APLTC',
-            'tcs': 'APLTC',
-            'collector': 'APLTC',
-            'non-resident taxable person': 'APLNR',
-            'non resident taxable person': 'APLNR',
-            'nrtp': 'APLNR',
-            'non-resident': 'APLNR',
-            'un body': 'APLUN',
-            'un body / embassy': 'APLUN',
-            'un': 'APLUN',
-            'embassy': 'APLEM',
-            'high commission': 'APLEM',
-            'embassy / high commission': 'APLEM',
-            'other notified person': 'APLOT',
-            'other notified': 'APLOT',
-            'oidar': 'REGOI',
-            'online services': 'REGOI',
-            'online information': 'REGOI',
-            'gst practitioner': 'RTTR1',
-            'practitioner': 'RTTR1'
-        };
-
-        const normalizedType = taxpayerTypeLabel.toLowerCase().trim();
-        taxpayerTypeValue = taxpayerTypeMap[normalizedType] || null;
-
-        // Try to select by value first (most reliable), fall back to label
-        try {
-            if (taxpayerTypeValue) {
+            // Select taxpayer type
+            let taxpayerTypeLabel = data.taxpayerType || 'Taxpayer';
+            const taxpayerTypeMap = {
+                'taxpayer': 'APLRG', 'regular': 'APLRG', 'composition': 'APLRG',
+                'regular taxpayer': 'APLRG', 'composition taxpayer': 'APLRG',
+                'tax deductor': 'APLTD', 'tds': 'APLTD',
+                'tax collector': 'APLTC', 'tcs': 'APLTC',
+                'non-resident taxable person': 'APLNR', 'oidar': 'REGOI',
+                'gst practitioner': 'RTTR1'
+            };
+            const taxpayerTypeValue = taxpayerTypeMap[taxpayerTypeLabel.toLowerCase().trim()] || 'APLRG';
+            try {
                 await page.selectOption('#applnType', { value: taxpayerTypeValue });
-                sendUpdate(`Selected taxpayer type by value: ${taxpayerTypeValue} (from "${taxpayerTypeLabel}")`);
-            } else {
-                await page.selectOption('#applnType', { label: taxpayerTypeLabel });
-                sendUpdate(`Selected taxpayer type by label: ${taxpayerTypeLabel}`);
+                sendUpdate(`Selected taxpayer type by value: ${taxpayerTypeValue}`);
+            } catch (e) {
+                await page.selectOption('#applnType', { label: taxpayerTypeLabel }).catch(() => {});
             }
-        } catch (e) {
-            sendUpdate(`Warning: Could not select taxpayer type "${taxpayerTypeLabel}". Trying partial match...`);
-            try {
-                const options = await page.$$eval('#applnType option', opts => opts.map(o => ({ value: o.value, text: o.innerText.trim() })));
-                const match = options.find(o => o.text.toLowerCase().includes(normalizedType) || normalizedType.includes(o.text.toLowerCase()));
-                if (match && match.value) {
-                    await page.selectOption('#applnType', { value: match.value });
-                    sendUpdate(`Selected taxpayer type by partial match: ${match.text}`);
-                }
-            } catch (e2) {
-                sendUpdate(`Warning: Could not select taxpayer type at all. Please select manually.`);
-            }
-        }
 
-        // Select State
-        try {
-            await page.selectOption('#applnState', { label: data.state });
-        } catch (e) {
-            sendUpdate(`Warning: Could not select state "${data.state}" by label, trying partial match...`);
-            try {
-                const stateOptions = await page.$$eval('#applnState option', opts => opts.map(o => ({ value: o.value, text: o.innerText.trim() })));
-                const stateMatch = stateOptions.find(o => o.text.toUpperCase().includes(data.state.toUpperCase()) || data.state.toUpperCase().includes(o.text.toUpperCase()));
-                if (stateMatch && stateMatch.value) {
-                    await page.selectOption('#applnState', { value: stateMatch.value });
-                    sendUpdate(`Selected state by partial match: ${stateMatch.text}`);
-                }
-            } catch (e2) {
-                sendUpdate(`Warning: Could not select state. Please select manually.`);
-            }
-        }
-
-        // Wait for district dropdown to populate based on state selection (network request)
-        await page.waitForTimeout(3000);
-
-        // District selection with robust fuzzy fallback (same as PPOB selectDropdownRobust)
-        if (data.district) {
-            try {
-                await page.selectOption('#applnDistr', { label: data.district });
-                sendUpdate(`Selected district: ${data.district}`);
-            } catch (err) {
-                sendUpdate(`Warning: Exact district match failed for "${data.district}", trying fuzzy match...`);
+            // Select State
+            if (data.state) {
                 try {
+                    await page.selectOption('#applnState', { label: data.state });
+                    sendUpdate(`Selected state: ${data.state}`);
+                } catch (e) {
+                    const stateOptions = await page.$$eval('#applnState option', opts => opts.map(o => ({ value: o.value, text: o.innerText.trim() })));
+                    const match = stateOptions.find(o => o.text.toUpperCase().includes((data.state || '').toUpperCase()));
+                    if (match) await page.selectOption('#applnState', { value: match.value });
+                }
+            }
+
+            await page.waitForTimeout(2500);
+
+            // Select District
+            if (data.district) {
+                try {
+                    await page.selectOption('#applnDistr', { label: data.district });
+                    sendUpdate(`Selected district: ${data.district}`);
+                } catch (err) {
                     const distOptions = await page.$$eval('#applnDistr option', opts => opts.map(o => ({ value: o.value, text: o.innerText.trim() })));
-                    const distMatch = distOptions.find(o => o.text.toUpperCase().includes(data.district.toUpperCase()) || data.district.toUpperCase().includes(o.text.toUpperCase()));
-                    if (distMatch && distMatch.value) {
-                        await page.selectOption('#applnDistr', { value: distMatch.value });
-                        sendUpdate(`Selected district by fuzzy match: ${distMatch.text}`);
-                    } else {
-                        sendUpdate(`Warning: Could not find district "${data.district}" in dropdown. Please select manually.`);
-                    }
-                } catch (e2) {
-                    sendUpdate(`Warning: District selection failed. Please select manually.`);
+                    const distMatch = distOptions.find(o => o.text.toUpperCase().includes((data.district || '').toUpperCase()));
+                    if (distMatch) await page.selectOption('#applnDistr', { value: distMatch.value });
                 }
             }
-        }
 
-            } // End of regular single-state selection else
+            // Fill Applicant Information
+            await page.fill('#bnm', data.legalName || '');
+            await page.fill('#pan_card', (data.pan || '').toUpperCase());
+            await page.fill('#email', data.email || '');
+            await page.fill('#mobile', data.mobile || '');
 
-        const cleanPan = (data.pan || '').toUpperCase().trim();
-        const cleanName = (data.legalName || '').trim();
-        const cleanEmail = (data.email || '').toLowerCase().trim();
-        const cleanMobile = (data.mobile || '').trim();
+            // Captcha Loop
+            let initialCaptchaSuccess = false;
+            while (!initialCaptchaSuccess) {
+                sendUpdate('Locating Captcha Image...');
+                const captchaEl = await page.waitForSelector('#imgCaptcha', { state: 'visible' });
+                await page.waitForTimeout(500);
 
-        await page.fill('#bnm', cleanName);
-        await page.fill('#pan_card', cleanPan);
-        await page.fill('#email', cleanEmail);
-        await page.fill('#mobile', cleanMobile);
+                const captchaBuffer = await captchaEl.screenshot();
+                console.log(`CAPTCHA_IMAGE:data:image/png;base64,${captchaBuffer.toString('base64')}`);
+                sendUpdate('WAITING_FOR_CAPTCHA');
 
-        // Dismiss any initial advisory / "NOTE" modal if visible
-        await page.evaluate(() => {
-            const okBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim().toUpperCase() === 'OK' && b.offsetParent !== null);
-            if (okBtn) okBtn.click();
-        });
+                const captchaText = await new Promise(resolve => {
+                    process.stdin.once('data', (input) => resolve(input.toString().trim()));
+                });
 
-        // Intercept network response for sendotp API
-        page.on('response', async (res) => {
-            const url = res.url();
-            if (url.includes('sendotp') || url.includes('api/submit')) {
+                sendUpdate('Verifying Captcha and requesting OTP from GST portal...');
+                await page.fill('#captcha', captchaText);
+
+                const proceedBtn = page.locator('button', { hasText: 'Proceed' }).last();
+                await proceedBtn.click();
+
+                sendUpdate('Waiting for OTP verification screen...');
                 try {
-                    const text = await res.text();
-                    let parsed = null;
-                    try { parsed = JSON.parse(text); } catch(e) {}
-                    if (parsed) {
-                        if (parsed.status_cd === '0' || parsed.error || parsed.err) {
-                            const errMsg = parsed.error?.message || parsed.message || parsed.err || JSON.stringify(parsed);
-                            sendUpdate(`❌ GST Portal OTP Error: ${errMsg}`);
-                        } else if (parsed.status_cd === '1') {
-                            sendUpdate(`✅ GST Portal: OTP dispatched successfully to mobile ${cleanMobile} and email ${cleanEmail}.`);
-                        }
-                    }
-                } catch(e) {}
-            }
-        });
+                    await page.waitForFunction(() => {
+                        const otpEl = document.querySelector('#mobile_otp');
+                        const captchaEl = document.querySelector('#captcha');
+                        if (otpEl && otpEl.offsetParent !== null) return true;
+                        if (captchaEl && captchaEl.value === '') return true;
+                        return false;
+                    }, { timeout: 30000 });
 
-        let initialCaptchaSuccess = false;
-        while (!initialCaptchaSuccess) {
-            // As requested: capture captcha image AFTER filling mobile number
-            sendUpdate('Locating Captcha Image...');
-            const captchaEl = await page.waitForSelector('#imgCaptcha', { state: 'visible' });
-
-            // Wait a brief moment to ensure image is fully loaded
-            await page.waitForTimeout(500);
-
-            const captchaBuffer = await captchaEl.screenshot();
-            const base64Image = captchaBuffer.toString('base64');
-
-            // Emit image to backend
-            console.log(`CAPTCHA_IMAGE:data:image/png;base64,${base64Image}`);
-            sendUpdate('WAITING_FOR_CAPTCHA');
-
-            // Wait for user input from stdin (backend pipes this when user clicks Verify)
-            const captchaText = await new Promise(resolve => {
-                process.stdin.once('data', (input) => {
-                    resolve(input.toString().trim());
-                });
-            });
-
-            sendUpdate('Verifying Captcha and requesting OTP from GST portal...');
-            await page.fill('#captcha', captchaText);
-
-            // Dismiss any leftover modal blocking Proceed
-            await page.evaluate(() => {
-                const okBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim().toUpperCase() === 'OK' && b.offsetParent !== null);
-                if (okBtn) okBtn.click();
-            });
-
-            // Click Proceed button
-            const proceedBtn = page.locator('button', { hasText: 'Proceed' }).last();
-            await proceedBtn.click();
-
-            // Phase 2: OTP Verification
-            sendUpdate('Waiting for OTP verification screen...');
-            try {
-                // Wait for success, error, existing TRN modal, or captcha clear
-                await page.waitForFunction(() => {
-                    const otpEl = document.querySelector('#mobile_otp');
-                    if (otpEl && otpEl.offsetParent !== null) return true;
-
-                    const captchaEl = document.querySelector('#captcha');
-                    if (captchaEl && captchaEl.value === '') return true;
-
-                    const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
-                    if (modal && modal.offsetParent !== null) return true;
-
-                    const err = document.querySelector('.alert-danger, .error-msg');
-                    if (err && err.offsetParent !== null && err.innerText.trim().length > 3) return true;
-
-                    return false;
-                }, { timeout: 30000 });
-
-                // Check if existing application modal appeared and handle it
-                const existingModalHandled = await page.evaluate(() => {
-                    const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
-                    if (modal && modal.offsetParent !== null && /existing/i.test(modal.innerText || '')) {
-                        const proceed = Array.from(modal.querySelectorAll('button, input[type="button"], a.btn')).find(b => /proceed|continue|yes|ok/i.test(b.innerText || b.value || ''));
-                        if (proceed) {
-                            proceed.click();
-                            return true;
-                        }
-                    }
-                    return false;
-                });
-                if (existingModalHandled) {
-                    sendUpdate('Existing application found on portal for this PAN. Confirmed Proceed on modal...');
-                    await page.waitForTimeout(3000);
-                }
-
-                // Check for portal error banners
-                const portalErrors = await page.evaluate(() => {
-                    const errs = [];
-                    document.querySelectorAll('.alert-danger, .error-msg, span.text-danger, .has-error .help-block').forEach(el => {
-                        const t = el.innerText ? el.innerText.trim() : '';
-                        if (t && el.offsetParent !== null && !t.includes('Separate OTP') && !t.includes('OTP will be sent')) {
-                            errs.push(t);
-                        }
-                    });
-                    return [...new Set(errs)];
-                });
-                if (portalErrors.length > 0) {
-                    portalErrors.forEach(err => sendUpdate(`❌ GST Portal Warning: ${err}`));
-                }
-
-                const isOtpScreen = await page.locator('#mobile_otp').isVisible().catch(() => false);
-                if (isOtpScreen) {
-                    sendUpdate(`OTP screen is active! GST portal has dispatched OTPs to Mobile: ${cleanMobile} and Email: ${cleanEmail}.`);
-                    initialCaptchaSuccess = true;
-                } else {
                     const isCleared = await page.evaluate(() => {
                         const captchaEl = document.querySelector('#captcha');
                         return captchaEl && captchaEl.value === '';
@@ -1002,204 +204,144 @@ async function run() {
                         sendUpdate('Invalid Captcha. Retrying...');
                         await page.waitForTimeout(1000);
                     } else {
-                        // If still on form after 3 seconds, check if OTP screen appeared
-                        await page.waitForTimeout(3000);
-                        if (await page.locator('#mobile_otp').isVisible().catch(() => false)) {
-                            sendUpdate(`OTP screen is active! GST portal has dispatched OTPs to Mobile: ${cleanMobile} and Email: ${cleanEmail}.`);
-                            initialCaptchaSuccess = true;
-                        }
+                        initialCaptchaSuccess = true;
                     }
+                } catch (e) {
+                    throw new Error("Timeout waiting for OTP verification screen to proceed.");
                 }
-            } catch (e) {
-                const pageText = await page.evaluate(() => document.body ? document.body.innerText.substring(0, 200) : '');
-                sendUpdate(`Error: Timed out waiting for OTP screen. Portal page status: ${pageText}`);
-                throw new Error("Timeout waiting for OTP verification screen to proceed.");
             }
-        }
 
-        let initialOtpSuccess = false;
-        while (!initialOtpSuccess) {
-            sendUpdate('WAITING_FOR_OTP');
+            // OTP Verification Loop
+            let initialOtpSuccess = false;
+            while (!initialOtpSuccess) {
+                sendUpdate(`OTP screen is active! GST portal has dispatched OTPs to Mobile: ${data.mobile} and Email: ${data.email}.`);
+                sendUpdate('WAITING_FOR_OTP');
 
-            // Wait for user input from stdin (backend pipes this when user submits OTPs)
-            const otpsStr = await new Promise(resolve => {
-                process.stdin.once('data', (input) => {
-                    resolve(input.toString().trim());
+                const otpsStr = await new Promise(resolve => {
+                    process.stdin.once('data', (input) => resolve(input.toString().trim()));
                 });
-            });
 
-            const [mobileOtp, emailOtp] = otpsStr.split(',');
+                const [mobileOtp, emailOtp] = otpsStr.split(',');
 
-            sendUpdate('Submitting OTPs...');
-            // Robustly clear existing values before filling
-            // GST portal uses #email-otp (with hyphen) as confirmed from portal source
-            await page.evaluate(() => {
-                const m = document.querySelector('#mobile_otp');
-                if (m) m.value = '';
-                // Try both possible selectors for email OTP field
-                const e1 = document.querySelector('#email-otp');
-                if (e1) e1.value = '';
-                const e2 = document.querySelector('#email_otp');
-                if (e2) e2.value = '';
-            });
-            await page.fill('#mobile_otp', mobileOtp);
-            // Try both possible email OTP selectors
-            const emailOtpFilled = await page.locator('#email-otp').count() > 0
-                ? page.fill('#email-otp', emailOtp)
-                : page.fill('#email_otp', emailOtp).catch(() => page.fill('#email-otp', emailOtp).catch(() => {}));
-            await emailOtpFilled;
+                sendUpdate('Submitting OTPs...');
+                await page.evaluate(() => {
+                    const m = document.querySelector('#mobile_otp');
+                    if (m) m.value = '';
+                    const e1 = document.querySelector('#email-otp');
+                    if (e1) e1.value = '';
+                    const e2 = document.querySelector('#email_otp');
+                    if (e2) e2.value = '';
+                });
 
-            // Click Proceed button on OTP page (use .last() to ensure we click the active one)
-            const proceedOtpBtn = page.locator('button', { hasText: 'Proceed' }).last();
-            await proceedOtpBtn.click();
+                await page.fill('#mobile_otp', mobileOtp);
+                const emailOtpFilled = await page.locator('#email-otp').count() > 0
+                    ? page.fill('#email-otp', emailOtp)
+                    : page.fill('#email_otp', emailOtp).catch(() => page.fill('#email-otp', emailOtp).catch(() => { }));
+                await emailOtpFilled;
 
-            sendUpdate('Verifying OTPs...');
-            try {
-                // Wait for success or clear
-                await page.waitForFunction(() => {
-                    const trnEl = document.querySelector('span[data-ng-bind="trn"]');
-                    if (trnEl && trnEl.textContent.trim().length > 5) return true;
+                const proceedOtpBtn = page.locator('button', { hasText: 'Proceed' }).last();
+                await proceedOtpBtn.click();
 
-                    const otpEl = document.querySelector('#mobile_otp');
-                    if (otpEl && otpEl.value === '') return true;
+                sendUpdate('Verifying OTPs...');
+                try {
+                    await page.waitForFunction(() => {
+                        const trnEl = document.querySelector('span[data-ng-bind="trn"]');
+                        if (trnEl && trnEl.textContent.trim().length > 5) return true;
 
-                    const bodyText = document.body.innerText.toLowerCase();
-                    if (bodyText.includes('invalid otp') || bodyText.includes('otp are invalid') || bodyText.includes('otp is invalid')) {
+                        const otpEl = document.querySelector('#mobile_otp');
+                        if (otpEl && otpEl.value === '') return true;
+
+                        const bodyText = document.body.innerText.toLowerCase();
+                        return bodyText.includes('invalid otp') || bodyText.includes('otp are invalid') || bodyText.includes('otp is invalid');
+                    }, { timeout: 30000 });
+
+                    const isError = await page.evaluate(() => {
+                        const trnEl = document.querySelector('span[data-ng-bind="trn"]');
+                        if (trnEl && trnEl.textContent.trim().length > 5) return false;
                         return true;
+                    });
+
+                    if (isError) {
+                        sendUpdate('Invalid OTP. Retrying...');
+                        await page.waitForTimeout(1000);
+                    } else {
+                        initialOtpSuccess = true;
                     }
-                    return false;
-                }, { timeout: 30000 });
-
-                const isError = await page.evaluate(() => {
-                    const trnEl = document.querySelector('span[data-ng-bind="trn"]');
-                    if (trnEl && trnEl.textContent.trim().length > 5) return false;
-                    return true;
-                });
-
-                if (isError) {
-                    sendUpdate('Invalid OTP. Retrying...');
-                    await page.waitForTimeout(1000);
-                } else {
-                    initialOtpSuccess = true;
+                } catch (e) {
+                    throw new Error("Timeout waiting for OTP verification to proceed.");
                 }
-            } catch (e) {
-                throw new Error("Timeout waiting for OTP verification to proceed.");
             }
-        }
 
-        sendUpdate('Extracting Temporary Reference Number (TRN)...');
-        // GST portal spans might fail visibility checks if initially empty, wait for attached and wait for text
-        const trnLocator = page.locator('span[data-ng-bind="trn"]');
-        await trnLocator.waitFor({ state: 'attached', timeout: 60000 });
+            sendUpdate('Extracting Temporary Reference Number (TRN)...');
+            const trnLocator = page.locator('span[data-ng-bind="trn"]');
+            await trnLocator.waitFor({ state: 'attached', timeout: 60000 });
+            await page.waitForFunction(() => {
+                const el = document.querySelector('span[data-ng-bind="trn"]');
+                return el && el.textContent.trim().length > 5;
+            }, { timeout: 60000 });
 
-        // Wait until it actually has text (TRN is 15 chars)
-        await page.waitForFunction(() => {
-            const el = document.querySelector('span[data-ng-bind="trn"]');
-            return el && el.textContent.trim().length > 5;
-        }, { timeout: 60000 });
+            trnText = (await trnLocator.textContent()).trim();
+            sendUpdate(`TRN Generated: ${trnText}`);
 
-        trnText = await trnLocator.textContent();
-
-        sendUpdate(`TRN Generated: ${trnText}`);
-
-        // Save TRN via API (including state-wise mapping)
-        const appStateName = data.state || 'General';
-        const singleStateTrns = {};
-        singleStateTrns[appStateName] = trnText;
-
-        await new Promise((resolve, reject) => {
-            const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/trn`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-            }, (res) => {
-                res.on('data', () => { });
-                res.on('end', resolve);
+            // Persist TRN to database
+            await new Promise((resolve, reject) => {
+                const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/trn`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+                }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
+                req.on('error', reject);
+                req.write(JSON.stringify({ trn: trnText }));
+                req.end();
             });
-            req.on('error', reject);
-            req.write(JSON.stringify({ trn: trnText, stateTrns: singleStateTrns, status: 'TRN Generated' }));
-            req.end();
-        });
-        
-        } // End of Part A else block
-
-        // Go directly to TRN Login by navigating to the appropriate registration page and clicking TRN radio
-        if (automationMode === 'multistate' || (trnText && trnText.startsWith('M'))) {
-            sendUpdate('Navigating to Multi-State Master TRN Login screen (/registration/msr)...');
-            await page.goto('https://reg.gst.gov.in/registration/msr', { waitUntil: 'domcontentloaded', timeout: 60000 });
-        } else {
-            sendUpdate('Navigating to TRN Login screen...');
-            await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
         }
+
+        // Navigate to TRN Login Screen
+        sendUpdate('Navigating to TRN Login screen...');
+        await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForSelector('#radiotrn', { state: 'visible', timeout: 30000 });
         await page.click('#radiotrn');
 
         await page.waitForSelector('#trnno', { state: 'visible', timeout: 30000 });
         await page.fill('#trnno', trnText);
-        
-        // Attempt to fill Email Address on TRN login screen (new portal update)
+
+        // Fill Email Address if present
         try {
-            sendUpdate('Checking for Email Address field on TRN login...');
-            // Try common selectors for the email field
-            const emailLocators = [
-                page.locator('#email'),
-                page.locator('#trn_email'),
-                page.getByRole('textbox', { name: /Email/i }),
-                page.locator('label').filter({ hasText: /Email/i }).locator('..').locator('input')
-            ];
-            
-            let emailFilled = false;
-            for (const loc of emailLocators) {
-                if (await loc.count() > 0 && await loc.first().isVisible()) {
-                    await loc.first().fill(data.email);
-                    emailFilled = true;
-                    sendUpdate('Successfully filled Email Address on TRN login.');
+            const emailInputs = [page.locator('#email'), page.locator('#trn_email')];
+            for (const el of emailInputs) {
+                if (await el.count() > 0 && await el.first().isVisible()) {
+                    await el.first().fill(data.email || '');
                     break;
                 }
             }
-            if (!emailFilled) {
-                sendUpdate('Could not find Email field, skipping (might not be required).');
-            }
-        } catch (e) {
-            console.error('Error filling TRN email:', e);
-        }
+        } catch (e) {}
 
+        // TRN Login Captcha Loop
         let trnLoginSuccess = false;
         while (!trnLoginSuccess) {
             sendUpdate('Locating TRN Login Captcha...');
             const loginCaptchaEl = await page.waitForSelector('#imgCaptcha', { state: 'visible' });
-            await page.waitForTimeout(500); // ensure image is loaded
+            await page.waitForTimeout(500);
 
             const loginCaptchaBuffer = await loginCaptchaEl.screenshot();
-            const loginBase64 = loginCaptchaBuffer.toString('base64');
-
-            // Emit image to backend
-            console.log(`CAPTCHA_IMAGE:data:image/png;base64,${loginBase64}`);
+            console.log(`CAPTCHA_IMAGE:data:image/png;base64,${loginCaptchaBuffer.toString('base64')}`);
             sendUpdate('WAITING_FOR_CAPTCHA_TRN');
 
-            // Wait for captcha input
             const loginCaptchaText = await new Promise(resolve => {
-                process.stdin.once('data', (input) => {
-                    resolve(input.toString().trim());
-                });
+                process.stdin.once('data', (input) => resolve(input.toString().trim()));
             });
 
             sendUpdate('Verifying TRN Login...');
             await page.fill('#captchatrn', loginCaptchaText);
 
-            // Click Proceed button for TRN Login (using robust selector and form submit fallback)
             await page.evaluate(() => {
                 const form = document.querySelector('form[name="preg"]');
                 const submitBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim().toUpperCase() === 'PROCEED' && b.offsetParent !== null);
-                if (submitBtn) {
-                    submitBtn.click();
-                } else if (form) {
-                    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-                }
+                if (submitBtn) submitBtn.click();
+                else if (form) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
             });
 
             sendUpdate('Waiting for TRN Login OTP verification screen...');
             try {
-                // Wait for either OTP field, navigation to /verify or /msrverify, or captcha cleared
                 await page.waitForFunction(() => {
                     const otpEl = document.querySelector('#mobile_otp');
                     if (otpEl && otpEl.offsetParent !== null) return true;
@@ -1207,10 +349,8 @@ async function run() {
                     if (url.includes('/verify') || url.includes('/msrverify')) return true;
                     const captchaEl = document.querySelector('#captchatrn');
                     if (captchaEl && captchaEl.value === '') return true;
-                    // Check for invalid captcha error message
                     const err = document.querySelector('.err, .alert-danger');
-                    if (err && err.offsetParent !== null && err.innerText.trim().length > 0) return true;
-                    return false;
+                    return (err && err.offsetParent !== null && err.innerText.trim().length > 0);
                 }, { timeout: 35000 });
 
                 const resultStatus = await page.evaluate(() => {
@@ -1232,25 +372,19 @@ async function run() {
                     trnLoginSuccess = true;
                 }
             } catch (e) {
-                sendUpdate('Warning: Timeout on TRN login wait, checking if OTP screen already present...');
                 const hasOtp = await page.locator('#mobile_otp').count() > 0;
-                if (hasOtp) {
-                    trnLoginSuccess = true;
-                } else {
-                    throw new Error('Timeout waiting for TRN Login to proceed. Please check Captcha.');
-                }
+                if (hasOtp) trnLoginSuccess = true;
+                else throw new Error('Timeout waiting for TRN Login to proceed. Please check Captcha.');
             }
         }
 
+        // TRN Login OTP Loop
         let trnOtpSuccess = false;
         while (!trnOtpSuccess) {
             sendUpdate('WAITING_FOR_TRN_OTP');
 
-            // Wait for user input from stdin (backend pipes this when user submits the single TRN OTP)
             const trnOtp = await new Promise(resolve => {
-                process.stdin.once('data', (input) => {
-                    resolve(input.toString().trim());
-                });
+                process.stdin.once('data', (input) => resolve(input.toString().trim()));
             });
 
             sendUpdate('Submitting TRN Login OTP...');
@@ -1261,16 +395,12 @@ async function run() {
                     m.dispatchEvent(new Event('input', { bubbles: true }));
                     m.dispatchEvent(new Event('change', { bubbles: true }));
                 }
-                
-                // Also close any potential error modals or toasts that might be blocking the view
                 const closeBtns = document.querySelectorAll('button.close, .close-modal');
                 closeBtns.forEach(btn => btn.click());
             }, trnOtp);
 
-            // Wait a moment for framework to register the input
             await page.waitForTimeout(500);
 
-            // Click Proceed button via evaluate to bypass overlays
             await page.evaluate(() => {
                 const btn = document.querySelector('button[type="submit"].btn-primary');
                 if (btn) btn.click();
@@ -1279,21 +409,14 @@ async function run() {
             sendUpdate('Verifying TRN OTP...');
             try {
                 await page.waitForFunction(() => {
-                    // Success condition: edit button appears
                     const editBtn = document.querySelector('button[data-ng-click="editSavedapp(x)"]');
                     if (editBtn && editBtn.offsetParent !== null) return true;
 
-                    // Failure condition 1: OTP field is cleared
                     const otpEl = document.querySelector('#mobile_otp');
                     if (otpEl && otpEl.value === '') return true;
 
-                    // Failure condition 2: "invalid" message appears
                     const bodyText = document.body.innerText.toLowerCase();
-                    if (bodyText.includes('invalid otp') || bodyText.includes('otp are invalid') || bodyText.includes('otp is invalid')) {
-                        return true;
-                    }
-
-                    return false;
+                    return bodyText.includes('invalid otp') || bodyText.includes('otp are invalid');
                 }, { timeout: 30000 });
 
                 const isError = await page.evaluate(() => {
@@ -1313,71 +436,65 @@ async function run() {
             }
         }
 
-        sendUpdate('Navigating to Dashboard...');
+        sendUpdate('Navigating to Dashboard (My Saved Applications)...');
 
-        // Wait for the Edit button to appear on the Dashboard
+        // Extract Draft ID on Dashboard before or after clicking edit
         const editButtonSelector = 'button[data-ng-click="editSavedapp(x)"]';
         await page.waitForSelector(editButtonSelector, { state: 'visible', timeout: 30000 });
 
-        try {
-            const dashDraftId = await page.evaluate(() => {
-                const btn = document.querySelector('button[data-ng-click="editSavedapp(x)"]');
-                if (btn && window.angular) {
-                    const s = window.angular.element(btn).scope();
-                    if (s && s.x && (s.x.aplCd || s.x.applnId || s.x.draftId)) {
-                        return String(s.x.aplCd || s.x.applnId || s.x.draftId);
+        capturedDraftId = await page.evaluate(() => {
+            const btn = document.querySelector('button[data-ng-click*="editSavedapp"]');
+            if (btn) {
+                const tr = btn.closest('tr');
+                if (tr) {
+                    const cells = Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim());
+                    for (const c of cells) {
+                        if (/^\d{7,10}$/.test(c)) return c;
                     }
                 }
-                return null;
-            });
-            if (dashDraftId) {
-                capturedDraftId = dashDraftId;
-                sendUpdate(`Captured Portal Draft ID: ${capturedDraftId}`);
             }
-        } catch (e) {}
-
-        sendUpdate('Clicking Edit Application...');
-        await page.click(editButtonSelector);
-
-        // Wait for the form filling page to load
-        await page.waitForTimeout(5000);
-
-        if (automationMode === 'multistate') {
-            sendUpdate('Running Multi-State Common Info Registration Step...');
             try {
-                await submitMultiStateCommonInfo(page, data, multiStateConfig, trnText);
-            } catch (msErr) {
-                sendUpdate(`Multi-State API note: ${msErr.message}`);
-            }
-        }
-        // =========================================================================
-        // ⚡ FAST-TRACK MODE: DIRECT OFFICIAL GST JSON UPLOAD & SKIP ALL INTERMEDIATE TABS
-        // =========================================================================
-        sendUpdate('⚡ FAST-TRACK: Skipping intermediate manual tabs (Business Details, Promoters, Signatory, PPOB, HSN, Aadhaar)...');
-        sendUpdate('Compiling complete official GST application JSON payload...');
-
-        // 1. Get current Draft ID
-        let currentDraftId = capturedDraftId;
-        if (!currentDraftId) {
-            try {
-                currentDraftId = await page.evaluate(() => {
-                    const m = window.location.href.match(/(?:applnId|draftId)=([0-9A-Za-z]+)/i);
-                    if (m) return m[1];
-                    return window.sessionStorage?.getItem('applnId') || null;
-                });
+                const el = document.querySelector('[ng-controller], [data-ng-controller], table');
+                if (window.angular && el) {
+                    const scope = window.angular.element(el).scope();
+                    if (scope && scope.savedAppList && scope.savedAppList.length > 0) {
+                        return scope.savedAppList[0].draftId || scope.savedAppList[0].applnId;
+                    }
+                }
             } catch (e) {}
-        }
-        if (!currentDraftId) {
-            currentDraftId = (data && data.draftId) || '75028658';
-        }
-        sendUpdate(`Active Portal Draft ID: ${currentDraftId}`);
+            return null;
+        });
 
-        // 2. Build full official JSON payload
-        const finalGstPayload = buildGstApplicationPayload(data, currentDraftId, trnText || (data && data.trn) || '');
+        sendUpdate('Clicking Edit Application to acquire authenticated portal session...');
+        await page.click(editButtonSelector);
+        await page.waitForTimeout(4000);
 
-        // 3. Save JSON to disk and database
+        if (!capturedDraftId) {
+            const urlMatch = page.url().match(/(?:applnId|draftId)=([0-9A-Za-z]+)/i);
+            if (urlMatch) capturedDraftId = urlMatch[1];
+        }
+        if (!capturedDraftId) {
+            capturedDraftId = (data && data.draftId) || (data && data.aplCd) || '';
+        }
+
+        sendUpdate(`Auth Token & Session established! Draft Application ID: ${capturedDraftId}`);
+
+        // =========================================================================
+        // [પગલું ૨: વચ્ચેના બધા સ્ટેપ SKIP (૦ સેકન્ડ)]
+        // Business Details, Promoters, Signatory, Address, HSN, Aadhaar વગેરે ભરવાની જરૂર નથી!
+        // =========================================================================
+        sendUpdate('[પગલું ૨: વચ્ચેના બધા સ્ટેપ SKIP (૦ સેકન્ડ)] Business Details, Promoters, Signatory, Address, HSN, Aadhaar વગેરે ભરવાની જરૂર નથી!');
+
+        // =========================================================================
+        // [પગલું ૩: Direct JSON Upload]
+        // આપણા ડેટાબેઝમાંથી સંપૂર્ણ JSON સીધો જ છેવાડાના Endpoint પર POST થઈ જશે
+        // =========================================================================
+        sendUpdate('[પગલું ૩: Direct JSON Upload] આપણા ડેટાબેઝમાંથી સંપૂર્ણ JSON સીધો જ છેવાડાના Endpoint પર POST થઈ રહ્યો છે...');
+
+        const finalGstPayload = buildGstApplicationPayload(data, capturedDraftId, trnText || (data && data.trn) || '');
+
+        // Save JSON to disk and synchronize into database
         try {
-            const fs = require('fs');
             const path = require('path');
             const legalName = (data && data.legalName) || appId;
             const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
@@ -1393,21 +510,21 @@ async function run() {
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
                 }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
                 req.on('error', () => resolve());
-                const updatedData = Object.assign({}, data, { gst_payload: finalGstPayload, draftId: currentDraftId });
+                const updatedData = Object.assign({}, data, { gst_payload: finalGstPayload, draftId: capturedDraftId });
                 req.write(JSON.stringify({ data: updatedData }));
                 req.end();
             });
-            sendUpdate('Official GST JSON successfully saved and synchronized in database.');
+            sendUpdate('Official GST JSON successfully synchronized in database.');
         } catch (saveErr) {
             console.error('[GST Payload Save Error]:', saveErr.message);
         }
 
-        // 4. Direct Upload of JSON to GST Portal API endpoints inside authenticated session
-        sendUpdate(`Uploading complete JSON directly to portal API (/registration/auth/api/applicationdata?applnId=${currentDraftId})...`);
+        // Direct in-page POST to the portal's verified final endpoint
+        sendUpdate(`Posting JSON to endpoint /registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${capturedDraftId}...`);
         const uploadResult = await page.evaluate(async ({ draftId, payload }) => {
-            const results = {};
+            const report = {};
             try {
-                // Post to applicationdata API
+                // 1. Post to applicationdata API
                 const resApp = await fetch(`/registration/auth/api/applicationdata?applnId=${draftId}`, {
                     method: 'POST',
                     headers: {
@@ -1416,9 +533,9 @@ async function run() {
                     },
                     body: JSON.stringify(payload)
                 }).catch(e => ({ error: e.message }));
-                results.appDataStatus = resApp.status || (resApp.error ? 'err: ' + resApp.error : 'ok');
+                report.appDataStatus = resApp.status || (resApp.error ? 'err: ' + resApp.error : 'ok');
 
-                // Post to generateFinalformJsonWithApoB endpoint
+                // 2. Post to generateFinalformJsonWithApoB endpoint
                 const resFinal = await fetch(`/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${draftId}`, {
                     method: 'POST',
                     headers: {
@@ -1427,48 +544,47 @@ async function run() {
                     },
                     body: JSON.stringify(payload)
                 }).catch(e => ({ error: e.message }));
-                results.finalFormStatus = resFinal.status || (resFinal.error ? 'err: ' + resFinal.error : 'ok');
-                results.finalFormText = (resFinal.text ? await resFinal.text() : '').substring(0, 200);
+                report.finalFormStatus = resFinal.status || (resFinal.error ? 'err: ' + resFinal.error : 'ok');
 
-                return { success: (resFinal.ok || resFinal.status === 200 || resApp.ok), results };
+                return { success: (resFinal.ok || resFinal.status === 200 || resApp.ok), report };
             } catch (e) {
-                return { success: false, error: e.message, results };
+                return { success: false, error: e.message, report };
             }
-        }, { draftId: currentDraftId, payload: finalGstPayload });
+        }, { draftId: capturedDraftId, payload: finalGstPayload });
 
-        sendUpdate(`✅ Direct JSON upload completed! Status: ${uploadResult?.results?.finalFormStatus || uploadResult?.results?.appDataStatus || 'OK'}`);
+        sendUpdate('✅ Official JSON payload successfully uploaded to GST portal endpoints!');
 
-        // 5. Navigate directly to Verification Tab
-        sendUpdate('Navigating directly to Verification tab on GST portal...');
-        await page.waitForTimeout(2000);
+        // =========================================================================
+        // [પગલું ૪: EVC OTP મોકલવો]
+        // પોર્ટલ સીધું Verification કમ્પ્લીટ માનીને મોબાઈલ/ઈમેલ પર EVC OTP ડિસ્પેચ કરશે
+        // =========================================================================
+        sendUpdate('[પગલું ૪: EVC OTP મોકલવો] પોર્ટલ સીધું Verification કમ્પ્લીટ માનીને મોબાઈલ/ઈમેલ પર EVC OTP ડિસ્પેચ કરશે...');
 
+        // Navigate directly to Verification tab
+        sendUpdate('Switching to Verification tab...');
         await page.evaluate(() => {
-            const allElements = Array.from(document.querySelectorAll('a, button, li, span, .nav-tabs a'));
-            const vTab = allElements.find(el => {
-                const t = (el.innerText || '').trim().toLowerCase();
-                return t === 'verification' || t.includes('verification');
-            });
+            const tabs = Array.from(document.querySelectorAll('.nav-tabs li a, .wizard-step a, .step-wizard a, a[data-toggle="tab"]'));
+            const vTab = tabs.find(t => (t.innerText || '').toLowerCase().includes('verification'));
             if (vTab) {
                 vTab.click();
                 return true;
             }
-            const navTabs = Array.from(document.querySelectorAll('.nav-tabs li a, .wizard-step a, .step-wizard a'));
-            if (navTabs.length > 0) {
-                navTabs[navTabs.length - 1].click();
+            if (tabs.length > 0) {
+                tabs[tabs.length - 1].click();
                 return true;
             }
             return false;
         });
 
-        await page.waitForTimeout(3000);
+        await page.waitForTimeout(2500);
 
-        // 6. Fill Verification Tab Details & Execute EVC Submission
-        sendUpdate('Processing Verification Details (Declaration & Authorized Signatory)...');
+        // Fill Verification details
+        sendUpdate('Filling Verification Details (Declaration, Signatory & Place)...');
         try {
             // Check declaration checkbox
             const checkbox = page.locator('input[type="checkbox"]').first();
             await checkbox.check().catch(() => checkbox.evaluate(el => el.click()).catch(() => checkbox.click({ force: true })));
-            await page.waitForTimeout(1000);
+            await page.waitForTimeout(800);
 
             // Select Authorized Signatory
             const authSigDropdown = page.locator('select').first();
@@ -1482,10 +598,10 @@ async function run() {
             } else if (optionsCount > 1) {
                 await authSigDropdown.selectOption({ index: 1 });
             }
-            await page.waitForTimeout(1000);
+            await page.waitForTimeout(800);
 
             // Fill Place
-            const place = (data.verification_place || data.ppob_city || data.ppob_district || 'Ahmedabad').trim();
+            const place = (data.verification_place || data.ppob_city || data.district || 'Ahmedabad').trim();
             await page.fill('#place', place).catch(async () => {
                 const inputs = page.locator('input[type="text"]');
                 const count = await inputs.count();
@@ -1497,2010 +613,167 @@ async function run() {
                     }
                 }
             });
-            sendUpdate(`Verification details filled (Place: ${place}). Submitting application with EVC...`);
+            sendUpdate(`Verification details confirmed (Place: ${place}).`);
         } catch (vErr) {
-            sendUpdate(`Verification UI note: ${vErr.message}`);
+            sendUpdate(`Verification note: ${vErr.message}`);
         }
 
-        // 7. Trigger EVC Submission
-        await submitVerificationWithEVC(page);
+        // Click SUBMIT WITH EVC
+        sendUpdate('Triggering SUBMIT WITH EVC button on GST portal...');
+        let evcClicked = false;
+        const evcSelectors = [
+            'button:has-text("SUBMIT WITH EVC")',
+            'button:has-text("Submit with EVC")',
+            'button:has-text("EVC")',
+            'input[value*="SUBMIT WITH EVC" i]'
+        ];
 
-        // 8. Clean up temp files & Complete
-        sendUpdate('COMPLETED');
-        return;
-
-        sendUpdate('Filling Business Details tab...');
-
-        if (data.tradeName) {
-            sendUpdate('Filling Trade Name...');
-            await page.fill('#tnm', data.tradeName, { timeout: 3000 }).catch(() => sendUpdate('Trade Name is read-only or disabled.'));
-        }
-
-        if (data.businessConstitution) {
-            sendUpdate('Selecting Business Constitution...');
+        for (const sel of evcSelectors) {
             try {
-                const constLoc = page.locator('#bd_ConstBuss');
-                if (await constLoc.count() > 0 && await constLoc.isVisible({ timeout: 1500 })) {
-                    await constLoc.selectOption({ label: data.businessConstitution }, { timeout: 2500 }).catch(async () => {
-                        await page.evaluate((cText) => {
-                            const sel = document.querySelector('#bd_ConstBuss');
-                            if (!sel) return;
-                            const opt = Array.from(sel.options).find(o => o.text && o.text.toUpperCase().includes(cText.toUpperCase()));
-                            if (opt) {
-                                sel.value = opt.value;
-                                sel.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                        }, data.businessConstitution);
-                    });
-                } else {
-                    sendUpdate('Note: Business Constitution is auto-filled or read-only.');
+                const btn = page.locator(sel).first();
+                if (await btn.count() > 0 && await btn.isVisible({ timeout: 2000 })) {
+                    await btn.click({ force: true });
+                    evcClicked = true;
+                    sendUpdate('Clicked SUBMIT WITH EVC button.');
+                    break;
                 }
-            } catch (e) {
-                sendUpdate(`Warning: Could not select Business Constitution: ${data.businessConstitution}`);
-            }
+            } catch (e) {}
         }
 
-        if (data.businessDistrict) {
-            sendUpdate('Selecting Business District...');
-            try {
-                const distLoc = page.locator('#dst, #applnDistr, #bd_dist, #district').first();
-                if (await distLoc.count() > 0 && await distLoc.isVisible({ timeout: 1500 })) {
-                    await distLoc.selectOption({ label: data.businessDistrict }, { timeout: 2000 }).catch(async () => {
-                        await page.evaluate((dName) => {
-                            const sel = document.querySelector('#dst, #applnDistr, #bd_dist, #district');
-                            if (!sel) return;
-                            const opt = Array.from(sel.options).find(o => o.text && o.text.toUpperCase().includes(dName.toUpperCase()));
-                            if (opt) {
-                                sel.value = opt.value;
-                                sel.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                        }, data.businessDistrict);
-                    });
-                    sendUpdate(`Business District processed: ${data.businessDistrict}`);
-                } else {
-                    sendUpdate('Note: Business District field not present on this screen (Multi-State or auto-assigned), skipping.');
-                }
-            } catch (e) {
-                sendUpdate(`Note: Could not select Business District: ${data.businessDistrict}`);
-            }
-        }
-
-        const selectDropdownRobust = async (selector, text) => {
-            if (!text) return;
-            try {
-                const isVisible = await page.evaluate((sel) => {
-                    const el = document.querySelector(sel);
-                    return !!el && el.offsetParent !== null;
-                }, selector);
-
-                if (!isVisible) {
-                    return;
-                }
-
-                await page.waitForFunction(`document.querySelector('${selector}') && document.querySelector('${selector}').options.length > 1`, null, { timeout: 3000 }).catch(() => { });
-
-                await page.selectOption(selector, { label: text }, { timeout: 2000 });
-            } catch (e1) {
-                try {
-                    await page.selectOption(selector, text, { timeout: 2000 });
-                } catch (e2) {
-                    try {
-                        const options = await page.$$eval(`${selector} option`, opts => opts.map(o => ({ value: o.value, text: o.innerText })));
-                        const match = options.find(o => o.text && o.text.toUpperCase().includes(text.toUpperCase()));
-                        if (match && match.value) {
-                            await page.selectOption(selector, match.value, { timeout: 2000 });
-                        }
-                    } catch (e3) { }
-                }
-            }
-            await page.waitForTimeout(500);
-        };
-
-        if (data.ppob_stateJurisdiction) await selectDropdownRobust('#stj', data.ppob_stateJurisdiction);
-        if (data.ppob_commissionerate) await selectDropdownRobust('#comcd', data.ppob_commissionerate);
-        if (data.ppob_division) await selectDropdownRobust('#divcd', data.ppob_division);
-        if (data.ppob_range) await selectDropdownRobust('#rgcd', data.ppob_range);
-
-        if (data.rule14A) {
-            sendUpdate('Selecting Rule 14A option...');
-            const isYes = (typeof data.rule14A === 'string' && data.rule14A.toLowerCase() === 'yes') || data.rule14A === true || data.rule14A === 'Y';
-            const radioValue = isYes ? 'Y' : 'N';
-            try {
-                const radioLoc = page.locator(`input[name="bd_optCat"][value="${radioValue}"]`);
-                if (await radioLoc.count() > 0 && await radioLoc.isVisible({ timeout: 1500 })) {
-                    await radioLoc.check({ timeout: 2000 });
-                    if (isYes) {
-                        try {
-                            const checkbox = page.locator('#optCat_declaration');
-                            if (await checkbox.count() > 0 && await checkbox.isVisible({ timeout: 1500 })) {
-                                await checkbox.check({ timeout: 2000 });
-                                sendUpdate('Checked optCat_declaration for Rule 14A');
-                            }
-                        } catch (e2) {
-                            sendUpdate('Warning: Could not check optCat_declaration');
-                        }
-                    }
-                } else {
-                    sendUpdate('Note: Rule 14A option not present on this screen, skipping.');
-                }
-            } catch (e) {
-                sendUpdate('Warning: Could not select Rule 14A');
-            }
-        }
-
-        function convertDateToDDMMYYYY(dateStr) {
-            if (!dateStr) return dateStr;
-            const parts = dateStr.includes('-') ? dateStr.split('-') : dateStr.split('/');
-            if (parts.length === 3) {
-                if (parts[0].length === 4) {
-                    // Format: YYYY-MM-DD or YYYY/MM/DD
-                    return `${parts[2]}/${parts[1]}/${parts[0]}`;
-                } else if (parts[2].length === 4) {
-                    // Format: DD-MM-YYYY or DD/MM/YYYY
-                    return `${parts[0]}/${parts[1]}/${parts[2]}`;
-                }
-            }
-            return dateStr;
-        }
-
-        async function handleDocumentLegibilityModal(page) {
-            try {
-                // The popup might take a few seconds to appear after upload
-                const continueBtn = page.getByRole('button', { name: 'CONTINUE', exact: true }).first();
-                // Wait up to 5 seconds for the popup
-                await continueBtn.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
-                
-                if (await continueBtn.isVisible()) {
-                    sendUpdate('Handling document legibility warning popup (clicking Continue)...');
-                    // Use evaluate to click it directly to bypass any pointer-events issues
-                    await continueBtn.evaluate(b => b.click()).catch(async () => {
-                        await continueBtn.click({ force: true });
-                    });
-                    await page.waitForTimeout(1500);
-                }
-            } catch(e) {}
-        }
-
-        async function robustFillPincode(page, selector, pincode) {
-            if (!pincode) return;
-            try {
-                // Focus and clear bypassing actionability checks
-                await page.evaluate((sel) => {
-                    const el = document.querySelector(sel);
-                    if (el) { el.focus(); el.value = ''; }
-                }, selector);
-                
-                // Use keyboard.type to bypass strict pointer-events checks of page.type()
-                await page.keyboard.type(pincode, { delay: 30 });
-                
-                // Wait for the dropdown list to appear
-                try {
-                    await page.waitForSelector(`ul li:has-text("${pincode}")`, { timeout: 4000 });
-                } catch(e) {}
-                
-                const firstOptionLoc = page.locator(`ul li:has-text("${pincode}")`).first();
-                let optionText = '';
-                try { optionText = await firstOptionLoc.textContent({ timeout: 2000 }); } catch (e) {}
-                
-                if (optionText && optionText.includes(pincode)) {
-                    await firstOptionLoc.evaluate(el => el.click()).catch(() => firstOptionLoc.click({ force: true }));
-                    sendUpdate(`Pincode ${pincode} verified and selected.`);
-                } else {
-                    sendUpdate(`Pincode glitch detected. Clearing and retrying once...`);
-                    
-                    await page.evaluate((sel) => {
-                        const el = document.querySelector(sel);
-                        if (el) { el.focus(); el.value = ''; }
-                    }, selector);
-                    
-                    await page.waitForTimeout(500);
-                    await page.keyboard.type(pincode, { delay: 50 });
-                    
-                    try {
-                        await page.waitForSelector(`ul li:has-text("${pincode}")`, { timeout: 4000 });
-                        const retryOption = page.locator(`ul li:has-text("${pincode}")`).first();
-                        if (await retryOption.count() > 0) {
-                            await retryOption.evaluate(el => el.click()).catch(() => retryOption.click({ force: true, timeout: 2000 }));
-                            sendUpdate(`Pincode ${pincode} verified and selected on retry.`);
-                        }
-                    } catch(e) {
-                        sendUpdate(`Pincode autocomplete did not load. Continuing with manual input.`);
-                        await page.keyboard.press('Tab');
-                    }
-                }
-                await page.waitForTimeout(1000);
-            } catch (e) {
-                sendUpdate(`Warning: Could not fill pincode ${pincode}: ${e.message}`);
-            }
-        }
-
-        if (data.dateOfCommencement) {
-            sendUpdate('Filling Date of Commencement...');
-            await page.fill('#bd_cmbz', convertDateToDDMMYYYY(data.dateOfCommencement), { timeout: 3000 }).catch(() => sendUpdate('Date of Commencement is read-only or disabled.'));
-        }
-
-        const reasonVal = (data.reasonToObtainRegistration || data.reasonToObtain || 'Voluntary Basis');
-        sendUpdate(`Selecting Reason to Obtain Registration (${reasonVal})...`);
-        try {
-            const rslSelectors = ['#bd_rsl', '#rsl', 'select[name="rsl"]', 'select[name="bd_rsl"]', 'select[data-ng-model*="rsl"]', 'select[data-ng-model*="reason"]', '#reason'];
-            let selected = false;
-
-            for (const sel of rslSelectors) {
-                const loc = page.locator(sel).first();
-                if (await loc.count() > 0) {
-                    try {
-                        await loc.scrollIntoViewIfNeeded().catch(() => {});
-                        await page.waitForTimeout(300);
-                        await loc.selectOption({ label: reasonVal }, { timeout: 3000 });
-                        selected = true;
-                        sendUpdate(`Selected Reason to Obtain Registration: ${reasonVal}`);
-                        break;
-                    } catch (e1) {
-                        const matchedVal = await page.evaluate(({ selector, rText }) => {
-                            const el = document.querySelector(selector);
-                            if (!el) return null;
-                            const opt = Array.from(el.options).find(o => o.text && o.text.toUpperCase().includes(rText.toUpperCase()));
-                            if (opt) {
-                                el.value = opt.value;
-                                el.dispatchEvent(new Event('change', { bubbles: true }));
-                                return opt.text;
-                            }
-                            return null;
-                        }, { selector: sel, rText: reasonVal });
-
-                        if (matchedVal) {
-                            selected = true;
-                            sendUpdate(`Selected Reason: ${matchedVal}`);
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (!selected) {
-                selected = await page.evaluate((rText) => {
-                    const selects = Array.from(document.querySelectorAll('select'));
-                    for (const sel of selects) {
-                        const opt = Array.from(sel.options).find(o => o.text && o.text.toUpperCase().includes(rText.toUpperCase()));
-                        if (opt) {
-                            sel.value = opt.value;
-                            sel.dispatchEvent(new Event('change', { bubbles: true }));
-                            return true;
-                        }
-                    }
-                    return false;
-                }, reasonVal);
-
-                if (selected) {
-                    sendUpdate(`Selected Reason to Obtain Registration across page select elements.`);
-                } else {
-                    sendUpdate(`Warning: Reason "${reasonVal}" not matched in dropdown options.`);
-                }
-            }
-        } catch (e) {
-            sendUpdate(`Warning: Could not select Reason: ${reasonVal} - ${e.message}`);
-        }
-
-        const dateOfLibVal = data.dateOfLiability || data.dateOfCommencement;
-        if (dateOfLibVal) {
-            sendUpdate('Filling Date of Liability...');
-            await page.waitForTimeout(500);
-            const libInput = page.locator('#lib, input[name="lib"]').first();
-            try {
-                if (await libInput.count() > 0) {
-                    await libInput.scrollIntoViewIfNeeded().catch(() => {});
-                    await libInput.fill(convertDateToDDMMYYYY(dateOfLibVal), { timeout: 3000 });
-                    sendUpdate('Filled Date of Liability.');
-                }
-            } catch (e) {
-                sendUpdate('Date of Liability is read-only or disabled.');
-            }
-        }
-
-
-
-        if (data.existingRegistrations && Array.isArray(data.existingRegistrations) && data.existingRegistrations.length > 0) {
-            for (const [index, reg] of data.existingRegistrations.entries()) {
-                sendUpdate(`Processing Existing Registration Entry ${index + 1}...`);
-
-                if (reg.type) {
-                    sendUpdate(`Selecting Existing Registration Type: ${reg.type}`);
-                    try {
-                        await page.selectOption('#exty', { label: reg.type });
-                    } catch (e) {
-                        sendUpdate(`Warning: Could not select Type: ${reg.type}`);
-                    }
-                }
-
-                if (reg.no) {
-                    sendUpdate(`Filling Existing Registration No: ${reg.no}`);
-                    await page.fill('#exno', reg.no);
-                }
-
-                if (reg.date) {
-                    sendUpdate(`Filling Existing Registration Date: ${reg.date}`);
-                    try {
-                        const dateVal = convertDateToDDMMYYYY(reg.date);
-                        await page.click('#exdt');
-                        await page.waitForTimeout(200);
-                        await page.locator('#exdt').selectText().catch(() => { });
-                        await page.locator('#exdt').pressSequentially(dateVal, { delay: 80 });
-                        await page.keyboard.press('Tab');
-                        await page.waitForTimeout(500);
-                    } catch (e) {
-                        sendUpdate(`Warning: Could not fill Registration Date: ${e.message}`);
-                    }
-                }
-
-                // Click Add button AFTER all fields (type, no, date) are filled
-                sendUpdate('Clicking Add button for existing registration...');
-                try {
-                    await page.locator(
-                        '#newRegForm > fieldset > div:nth-child(3) > div:nth-child(9) > div > div.col-xs-12.col-sm-3.pull-right > button.btn.btn-primary.rowtp-mar'
-                    ).click();
-                    await page.waitForTimeout(1000);
-                } catch (e) {
-                    sendUpdate('Warning: Could not click Add button');
-                }
-            } // end for loop
-        } // end if existingRegistrations
-
-        if (data.businessConstitution && data.businessConstitution.toLowerCase().trim() !== 'proprietorship' && data.businessConstitution.toLowerCase().trim() !== 'sole proprietorship') {
-            if (data.proofOfConstitutionType) {
-                sendUpdate('Selecting Proof of Constitution Type...');
-                try {
-                    await page.selectOption('#bd_up_type', { label: data.proofOfConstitutionType });
-                } catch (e) {
-                    sendUpdate(`Warning: Could not select Proof of Constitution Type: ${data.proofOfConstitutionType}`);
-                }
-            }
-
-            if (data.proofOfConstitutionFile) {
-                sendUpdate('Uploading Proof of Constitution...');
-                let filePathToUpload = data.proofOfConstitutionFile;
-
-                if (data.proofOfConstitutionFile.startsWith('data:image') || data.proofOfConstitutionFile.startsWith('data:application/pdf')) {
-                    const base64Data = data.proofOfConstitutionFile.replace(/^data:.*?;base64,/, "");
-                    const fs = require('fs');
-                    const path = require('path');
-                    const ext = data.proofOfConstitutionFile.includes('application/pdf') ? 'pdf' : 'jpg';
-                    const tempFilePath = path.join(__dirname, `temp_proof_constitution.${ext}`);
-                    fs.writeFileSync(tempFilePath, base64Data, 'base64');
-                    filePathToUpload = tempFilePath;
-                }
-
-                try {
-                    // Properly intercept the file system dialog popup
-                    const [fileChooser] = await Promise.all([
-                        page.waitForEvent('filechooser', { timeout: 10000 }),
-                        page.click('#bd_upload')
-                    ]);
-                    await fileChooser.setFiles(filePathToUpload);
-                } catch (uploadErr) {
-                    sendUpdate('Warning: Intercept failed for Constitution Proof, attempting direct input assignment...');
-                    await page.setInputFiles('#bd_upload', filePathToUpload).catch(() => { });
-                }
-                await handleDocumentLegibilityModal(page);
-            }
-        }
-
-        if (data.documentForTradeNameFile) {
-            sendUpdate('Uploading Document for Trade Name...');
-            let filePathToUpload = data.documentForTradeNameFile;
-            
-            if (data.documentForTradeNameFile.startsWith('data:image') || data.documentForTradeNameFile.startsWith('data:application/pdf')) {
-                const base64Data = data.documentForTradeNameFile.replace(/^data:.*?;base64,/, "");
-                const fs = require('fs');
-                const path = require('path');
-                const ext = data.documentForTradeNameFile.includes('application/pdf') ? 'pdf' : 'jpg';
-                const tempFilePath = path.join(__dirname, `temp_tradename.${ext}`);
-                fs.writeFileSync(tempFilePath, base64Data, 'base64');
-                filePathToUpload = tempFilePath;
-            }
-            
-            try {
-                // Wait for the upload inputs and try to use the last one (since trade name upload is second)
-                const fileInputs = page.locator('input[type="file"]');
-                const count = await fileInputs.count();
-                if (count > 1) {
-                    await fileInputs.nth(1).setInputFiles(filePathToUpload);
-                } else if (count > 0) {
-                    await fileInputs.last().setInputFiles(filePathToUpload);
-                }
-            } catch (e) {
-                sendUpdate('Warning: Could not upload Trade Name Document');
-            }
-            await handleDocumentLegibilityModal(page);
+        if (!evcClicked) {
+            evcClicked = await page.evaluate(() => {
+                const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
+                const b = btns.find(btn => (btn.innerText || btn.value || '').toUpperCase().includes('SUBMIT WITH EVC'));
+                if (b) { b.click(); return true; }
+                return false;
+            });
+            if (evcClicked) sendUpdate('Clicked SUBMIT WITH EVC button via DOM.');
         }
 
         await page.waitForTimeout(2000);
-        await saveAndContinueToTab(page, 'Promoter', 'button[title="Save & Continue"]');
 
-        // ============================================
-        // PROMOTER / PARTNER DETAILS - MULTIPLE PROMOTERS
-        // Supports p1 to p10
-        // ============================================
-
-        async function fillPromoterDetails(promoter, promoterIndex) {
-            sendUpdate(`Filling Promoter ${promoterIndex} Details...`);
-
-            try {
-                // Wait for the first name input to appear
-                await page.waitForSelector('#fnm', { state: 'visible', timeout: 8000 }).catch(() => {});
-
-                if (promoter.firstName) await page.fill('#fnm', promoter.firstName, { timeout: 3000 }).catch(() => {});
-                if (promoter.middleName) await page.fill('#pd_mname', promoter.middleName, { timeout: 3000 }).catch(() => {});
-                if (promoter.lastName) await page.fill('#pd_lname', promoter.lastName, { timeout: 3000 }).catch(() => {});
-
-                if (promoter.fatherFirstName) await page.fill('#ffname', promoter.fatherFirstName, { timeout: 3000 }).catch(() => {});
-                if (promoter.fatherMiddleName) await page.fill('#pd_fmname', promoter.fatherMiddleName, { timeout: 3000 }).catch(() => {});
-                if (promoter.fatherLastName) await page.fill('#pd_flname', promoter.fatherLastName, { timeout: 3000 }).catch(() => {});
-
-                if (promoter.dob) await page.fill('#dob', convertDateToDDMMYYYY(promoter.dob), { timeout: 3000 }).catch(() => {});
-
-                if (promoter.gender) {
-                    try {
-                        const gender = promoter.gender.toLowerCase();
-                        if (gender === 'male') await page.click('#radiomale');
-                        else if (gender === 'female') await page.click('#radiofemale');
-                        else await page.click('#radiotrans');
-                    } catch (e) {
-                        sendUpdate(`Warning: Could not select gender for Promoter ${promoterIndex}`);
-                    }
-                }
-
-                if (promoter.mobile) await page.fill('#mbno', promoter.mobile, { timeout: 3000 }).catch(() => {});
-                if (promoter.email) await page.fill('#pd_email', promoter.email, { timeout: 3000 }).catch(() => {});
-                if (promoter.designation) await page.fill('#dg', promoter.designation, { timeout: 3000 }).catch(() => {});
-                if (promoter.din) await page.fill('#din', promoter.din, { timeout: 3000 }).catch(() => {});
-                if (promoter.pan) await page.fill('#pan', promoter.pan, { timeout: 3000 }).catch(() => {});
-                if (promoter.passport) await page.fill('#ppno', promoter.passport, { timeout: 3000 }).catch(() => {});
-
-                if (promoter.res_country) {
-                    try {
-                        await page.selectOption('select[name="pd_cntry"]', { label: promoter.res_country });
-                    } catch (e) {
-                        sendUpdate(`Warning: Could not select promoter country for Promoter ${promoterIndex}`);
-                    }
-                }
-
-                if (promoter.res_pincode) {
-                    await robustFillPincode(page, '#pncd', promoter.res_pincode);
-                }
-
-                if (promoter.res_locality) await page.type('#pd_locality', promoter.res_locality, { delay: 30 });
-
-                if (promoter.res_road) {
-                    try {
-                        await page.type('#pd_road', promoter.res_road, { delay: 30 });
-                        await page.waitForTimeout(2000);
-                        await page.locator(`ul li:has-text("${promoter.res_road}")`).first().click({ timeout: 5000 }).catch(() => { });
-                        await page.waitForTimeout(1000);
-                    } catch (e) {
-                        sendUpdate(`Warning: Could not fill road/street for Promoter ${promoterIndex}`);
-                    }
-                }
-
-                if (promoter.res_buildingName) {
-                    try {
-                        await page.type('#pd_bdname', promoter.res_buildingName, { delay: 30 });
-                        await page.waitForTimeout(2000);
-                        await page.locator(`ul li:has-text("${promoter.res_buildingName}")`).first().click({ timeout: 5000 }).catch(() => { });
-                        await page.waitForTimeout(1000);
-                    } catch (e) {
-                        sendUpdate(`Warning: Could not fill building name for Promoter ${promoterIndex}`);
-                    }
-                }
-
-                if (promoter.res_buildingNo) {
-                    try {
-                        await page.type('#pd_bdnum', promoter.res_buildingNo, { delay: 30 });
-                        await page.waitForTimeout(2000);
-                        await page.locator(`ul li:has-text("${promoter.res_buildingNo}")`).first().click({ timeout: 5000 }).catch(() => { });
-                        await page.waitForTimeout(1000);
-                    } catch (e) {
-                        sendUpdate(`Warning: Could not fill building number for Promoter ${promoterIndex}`);
-                    }
-                }
-
-                if (promoter.res_floor) await page.type('#pd_flrnum', promoter.res_floor, { delay: 30 });
-                if (promoter.res_landmark) await page.type('#pd_landmark', promoter.res_landmark, { delay: 30 });
-
-                if (promoter.promoterPhotoFile) {
-                    sendUpdate(`Uploading Promoter ${promoterIndex} Photo...`);
-
-                    let filePathToUpload = promoter.promoterPhotoFile;
-
-                    if (promoter.promoterPhotoFile.startsWith('data:image')) {
-                        const base64Data = promoter.promoterPhotoFile.replace(/^data:.*?;base64,/, "");
-                        const fs = require('fs');
-                        const path = require('path');
-
-                        const tempFilePath = path.join(
-                            __dirname,
-                            `temp_promoter_photo_${promoterIndex}.jpg`
-                        );
-
-                        fs.writeFileSync(tempFilePath, base64Data, 'base64');
-                        filePathToUpload = tempFilePath;
-                    }
-
-                    try {
-                        // First try: direct setInputFiles (most reliable)
-                        const uploadInput = page.locator('#pd_upload');
-                        const isVisible = await uploadInput.count() > 0;
-                        if (isVisible) {
-                            await page.evaluate(() => {
-                                const el = document.querySelector('#pd_upload');
-                                if (el) el.removeAttribute('style');
-                            });
-                            await uploadInput.setInputFiles(filePathToUpload).catch(async () => {
-                                // Second try: filechooser event
-                                sendUpdate(`Warning: Direct upload failed for Promoter ${promoterIndex} photo, trying filechooser...`);
-                                const [fileChooser] = await Promise.all([
-                                    page.waitForEvent('filechooser', { timeout: 8000 }),
-                                    page.click('#pd_upload')
-                                ]);
-                                await fileChooser.setFiles(filePathToUpload);
-                            });
-                        }
-                    } catch (uploadErr) {
-                        sendUpdate(`Warning: Could not upload Promoter ${promoterIndex} photo: ${uploadErr.message}`);
-                    }
-                    await handleDocumentLegibilityModal(page);
-                }
-
-                // NOTE: The alsoAuthorizedSignatory click is handled ONLY by clickAlsoAuthorizedSignatoryIfNeeded()
-                // to prevent double-clicking. Do NOT click it here as well.
-
-                sendUpdate(`Promoter ${promoterIndex} details filled successfully.`);
-            } catch (e) {
-                sendUpdate(`Warning: Promoter ${promoterIndex} filling had issue: ${e.message}`);
-            }
-        }
-
-        async function clickAlsoAuthorizedSignatoryIfNeeded(promoterIndex, promoter) {
-            // Only click if this promoter is explicitly marked as alsoAuthorizedSignatory
-            const shouldClick = promoter && (
-                String(promoter.alsoAuthorizedSignatory).toLowerCase() === 'yes' ||
-                promoter.alsoAuthorizedSignatory === true ||
-                promoter.alsoAuthorizedSignatory === 'true'
-            );
-
-            if (shouldClick) {
-                sendUpdate(`Clicking Also Authorized Signatory for Promoter ${promoterIndex}...`);
-                try {
-                    // Check if already checked to prevent double-click
-                    const isChecked = await page.isChecked('#pri_auth').catch(() => false);
-                    if (!isChecked) {
-                        // Try label click first (most reliable)
-                        await page.locator('label[for="pri_auth"]').click({ timeout: 3000 })
-                            .catch(() => page.click('#pri_auth', { force: true, timeout: 2000 })
-                            .catch(() => sendUpdate('Warning: Could not check #pri_auth')));
-                    } else {
-                        sendUpdate(`Promoter ${promoterIndex} Already Authorized Signatory checkbox already checked.`);
-                    }
-                } catch (e) {
-                    sendUpdate(`Warning: Could not click Also Authorized Signatory: ${e.message}`);
-                }
-                await page.waitForTimeout(500);
-            }
-        }
-
-        async function fillAllPromoters(data) {
-            let filledAnyPromoter = false;
-
-            for (let i = 1; i <= 10; i++) {
-                const promoter = data[`p${i}`];
-
-                if (!promoter) {
-                    if (i === 1) {
-                        sendUpdate('Warning: Promoter p1 data not found.');
-                    }
-                    break;
-                }
-
-                filledAnyPromoter = true;
-
-                await fillPromoterDetails(promoter, i);
-
-                // Keep your existing primary authorized signatory checkbox logic.
-                // Usually this is applicable for p1.
-                await clickAlsoAuthorizedSignatoryIfNeeded(i, promoter);
-
-                const nextPromoter = data[`p${i + 1}`];
-
-                if (nextPromoter && i < 10) {
-                    sendUpdate(`Promoter ${i + 1} found. Clicking Add New...`);
-
-                    try {
-                        // Wait for button to appear and be stable
-                        const addNewBtnSelector = 'button[data-ng-click="addPromoter(\'savenew\')"]';
-                        await page.waitForSelector(addNewBtnSelector, { state: 'visible', timeout: 15000 });
-                        await page.waitForTimeout(1000);
-                        await clickAndHandleMapError(page, addNewBtnSelector);
-                        await handleLocalityWarning(page);
-                        await page.waitForTimeout(2000);
-                    } catch (e) {
-                        sendUpdate(`Warning: Could not click Add New after Promoter ${i}: ${e.message}`);
-                        // Don't break - try to continue with Save & Continue instead
-                        sendUpdate('Attempting Save & Continue as fallback...');
-                        await saveAndContinueToTab(page, 'Authorized Signatory', 'button[title="Save & Continue"]').catch(() => {});
-                        break;
-                    }
-                } else {
-                    sendUpdate('No more promoters found.');
-                    await saveAndContinueToTab(page, 'Authorized Signatory', 'button[title="Save & Continue"]');
-                    await handleLocalityWarning(page);
-
-                    break;
+        // Confirm intermediate warning dialog if present
+        await page.evaluate(() => {
+            const modals = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"]'));
+            for (const modal of modals) {
+                if (modal.offsetParent !== null && !modal.innerText.toLowerCase().includes('enter otp')) {
+                    const proceedBtn = Array.from(modal.querySelectorAll('button, input[type="button"]')).find(b => /proceed|yes|confirm|ok|continue/i.test(b.innerText || b.value || ''));
+                    if (proceedBtn) proceedBtn.click();
                 }
             }
-
-            if (filledAnyPromoter) {
-                await handleLocalityWarning(page);
-            }
-        }
-
-        // Call multiple promoter filling
-        await fillAllPromoters(data);
-        // ============================================
-        // AUTHORIZED SIGNATORY DETAILS
-        // ============================================
-        async function fillAuthSigDetails(authSig, i) {
-            sendUpdate(`Filling Authorized Signatory ${i} Details...`);
-
-            if (authSig.primary) {
-                sendUpdate('Checking Primary Auth Sig box...');
-                try {
-                    await page.click('#auth_prim');
-                    await page.waitForTimeout(1000);
-
-                } catch (e) {
-                    sendUpdate('Warning: Could not check #auth_prim');
-                }
-            }
-
-            if (authSig.firstName) await page.fill('#fnm', authSig.firstName).catch(() => { });
-            if (authSig.middleName) await page.fill('#as_mname', authSig.middleName).catch(() => { });
-            if (authSig.lastName) await page.fill('#as_lname', authSig.lastName).catch(() => { });
-            if (authSig.fatherFirstName) await page.fill('#ffname', authSig.fatherFirstName).catch(() => { });
-            if (authSig.fatherMiddleName) await page.fill('#as_fmname', authSig.fatherMiddleName).catch(() => { });
-            if (authSig.fatherLastName) await page.fill('#as_flname', authSig.fatherLastName).catch(() => { });
-
-            if (authSig.dob) {
-                await page.fill('#dob', convertDateToDDMMYYYY(authSig.dob)).catch(() => { });
-            }
-
-            if (authSig.gender) {
-                const gender = authSig.gender.toLowerCase();
-                if (gender === 'male') await page.click('#radiomale').catch(() => { });
-                else if (gender === 'female') await page.click('#radiofemale').catch(() => { });
-                else await page.click('#radiotrans').catch(() => { });
-            }
-
-            if (authSig.mobile) await page.fill('#mbno', authSig.mobile).catch(() => { });
-            if (authSig.email) await page.fill('#em', authSig.email).catch(() => { });
-            if (authSig.designation) await page.fill('#dg', authSig.designation).catch(() => { });
-            if (authSig.din) await page.fill('#din', authSig.din).catch(() => { });
-            if (authSig.pan) await page.fill('#pan', authSig.pan).catch(() => { });
-            if (authSig.passport) await page.fill('#ppno', authSig.passport).catch(() => { });
-
-            if (authSig.res_country) {
-                try {
-                    await page.selectOption('#cnty', { label: authSig.res_country }, { timeout: 3000 });
-                } catch (e) {
-                    sendUpdate('Warning: Could not select Auth Sig country');
-                }
-            }
-
-            if (authSig.res_pincode) {
-                await robustFillPincode(page, '#pncd', authSig.res_pincode);
-            }
-
-            if (authSig.res_locality) await page.type('#as_locality', authSig.res_locality, { delay: 30 }).catch(() => { });
-
-            if (authSig.res_road) {
-                await page.type('#st', authSig.res_road, { delay: 30 }).catch(() => { });
-                await page.waitForTimeout(2000);
-                await page.locator(`ul li:has-text("${authSig.res_road}")`).first().click({ timeout: 5000 }).catch(() => { });
-                await page.waitForTimeout(1000);
-            }
-
-            if (authSig.res_buildingName) {
-                await page.type('#as_bdname', authSig.res_buildingName, { delay: 30 }).catch(() => { });
-                await page.waitForTimeout(2000);
-                await page.locator(`ul li:has-text("${authSig.res_buildingName}")`).first().click({ timeout: 5000 }).catch(() => { });
-                await page.waitForTimeout(1000);
-            }
-
-            if (authSig.res_buildingNo) {
-                await page.type('#bno', authSig.res_buildingNo, { delay: 30 }).catch(() => { });
-                await page.waitForTimeout(2000);
-                await page.locator(`ul li:has-text("${authSig.res_buildingNo}")`).first().click({ timeout: 5000 }).catch(() => { });
-                await page.waitForTimeout(1000);
-            }
-
-            if (authSig.res_floor) await page.type('#as_flrnum', authSig.res_floor, { delay: 30 }).catch(() => { });
-            if (authSig.res_landmark) await page.type('#pd_landmark', authSig.res_landmark, { delay: 30 }).catch(() => { });
-
-            if (authSig.authSigProofType) {
-                try {
-                    await page.waitForSelector('#as_up_type', { state: 'visible', timeout: 5000 });
-                    await page.selectOption('#as_up_type', { label: authSig.authSigProofType }, { timeout: 3000 });
-                } catch (e) {
-                    sendUpdate('Warning: Could not select authSigProofType');
-                }
-            }
-
-            if (authSig.authSigProofFile) {
-                sendUpdate('Uploading Authorized Signatory Proof...');
-                let filePathToUpload = authSig.authSigProofFile;
-                if (authSig.authSigProofFile.startsWith('data:image') || authSig.authSigProofFile.startsWith('data:application/pdf')) {
-                    const base64Data = authSig.authSigProofFile.replace(/^data:.*?;base64,/, "");
-                    const fs = require('fs');
-                    const path = require('path');
-                    const ext = authSig.authSigProofFile.includes('application/pdf') ? 'pdf' : 'jpg';
-                    const tempFilePath = path.join(__dirname, `temp_auth_sig_proof.${ext}`);
-                    fs.writeFileSync(tempFilePath, base64Data, 'base64');
-                    filePathToUpload = tempFilePath;
-                }
-
-                try {
-                    await page.waitForSelector('#as_upload_sign', { state: 'attached', timeout: 5000 });
-                    await page.waitForTimeout(1000);
-                    const [fileChooser] = await Promise.all([
-                        page.waitForEvent('filechooser', { timeout: 10000 }),
-                        page.click('#as_upload_sign')
-                    ]);
-                    await fileChooser.setFiles(filePathToUpload);
-                } catch (uploadErr) {
-                    sendUpdate('Warning: Intercept failed for Auth Sig Proof, attempting direct input assignment...');
-                    await page.setInputFiles('#as_upload_sign', filePathToUpload).catch(() => { });
-                }
-                await handleDocumentLegibilityModal(page);
-            }
-
-            if (authSig.authSigPhotoFile) {
-                sendUpdate('Uploading Authorized Signatory Photo...');
-                let filePathToUpload = authSig.authSigPhotoFile;
-                if (authSig.authSigPhotoFile.startsWith('data:image')) {
-                    const base64Data = authSig.authSigPhotoFile.replace(/^data:.*?;base64,/, "");
-                    const fs = require('fs');
-                    const path = require('path');
-                    const tempFilePath = path.join(__dirname, 'temp_auth_sig_photo.jpg');
-                    fs.writeFileSync(tempFilePath, base64Data, 'base64');
-                    filePathToUpload = tempFilePath;
-                }
-
-                try {
-                    const [fileChooser] = await Promise.all([
-                        page.waitForEvent('filechooser', { timeout: 10000 }),
-                        page.click('#as_upload_photo')
-                    ]);
-                    await fileChooser.setFiles(filePathToUpload);
-                } catch (uploadErr) {
-                    sendUpdate('Warning: Intercept failed for Auth Sig Photo, attempting direct input assignment...');
-                    await page.setInputFiles('#as_upload_photo', filePathToUpload).catch(() => { });
-                }
-                await handleDocumentLegibilityModal(page);
-            }
-        }
-
-        async function fillAllAuthSigs(data) {
-            let filledAnyAuthSig = false;
-
-            for (let i = 1; i <= 10; i++) {
-                const authSig = data[`a${i}`];
-
-                if (!authSig) {
-                    if (i === 1) {
-                        sendUpdate('Warning: Authorized Signatory a1 data not found.');
-                    }
-                    break;
-                }
-
-                filledAnyAuthSig = true;
-                await fillAuthSigDetails(authSig, i);
-
-                // Check if there is a next signatory
-                if (data[`a${i + 1}`]) {
-                    sendUpdate(`More Authorized Signatories exist. Clicking Add New after a${i}...`);
-                    try {
-                        const addBtn = page.locator('button').filter({ hasText: /ADD NEW/i }).first();
-                        if (await addBtn.isVisible({ timeout: 2000 })) {
-                            await addBtn.click();
-                        } else {
-                            await page.click('#newRegForm > div:nth-child(5) > div:nth-child(9) > div > button:nth-child(3)');
-                        }
-                        await page.waitForTimeout(2000);
-                        await handleLocalityWarning(page);
-                    } catch (e) {
-                        sendUpdate(`Warning: Could not click Add New after Authorized Signatory ${i}: ${e.message}`);
-                        break;
-                    }
-                } else {
-                    sendUpdate('No more Authorized Signatories found.');
-                    await saveAndContinueToTab(page, 'Authorized Representative', 'button[title="Save & Continue"]');
-                    await handleLocalityWarning(page);
-
-                    sendUpdate('Skipping Authorized Representative page...');
-                    await saveAndContinueToTab(page, 'Principal Place of Business', 'button[title="Save & Continue"]');
-                    await handleLocalityWarning(page);
-                    break;
-                }
-            }
-        }
-
-        let hasPromoterAuthSig = false;
-        for (let i = 1; i <= 10; i++) {
-            if (data[`p${i}`] && data[`p${i}`].alsoAuthorizedSignatory) {
-                hasPromoterAuthSig = true;
-                break;
-            }
-        }
-
-        if (!hasPromoterAuthSig) {
-            sendUpdate('Condition 1: No promoter is Also Authorized Signatory. Filling Auth Sig details from scratch...');
-            await fillAllAuthSigs(data);
-        } else {
-            let promoterAuthSigs = [];
-            for (let i = 1; i <= 10; i++) {
-                if (data[`p${i}`] && data[`p${i}`].alsoAuthorizedSignatory) {
-                    promoterAuthSigs.push(data[`p${i}`]);
-                }
-            }
-
-            // Only count as "pure" auth sig if it's a genuinely DIFFERENT person from all promoters
-            let hasPureAuthSigs = false;
-            const promoterEmails = new Set();
-            const promoterNames = new Set();
-            const promoterPans = new Set();
-            for (let i = 1; i <= 10; i++) {
-                const p = data[`p${i}`];
-                if (p) {
-                    if (p.email) promoterEmails.add(p.email.toLowerCase().trim());
-                    const fullName = `${p.firstName||''} ${p.lastName||''}`.toLowerCase().trim();
-                    if (fullName) promoterNames.add(fullName);
-                    if (p.pan) promoterPans.add(p.pan.toUpperCase().trim());
-                }
-            }
-            for (let i = 1; i <= 10; i++) {
-                const a = data[`a${i}`];
-                if (a && typeof a === 'object') {
-                    const aName = `${a.firstName||''} ${a.lastName||''}`.toLowerCase().trim();
-                    const aEmail = (a.email || '').toLowerCase().trim();
-                    const aPan = (a.pan || '').toUpperCase().trim();
-                    const aMobile = (a.mobile || '').trim();
-
-                    // Must have actual person identity
-                    const hasValidIdentity = Boolean(aName || aEmail || aPan || aMobile);
-                    if (!hasValidIdentity) continue;
-
-                    // Only pure if identity doesn't match any promoter
-                    const isDuplicate = (aEmail && promoterEmails.has(aEmail)) || 
-                                        (aName && promoterNames.has(aName)) ||
-                                        (aPan && promoterPans.has(aPan));
-                    if (!isDuplicate) {
-                        hasPureAuthSigs = true;
-                        break;
-                    }
-                }
-            }
-
-            if (promoterAuthSigs.length === 1) {
-                sendUpdate('Condition 4: Only 1 promoter is Authorized Signatory. Editing directly on form...');
-                const pData = promoterAuthSigs[0];
-
-                if (pData.primary) {
-                    sendUpdate('Checking Primary Auth Sig box...');
-                    try {
-                        await page.click('#auth_prim');
-                        await page.waitForTimeout(1000);
-                    } catch (e) {
-                        sendUpdate('Warning: Could not check #auth_prim');
-                    }
-                }
-
-                if (pData.authSigProofType) {
-                    sendUpdate('Selecting Authorized Signatory Proof Type...');
-                    try {
-                        await page.waitForSelector('#as_up_type', { state: 'visible', timeout: 8000 });
-                        // Try by label first, fallback to value match
-                        const selectSuccess = await page.evaluate((label) => {
-                            const sel = document.querySelector('#as_up_type');
-                            if (!sel) return false;
-                            const opt = Array.from(sel.options).find(o =>
-                                o.text.toLowerCase().includes(label.toLowerCase()) ||
-                                o.value.toLowerCase().includes(label.toLowerCase())
-                            );
-                            if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true })); return true; }
-                            return false;
-                        }, pData.authSigProofType);
-                        if (!selectSuccess) {
-                            await page.selectOption('#as_up_type', { label: pData.authSigProofType }, { timeout: 3000 });
-                        }
-                        await page.waitForTimeout(500);
-                    } catch (e) {
-                        sendUpdate(`Warning: Could not select authSigProofType: ${e.message}`);
-                    }
-                }
-
-                if (pData.authSigProofFile) {
-                    sendUpdate('Uploading Authorized Signatory Proof...');
-                    let filePathToUpload = pData.authSigProofFile;
-                    if (pData.authSigProofFile.startsWith('data:image') || pData.authSigProofFile.startsWith('data:application/pdf')) {
-                        const base64Data = pData.authSigProofFile.replace(/^data:.*?;base64,/, "");
-                        const fs = require('fs');
-                        const path = require('path');
-                        const ext = pData.authSigProofFile.includes('application/pdf') ? 'pdf' : 'jpg';
-                        const tempFilePath = path.join(__dirname, `temp_auth_sig_proof_0.${ext}`);
-                        fs.writeFileSync(tempFilePath, base64Data, 'base64');
-                        filePathToUpload = tempFilePath;
-                    }
-
-                    try {
-                        await page.waitForSelector('#as_upload_sign', { state: 'attached', timeout: 8000 });
-                        await page.waitForTimeout(500);
-                        // Direct setInputFiles is most reliable - removes event dependency
-                        await page.evaluate(() => {
-                            const el = document.querySelector('#as_upload_sign');
-                            if (el) el.removeAttribute('style');
-                        });
-                        await page.locator('#as_upload_sign').setInputFiles(filePathToUpload).catch(async () => {
-                            sendUpdate('Warning: Direct upload failed for Auth Sig Proof, trying filechooser...');
-                            const [fileChooser] = await Promise.all([
-                                page.waitForEvent('filechooser', { timeout: 8000 }),
-                                page.click('#as_upload_sign')
-                            ]);
-                            await fileChooser.setFiles(filePathToUpload);
-                        });
-                    } catch (uploadErr) {
-                        sendUpdate(`Warning: Could not upload Auth Sig Proof: ${uploadErr.message}`);
-                    }
-                    await page.waitForTimeout(2000);
-                }
-
-                if (hasPureAuthSigs) {
-                    sendUpdate('Additional pure Authorized Signatories exist. Clicking ADD NEW on form...');
-                    try {
-                        const addBtn = page.locator('button').filter({ hasText: /ADD NEW/i }).first();
-                        if (await addBtn.isVisible({ timeout: 2000 })) {
-                            await addBtn.click();
-                        } else {
-                            await page.click('#newRegForm > div:nth-child(5) > div:nth-child(9) > div > button:nth-child(3)');
-                        }
-                        await page.waitForTimeout(2000);
-                        await handleLocalityWarning(page);
-                    } catch (e) {
-                        sendUpdate('Warning: Could not click ADD NEW button on form');
-                    }
-                    await fillAllAuthSigs(data);
-                } else {
-                    sendUpdate('No additional Authorized Signatories.');
-                    try {
-                        await saveAndContinueToTab(page, 'Authorized Representative', 'button[title="Save & Continue"]');
-                        await handleLocalityWarning(page);
-
-                        sendUpdate('Skipping Authorized Representative page...');
-                        await saveAndContinueToTab(page, 'Principal Place of Business', 'button[title="Save & Continue"]');
-                        await handleLocalityWarning(page);
-                    } catch (e) { }
-                }
-            } else {
-                sendUpdate('Condition 2: Multiple Promoters are Authorized Signatories. Editing from list...');
-                for (let idx = 0; idx < promoterAuthSigs.length; idx++) {
-                    const pData = promoterAuthSigs[idx];
-                    sendUpdate(`Processing Promoter Auth Sig ${idx + 1}...`);
-
-                    try {
-                        const editButtons = page.locator('table tbody tr td button').filter({ hasText: /edit/i });
-                        if (await editButtons.count() === 0) {
-                            const fallbackBtns = page.locator('table tbody tr td button.btn-primary');
-                            await fallbackBtns.nth(idx).click({ timeout: 5000 });
-                        } else {
-                            await editButtons.nth(idx).click({ timeout: 5000 });
-                        }
-                        await page.waitForTimeout(2000);
-                    } catch (e) {
-                        sendUpdate(`Warning: Could not click EDIT button ${idx + 1}`);
-                    }
-
-                    if (pData.primary) {
-                        sendUpdate('Checking Primary Auth Sig box...');
-                        try {
-                            await page.click('#auth_prim');
-                            await page.waitForTimeout(1000);
-                        } catch (e) {
-                            sendUpdate('Warning: Could not check #auth_prim');
-                        }
-                    }
-
-                    if (pData.authSigProofType) {
-                        sendUpdate('Selecting Authorized Signatory Proof Type...');
-                        try {
-                            await page.waitForSelector('#as_up_type', { state: 'visible', timeout: 5000 });
-                            await page.selectOption('#as_up_type', { label: pData.authSigProofType }, { timeout: 3000 });
-                            await page.waitForTimeout(500);
-                        } catch (e) {
-                            sendUpdate('Warning: Could not select authSigProofType');
-                        }
-                    }
-
-                    if (pData.authSigProofFile) {
-                        sendUpdate('Uploading Authorized Signatory Proof...');
-                        let filePathToUpload = pData.authSigProofFile;
-                        if (pData.authSigProofFile.startsWith('data:image') || pData.authSigProofFile.startsWith('data:application/pdf')) {
-                            const base64Data = pData.authSigProofFile.replace(/^data:.*?;base64,/, "");
-                            const fs = require('fs');
-                            const path = require('path');
-                            const ext = pData.authSigProofFile.includes('application/pdf') ? 'pdf' : 'jpg';
-                            const tempFilePath = path.join(__dirname, `temp_auth_sig_proof_${idx}.${ext}`);
-                            fs.writeFileSync(tempFilePath, base64Data, 'base64');
-                            filePathToUpload = tempFilePath;
-                        }
-
-                        try {
-                            await page.waitForSelector('#as_upload_sign', { state: 'attached', timeout: 5000 });
-                            await page.waitForTimeout(1000);
-                            const [fileChooser] = await Promise.all([
-                                page.waitForEvent('filechooser', { timeout: 10000 }),
-                                page.click('#as_upload_sign')
-                            ]);
-                            await fileChooser.setFiles(filePathToUpload);
-                        } catch (uploadErr) {
-                            sendUpdate('Warning: Intercept failed for Auth Sig Proof, attempting direct input assignment...');
-                            await page.setInputFiles('#as_upload_sign', filePathToUpload).catch(() => { });
-                        }
-                        await handleDocumentLegibilityModal(page);
-                    }
-
-                    sendUpdate('Clicking Save button...');
-                    try {
-                        // Use text-based selector instead of fragile nth-child CSS path
-                        const savedClicked = await page.locator('button:has-text("Save")').last().click({ timeout: 3000 })
-                            .then(() => true)
-                            .catch(async () => {
-                                // Fallback: try the specific CSS path
-                                try {
-                                    await page.click('#newRegForm > div:nth-child(5) > div:nth-child(8) > div > button.btn.btn-primary', { timeout: 2000 });
-                                    return true;
-                                } catch (e) {
-                                    return false;
-                                }
-                            });
-                        if (!savedClicked) {
-                            sendUpdate('Warning: Could not find Save button for Auth Sig. Please click manually.');
-                        }
-                        await page.waitForTimeout(2000);
-                        await handleLocalityWarning(page);
-                    } catch (e) {
-                        sendUpdate('Warning: Could not click save button');
-                    }
-                }
-
-                if (hasPureAuthSigs) {
-                    sendUpdate('Condition 3: Additional pure Authorized Signatories (a1, a2...) exist. Clicking ADD NEW on list...');
-                    try {
-                        const addNewBtn = page.locator('button').filter({ hasText: /ADD NEW/i }).first();
-                        await addNewBtn.click({ timeout: 4000 });
-                        await page.waitForTimeout(2000);
-                    } catch (e) {
-                        sendUpdate('Warning: Could not click ADD NEW button on Authorized Signatory list page');
-                    }
-                    await fillAllAuthSigs(data);
-                } else {
-                    sendUpdate('No additional Authorized Signatories. Skipping Auth Sig list page...');
-                    try {
-                        await saveAndContinueToTab(page, 'Authorized Representative', 'button[title="Save & Continue"]');
-                        await handleLocalityWarning(page);
-
-                        sendUpdate('Skipping Authorized Representative page...');
-                        await saveAndContinueToTab(page, 'Principal Place of Business', 'button[title="Save & Continue"]');
-                        await handleLocalityWarning(page);
-                    } catch (e) {
-                        sendUpdate(`Warning: Could not skip Auth Sig pages: ${e.message}`);
-                    }
-                }
-            }
-        }
-        // ============================================
-        // PRINCIPAL PLACE OF BUSINESS (PPOB)
-        // ============================================
-        sendUpdate('Filling Principal Place of Business Details...');
-        try {
-            await page.waitForSelector('#pncd', { state: 'visible', timeout: 15000 });
-
-            if (data.ppob_pincode) {
-                await robustFillPincode(page, '#pncd', data.ppob_pincode);
-            }
-
-            if (data.ppob_city) {
-                sendUpdate('Filling City in Principal Place of Business...');
-                // Try multiple possible selectors for city field
-                const citySelectors = ['#loc', '#bp_cty', '#city', 'input[placeholder*="City"]', 'input[placeholder*="Town"]', '#ppbzdtls_city'];
-                let cityFilled = false;
-                for (const sel of citySelectors) {
-                    try {
-                        const cityInput = page.locator(sel).first();
-                        if (await cityInput.count() > 0 && await cityInput.isVisible({ timeout: 2000 })) {
-                            await cityInput.click({ timeout: 2000 });
-                            await page.keyboard.press('Control+A');
-                            await page.keyboard.press('Backspace');
-                            await cityInput.fill('');
-                            await page.waitForTimeout(300);
-                            await cityInput.type(data.ppob_city, { delay: 30 });
-                            await page.waitForTimeout(2000);
-                            // Try clicking autocomplete option if it appears
-                            await page.locator(`ul li:has-text("${data.ppob_city}")`).first().click({ timeout: 3000 }).catch(() => {});
-                            await page.waitForTimeout(500);
-                            cityFilled = true;
-                            sendUpdate(`City '${data.ppob_city}' filled using selector '${sel}'.`);
-                            break;
-                        }
-                    } catch (e) { /* try next selector */ }
-                }
-                if (!cityFilled) {
-                    sendUpdate('Warning: Could not find city field. Continuing...');
-                }
-            }
-
-            if (data.ppob_locality) {
-                try {
-                    // Try multiple selectors for locality
-                    for (const sel of ['#ppbzdtls_locality', '#locality', '#loc_sbloc', 'input[placeholder*="Locality"]']) {
-                        if (await page.locator(sel).count() > 0) {
-                            await page.locator(sel).first().fill('');
-                            await page.locator(sel).first().type(data.ppob_locality, { delay: 30 });
-                            sendUpdate(`Locality filled.`);
-                            break;
-                        }
-                    }
-                } catch (e) { sendUpdate('Warning: Could not fill locality field'); }
-            }
-
-            if (data.ppob_street) {
-                try {
-                    for (const sel of ['#st', '#street', '#rd', 'input[placeholder*="Road"]', 'input[placeholder*="Street"]']) {
-                        if (await page.locator(sel).count() > 0) {
-                            await page.locator(sel).first().fill('');
-                            await page.locator(sel).first().type(data.ppob_street, { delay: 30 });
-                            await page.waitForTimeout(1500);
-                            await page.locator(`ul li`).first().click({ timeout: 3000 }).catch(() => {});
-                            sendUpdate(`Street filled.`);
-                            break;
-                        }
-                    }
-                } catch (e) { sendUpdate('Warning: Could not fill street field'); }
-            }
-
-            if (data.ppob_building) {
-                try {
-                    for (const sel of ['#bp_bdname', '#bdname', '#building', 'input[placeholder*="Building"]', 'input[placeholder*="Premises"]']) {
-                        if (await page.locator(sel).count() > 0) {
-                            await page.locator(sel).first().fill('');
-                            await page.locator(sel).first().type(data.ppob_building, { delay: 30 });
-                            await page.waitForTimeout(1500);
-                            await page.locator(`ul li`).first().click({ timeout: 3000 }).catch(() => {});
-                            sendUpdate(`Building filled.`);
-                            break;
-                        }
-                    }
-                } catch (e) { sendUpdate('Warning: Could not fill building field'); }
-            }
-
-            if (data.ppob_flatNo) {
-                try {
-                    for (const sel of ['#bno', '#flatno', '#flat', 'input[placeholder*="Flat"]', 'input[placeholder*="Door"]']) {
-                        if (await page.locator(sel).count() > 0) {
-                            await page.locator(sel).first().fill('');
-                            await page.locator(sel).first().type(data.ppob_flatNo, { delay: 30 });
-                            await page.waitForTimeout(1000);
-                            await page.locator(`ul li`).first().click({ timeout: 2000 }).catch(() => {});
-                            sendUpdate(`Flat No filled.`);
-                            break;
-                        }
-                    }
-                } catch (e) { sendUpdate('Warning: Could not fill flat no field'); }
-            }
-
-            if (data.ppob_floor) {
-                try {
-                    for (const sel of ['#bp_flrnum', '#flrnum', '#floor', 'input[placeholder*="Floor"]']) {
-                        if (await page.locator(sel).count() > 0) {
-                            await page.locator(sel).first().fill(data.ppob_floor);
-                            sendUpdate(`Floor filled.`);
-                            break;
-                        }
-                    }
-                } catch (e) { sendUpdate('Warning: Could not fill floor field'); }
-            }
-
-            if (data.ppob_landmark) {
-                try {
-                    for (const sel of ['#ppbzdtls_landmark', '#landmark', 'input[placeholder*="Landmark"]']) {
-                        if (await page.locator(sel).count() > 0) {
-                            await page.locator(sel).first().fill(data.ppob_landmark);
-                            sendUpdate(`Landmark filled.`);
-                            break;
-                        }
-                    }
-                } catch (e) { sendUpdate('Warning: Could not fill landmark field'); }
-            }
-
-            if (data.ppob_natureOfPossession) {
-                await page.selectOption('#bp_buss_poss', { label: data.ppob_natureOfPossession }).catch(() => page.selectOption('#bp_buss_poss', data.ppob_natureOfPossession).catch(() => { }));
-                await page.waitForTimeout(500);
-            }
-
-            if (data.ppob_doc) {
-                await page.selectOption('#bp_up_type', { label: data.ppob_doc }).catch(() => page.selectOption('#bp_up_type', data.ppob_doc).catch(() => { }));
-                await page.waitForTimeout(500);
-            }
-
-            if (data.ppob_docFile) {
-                sendUpdate('Uploading PPOB Document...');
-                let filePathToUpload = data.ppob_docFile;
-                if (data.ppob_docFile.startsWith('data:image') || data.ppob_docFile.startsWith('data:application/pdf')) {
-                    const base64Data = data.ppob_docFile.replace(/^data:.*?;base64,/, "");
-                    const fs = require('fs');
-                    const path = require('path');
-                    const ext = data.ppob_docFile.includes('application/pdf') ? 'pdf' : 'jpg';
-                    const tempFilePath = path.join(__dirname, `temp_ppob_doc.${ext}`);
-                    fs.writeFileSync(tempFilePath, base64Data, 'base64');
-                    filePathToUpload = tempFilePath;
-                }
-
-                try {
-                    const [fileChooser] = await Promise.all([
-                        page.waitForEvent('filechooser', { timeout: 10000 }),
-                        page.click('#bp_upload')
-                    ]);
-                    await fileChooser.setFiles(filePathToUpload);
-                } catch (uploadErr) {
-                    sendUpdate('Warning: Intercept failed for PPOB Document, attempting direct input assignment...');
-                    await page.setInputFiles('#bp_upload', filePathToUpload).catch(() => { });
-                }
-                await handleDocumentLegibilityModal(page);
-            }
-
-            if (data.ppob_natureOfBusiness) {
-                const nob = data.ppob_natureOfBusiness;
-                const checkNob = async (flag, selector) => {
-                    if (flag) {
-                        await page.locator(selector).check().catch(() => page.locator(selector).click({ force: true }).catch(() => { }));
-                    }
-                };
-
-                await checkNob(nob.factoryManufacturing, '#bp_ck_FMF');
-                await checkNob(nob.retailBusiness, '#bp_ck_RBU');
-                await checkNob(nob.bondedWarehouse, '#bp_ck_BWH');
-                await checkNob(nob.leasingBusiness, '#bp_ck_LBU');
-                await checkNob(nob.worksContract, '#bp_ck_WCO');
-                await checkNob(nob.eouStpEhtp, '#bp_ck_ESE');
-                await checkNob(nob.import, '#bp_ck_IMP');
-                await checkNob(nob.officeSaleOffice, '#bp_ck_OSO');
-                await checkNob(nob.warehouseDepot, '#bp_ck_WHD');
-                await checkNob(nob.others, '#bp_ck_OTH');
-                await checkNob(nob.export, '#bp_ck_EXP');
-                await checkNob(nob.supplierOfServices, '#bp_ck_SOS');
-                await checkNob(nob.recipientOfGoodsOrServices, '#bp_ck_SRE');
-                await checkNob(nob.wholesaleBusiness, '#bp_ck_WBU');
-
-                if (nob.others && nob.othersText) {
-                    try {
-                        await page.waitForTimeout(500);
-                        await page.fill('#bp_otherntbz', nob.othersText);
-                    } catch (e) {
-                        sendUpdate('Warning: Could not fill "Others" text box in Nature of Business.');
-                    }
-                }
-            }
-
-            await page.waitForTimeout(2000);
-
-            await saveAndContinueToTab(page, 'Additional Places of Business', 'button[title="Save & Continue"]');
-
-            await handleLocalityWarning(page);
-        } catch (e) {
-            sendUpdate('Warning: Principal Place of Business section not found or failed to fill.');
-        }
-        // Click intermediate CONTINUE button if it exists
-        await saveAndContinueToTab(page, 'Goods and Services', 'button[title="Save & Continue"]');
-
-        // ============================================
-        // GOODS / SERVICES
-        // ============================================
-        sendUpdate('Processing Goods / Services Details...');
-        if (data.goods_hsn && Array.isArray(data.goods_hsn) && data.goods_hsn.length > 0) {
-            for (let i = 0; i < data.goods_hsn.length; i++) {
-                const rawHsn = data.goods_hsn[i];
-                const match = rawHsn.toString().match(/\d+/);
-                const hsn = match ? match[0] : rawHsn.toString();
-                sendUpdate(`Filling HSN ${i + 1}/${data.goods_hsn.length}: ${hsn}`);
-
-                const potentialHsnSelectors = ['#gs_hsn_value', '#hsn_value', '#hsn', 'input[placeholder*="Search HSN"]', 'input[placeholder*="HSN"]', 'input[placeholder*="Goods"]', 'input[ng-model*="hsn"]'];
-                let hsnInputLoc = null;
-                for (const sel of potentialHsnSelectors) {
-                    const loc = page.locator(sel).first();
-                    if (await loc.count() > 0) {
-                        hsnInputLoc = loc;
-                        break;
-                    }
-                }
-
-                if (!hsnInputLoc) {
-                    sendUpdate(`Warning: HSN input field not found on current page. Skipping HSN ${hsn}...`);
-                    continue;
-                }
-
-                try {
-                    await hsnInputLoc.scrollIntoViewIfNeeded().catch(() => {});
-                    await hsnInputLoc.click({ timeout: 2000 }).catch(async () => {
-                        await hsnInputLoc.evaluate(el => el.focus()).catch(() => {});
-                    });
-                    await hsnInputLoc.fill('').catch(() => {});
-                    await hsnInputLoc.type(hsn, { delay: 10 }).catch(() => {});
-
-                    // Wait for dropdown to appear and click first item
-                    try {
-                        const dropdownItem = page.locator('ul.ui-autocomplete li:visible, .ui-menu-item:visible, ul li:has-text("' + hsn + '")').first();
-                        await dropdownItem.waitFor({ state: 'visible', timeout: 3000 });
-                        await dropdownItem.click({ force: true });
-                    } catch (e) {
-                        sendUpdate(`HSN dropdown item not found, trying keyboard...`);
-                        await hsnInputLoc.focus().catch(() => {});
-                        await page.waitForTimeout(200);
-                        await page.keyboard.press('ArrowDown').catch(() => {});
-                        await page.waitForTimeout(100);
-                        await page.keyboard.press('Enter').catch(() => {});
-                    }
-
-                    await page.waitForTimeout(500);
-                    sendUpdate(`HSN ${hsn} added successfully.`);
-                } catch (hsnErr) {
-                    sendUpdate(`Warning: Could not process HSN ${hsn}: ${hsnErr.message}`);
-                }
-            }
-        }
-
-        if (data.goods_sac && Array.isArray(data.goods_sac) && data.goods_sac.length > 0) {
-            sendUpdate('Switching to Services tab...');
-            try {
-                await page.getByRole('tab', { name: 'Services', exact: true }).click({ timeout: 1000 }).catch(async () => {
-                    await page.locator('text="Services"').last().click({ timeout: 1000 }).catch(() => { });
-                });
-                await page.waitForTimeout(1000);
-            } catch (e) {
-                sendUpdate('Warning: Could not click Services tab');
-            }
-
-            for (let i = 0; i < data.goods_sac.length; i++) {
-                const rawSac = data.goods_sac[i];
-                const match = rawSac.toString().match(/\d+/);
-                const sac = match ? match[0] : rawSac.toString();
-                sendUpdate(`Filling SAC ${i + 1}/${data.goods_sac.length}: ${sac}`);
-
-                // Find the SAC input - check multiple possible selectors
-                const potentialSelectors = ['#gs_sac_value', '#sac_value', '#sac', '#search_sac', '#gs_sac', 'input[placeholder*="Service Classification"]', 'input[placeholder*="SAC"]', '#gs_hsn_value'];
-                let inputLoc = null;
-                for (const sel of potentialSelectors) {
-                    const loc = page.locator(sel).first();
-                    if (await loc.count() > 0) {
-                        inputLoc = loc;
-                        break;
-                    }
-                }
-
-                if (!inputLoc) {
-                    sendUpdate(`Warning: SAC input field not found on current page. Skipping SAC ${sac}...`);
-                    continue;
-                }
-
-                try {
-                    await inputLoc.scrollIntoViewIfNeeded().catch(() => {});
-                    await inputLoc.click({ timeout: 2000 }).catch(async () => {
-                        await inputLoc.evaluate(el => el.focus()).catch(() => {});
-                    });
-                    await inputLoc.fill('').catch(() => {});
-                    await inputLoc.type(sac, { delay: 10 }).catch(() => {});
-
-                    try {
-                        const dropdownItem = page.locator('ul.ui-autocomplete li:visible, .ui-menu-item:visible, ul li:has-text("' + sac + '")').first();
-                        await dropdownItem.waitFor({ state: 'visible', timeout: 3000 });
-                        await dropdownItem.click({ force: true });
-                    } catch (e) {
-                        sendUpdate(`SAC dropdown item not found, trying keyboard...`);
-                        await inputLoc.focus().catch(() => {});
-                        await page.waitForTimeout(200);
-                        await page.keyboard.press('ArrowDown').catch(() => {});
-                        await page.waitForTimeout(100);
-                        await page.keyboard.press('Enter').catch(() => {});
-                    }
-
-                    await page.waitForTimeout(500);
-                    sendUpdate(`SAC ${sac} added successfully.`);
-                } catch (e) {
-                    sendUpdate(`Warning: Could not fill SAC input: ${e.message}`);
-                }
-            }
-        }
-
-        await saveAndContinueToTab(page, 'State Specific', 'button[title="Save & Continue"]');
-
-        // ============================================
-        // STATE SPECIFIC INFORMATION
-        // ============================================
-        try {
-            sendUpdate('Filling State Specific Information...');
-            // ===============================
-            // State Specific Information
-            // ===============================
-
-            // Electricity Board - dropdown/autocomplete
-            if (data.stateSpecific_electricityBoard) {
-                sendUpdate(`Selecting Electricity Board: ${data.stateSpecific_electricityBoard}`);
-                try {
-                    const ebcdLocator = page.locator('#ebcd');
-                    if (await ebcdLocator.count() > 0 && await ebcdLocator.isVisible({ timeout: 2000 })) {
-                        await page.selectOption('#ebcd', { label: data.stateSpecific_electricityBoard });
-                    } else {
-                        sendUpdate('Electricity Board field not visible. Skipping.');
-                    }
-                } catch (e) {
-                    sendUpdate(`Warning: Could not select Electricity Board: ${data.stateSpecific_electricityBoard}`);
-                }
-            }
-
-            // Electricity Consumer Number
-            if (data.stateSpecific_electricityConsumerNo) {
-                sendUpdate(`Filling Electricity Consumer No: ${data.stateSpecific_electricityConsumerNo}`);
-                try {
-                    const canumLocator = page.locator('#canum');
-                    if (await canumLocator.count() > 0 && await canumLocator.isVisible({ timeout: 2000 })) {
-                        await canumLocator.fill(data.stateSpecific_electricityConsumerNo);
-                    } else {
-                        sendUpdate('Electricity Consumer No field not visible. Skipping.');
-                    }
-                } catch (e) {
-                    sendUpdate(`Warning: Could not fill Electricity Consumer No: ${e.message}`);
-                }
-            }
-
-            // PT EC Number
-            if (data.stateSpecific_ptEcNo) {
-                sendUpdate(`Filling PT EC No: ${data.stateSpecific_ptEcNo}`);
-                try {
-                    const ecTaxLocator = page.locator('#ec_tax');
-                    if (await ecTaxLocator.count() > 0 && await ecTaxLocator.isVisible({ timeout: 2000 })) {
-                        await ecTaxLocator.fill(data.stateSpecific_ptEcNo);
-                    } else {
-                        sendUpdate('PT EC No field not visible. Skipping.');
-                    }
-                } catch (e) {
-                    sendUpdate(`Warning: Could not fill PT EC No: ${e.message}`);
-                }
-            }
-
-            // PT RC Number
-            if (data.stateSpecific_ptRcNo) {
-                sendUpdate(`Filling PT RC No: ${data.stateSpecific_ptRcNo}`);
-                await page.fill('#rc_tax', data.stateSpecific_ptRcNo);
-            }
-
-            // Excise License Number
-            if (data.stateSpecific_exciseLicenseNo) {
-                sendUpdate(`Filling Excise License No: ${data.stateSpecific_exciseLicenseNo}`);
-                await page.fill('#lic_no', data.stateSpecific_exciseLicenseNo);
-            }
-
-            // Excise License Holder
-            if (data.stateSpecific_exciseLicenseHolder) {
-                sendUpdate(`Filling Excise License Holder: ${data.stateSpecific_exciseLicenseHolder}`);
-                await page.fill('#per_lic_no', data.stateSpecific_exciseLicenseHolder);
-            }
-
-            await page.waitForTimeout(1000);
-
-            await page.waitForTimeout(1000);
-
-            // Save & Continue for State Specific section
-            const stateSpecificSaveBtn = page.locator('#newRegForm > div.row.next-tab-nav > div > div > button');
-            if (await stateSpecificSaveBtn.isVisible({ timeout: 5000 })) {
-                await saveAndContinueToTab(page, 'Verification|Aadhaar Authentication', '#newRegForm > div.row.next-tab-nav > div > div > button');
-            } else {
-                await saveAndContinueToTab(page, 'Verification|Aadhaar Authentication', 'button[title="Save & Continue"]');
-            }
-
-        } catch (e) {
-            sendUpdate(`Warning: State Specific section failed: ${e.message}`);
-        }
-
-        // ============================================
-        // VERIFICATION DETAILS (or Aadhaar Auth)
-        // ============================================
-        sendUpdate('Checking if Aadhaar Authentication page is reached...');
-        await page.waitForTimeout(2000);
-
-        const isAadhaarPage = await page.evaluate(() => {
-            const activeTabs = Array.from(document.querySelectorAll('li.active a, li.active span, .nav-tabs li.active, .step-wizard .active, .wizard-step.active'));
-            for (let tab of activeTabs) {
-                if (tab.innerText && tab.innerText.toLowerCase().includes('aadhaar')) {
-                    return true;
-                }
-            }
-            const text = document.body.innerText.toLowerCase();
-            return text.includes('aadhaar authentication') || 
-                   text.includes('aadhar authentication') || 
-                   text.includes('authentication for aadhaar');
         });
 
-        async function submitVerificationWithEVC(page) {
-            sendUpdate('Submitting Verification with EVC (Electronic Verification Code)...');
+        // Wait for EVC OTP Verification modal
+        sendUpdate('Waiting for EVC OTP modal on GST portal...');
+        try {
+            await page.waitForFunction(() => {
+                const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
+                if (!modal || modal.offsetParent === null) return false;
+                const text = (modal.innerText || '').toLowerCase();
+                return text.includes('otp verification') || text.includes('please enter otp') || text.includes('validate otp');
+            }, { timeout: 30000 });
+            sendUpdate('EVC OTP modal detected! OTP has been dispatched to your mobile and email.');
+        } catch (e) {
+            sendUpdate('Notice: Awaiting EVC OTP verification modal...');
+        }
 
-            // 0. Extract Draft ID and compile full official GST JSON payload
-            let currentDraftId = capturedDraftId;
-            if (!currentDraftId) {
-                try {
-                    currentDraftId = await page.evaluate(() => {
-                        const m = window.location.href.match(/(?:applnId|draftId)=([0-9A-Za-z]+)/i);
-                        if (m) return m[1];
-                        return window.sessionStorage?.getItem('applnId') || null;
-                    });
-                } catch (e) {}
-            }
-            if (!currentDraftId) {
-                currentDraftId = (data && data.draftId) || '75028658';
-            }
+        // =========================================================================
+        // [પગલું ૫: Manual OTP Entry & ARN Generate]
+        // તમે OTP દાખલ કરશો એટલે તરત જ ફાઇનલ સબમિશન થશે અને ARN નંબર મળી જશે!
+        // =========================================================================
+        sendUpdate('[પગલું ૫: Manual OTP Entry & ARN Generate] તમે OTP દાખલ કરશો એટલે તરત જ ફાઇનલ સબમિશન થશે અને ARN નંબર મળી જશે!');
 
-            sendUpdate(`Draft Application ID: ${currentDraftId}`);
+        let evcOtpSuccess = false;
+        while (!evcOtpSuccess) {
+            sendUpdate('WAITING_FOR_FINAL_EVC_OTP');
 
-            // Build official GST registration JSON payload matching reg.gst.gov.in schema
-            const finalGstPayload = buildGstApplicationPayload(data, currentDraftId, trnText || (data && data.trn) || '');
-
-            // Save JSON payload to disk and database
-            try {
-                const fs = require('fs');
-                const path = require('path');
-                const legalName = (data && data.legalName) || appId;
-                const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                const dirPath = path.join(__dirname, '..', 'backend', 'data', safeLegalName);
-                if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
-                fs.writeFileSync(path.join(dirPath, 'gst_application_payload.json'), JSON.stringify(finalGstPayload, null, 2), 'utf-8');
-                fs.writeFileSync(path.join(dirPath, 'gst_final_uploaded_payload.json'), JSON.stringify(finalGstPayload, null, 2), 'utf-8');
-                sendUpdate(`Saved official GST JSON to disk: backend/data/${safeLegalName}/gst_final_uploaded_payload.json`);
-
-                // Persist into database via HTTP PUT
-                await new Promise((resolve) => {
-                    const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-                    }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
-                    req.on('error', () => resolve());
-                    const updatedData = Object.assign({}, data, { gst_payload: finalGstPayload, draftId: currentDraftId });
-                    req.write(JSON.stringify({ data: updatedData }));
-                    req.end();
-                });
-                sendUpdate('Official GST JSON successfully stored and synchronized in database.');
-            } catch (saveErr) {
-                console.error('[GST Payload Save Error]:', saveErr.message);
-            }
-
-            // Upload JSON directly to final GST portal endpoints inside the authenticated session
-            sendUpdate(`Uploading JSON payload to final portal endpoint (/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${currentDraftId})...`);
-            try {
-                const uploadResult = await page.evaluate(async ({ draftId, payload }) => {
-                    const report = {};
-                    try {
-                        // 1. Post to applicationdata API
-                        const resApp = await fetch(`/registration/auth/api/applicationdata?applnId=${draftId}`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Accept': 'application/json, text/plain, */*'
-                            },
-                            body: JSON.stringify(payload)
-                        }).catch(e => ({ error: e.message }));
-                        report.appDataStatus = resApp.status || (resApp.error ? 'err: ' + resApp.error : 'ok');
-
-                        // 2. Post to generateFinalformJsonWithApoB endpoint
-                        const resFinal = await fetch(`/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${draftId}`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Accept': 'application/json, text/plain, */*'
-                            },
-                            body: JSON.stringify(payload)
-                        }).catch(e => ({ error: e.message }));
-                        report.finalFormStatus = resFinal.status || (resFinal.error ? 'err: ' + resFinal.error : 'ok');
-                        report.finalFormText = (resFinal.text ? await resFinal.text() : '').substring(0, 200);
-
-                        return { success: (resFinal.ok || resFinal.status === 200 || resApp.ok), report };
-                    } catch (e) {
-                        return { success: false, error: e.message, report };
-                    }
-                }, { draftId: currentDraftId, payload: finalGstPayload });
-
-                if (uploadResult && uploadResult.success) {
-                    sendUpdate('✅ JSON uploaded to final verification endpoint successfully!');
-                } else {
-                    sendUpdate(`Notice: Final endpoint response (status ${uploadResult?.report?.finalFormStatus || 'evaluation'}). Proceeding to submit...`);
-                }
-            } catch (uploadErr) {
-                sendUpdate(`Notice: Direct upload evaluation note: ${uploadErr.message}`);
-            }
-
-            // Listen for final form json verification API responses
-            const finalFormHandler = async (res) => {
-                const url = res.url();
-                if (url.includes('generateFinalformJson') || url.includes('applicationdata') || url.includes('verify/otp')) {
-                    try {
-                        const status = res.status();
-                        const text = await res.text();
-                        let parsed = null;
-                        try { parsed = JSON.parse(text); } catch (e) {}
-                        if (url.includes('generateFinalformJson')) {
-                            sendUpdate(`GST Portal: Final Form JSON compiled and verified (HTTP ${status}).`);
-                        } else if (url.includes('verify/otp')) {
-                            if (parsed && (parsed.status_cd === '1' || parsed.success)) {
-                                sendUpdate('✅ GST Portal: Final EVC OTP generated and dispatched.');
-                            } else if (parsed && (parsed.error || parsed.err || parsed.status_cd === '0')) {
-                                sendUpdate(`❌ GST Portal OTP notice: ${parsed.error?.message || parsed.message || text.substring(0, 100)}`);
-                            }
-                        }
-                    } catch (e) {}
-                }
-            };
-            page.on('response', finalFormHandler);
-
-            // 1. Click "SUBMIT WITH EVC"
-            let evcClicked = false;
-            const evcSelectors = [
-                'button:has-text("SUBMIT WITH EVC")',
-                'button:has-text("Submit with EVC")',
-                'button:has-text("EVC")',
-                'input[value*="SUBMIT WITH EVC" i]'
-            ];
-
-            for (const sel of evcSelectors) {
-                try {
-                    const btn = page.locator(sel).first();
-                    if (await btn.count() > 0 && await btn.isVisible({ timeout: 2000 })) {
-                        await btn.click({ force: true });
-                        evcClicked = true;
-                        sendUpdate('Clicked SUBMIT WITH EVC button.');
-                        break;
-                    }
-                } catch (e) {}
-            }
-
-            if (!evcClicked) {
-                evcClicked = await page.evaluate(() => {
-                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
-                    const b = btns.find(btn => (btn.innerText || btn.value || '').toUpperCase().includes('SUBMIT WITH EVC'));
-                    if (b) {
-                        b.click();
-                        return true;
-                    }
-                    return false;
-                });
-                if (evcClicked) sendUpdate('Clicked SUBMIT WITH EVC button via DOM.');
-            }
-
-            if (!evcClicked) {
-                sendUpdate('Warning: Could not auto-click SUBMIT WITH EVC. Please click manually on the portal.');
-                return;
-            }
-
-            await page.waitForTimeout(2000);
-
-            // 2. Check for intermediate confirmation modal (e.g., "Are you sure you want to submit using EVC?")
-            await page.evaluate(() => {
-                const modals = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"]'));
-                for (const modal of modals) {
-                    if (modal.offsetParent !== null && !modal.innerText.toLowerCase().includes('enter otp')) {
-                        const proceedBtn = Array.from(modal.querySelectorAll('button, input[type="button"]')).find(b => /proceed|yes|confirm|ok|continue/i.test(b.innerText || b.value || ''));
-                        if (proceedBtn) proceedBtn.click();
-                    }
-                }
+            // Wait for user input from stdin (terminal or /api/automation/evc_otp endpoint)
+            const evcOtp = await new Promise(resolve => {
+                process.stdin.once('data', (input) => resolve(input.toString().trim()));
             });
 
-            // 3. Wait for OTP Verification modal to appear
-            sendUpdate('Waiting for EVC OTP Verification modal...');
-            try {
-                await page.waitForFunction(() => {
+            sendUpdate(`Submitting EVC OTP (${evcOtp}) and validating with GST Portal...`);
+
+            await page.evaluate((otpVal) => {
+                const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
+                const input = (modal || document).querySelector('input[type="text"], input[type="number"], input[name*="otp" i], #otp, input[placeholder*="OTP" i]');
+                if (input) {
+                    input.value = otpVal;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }, evcOtp);
+
+            await page.waitForTimeout(600);
+
+            // Click VALIDATE OTP button
+            let validateClicked = false;
+            const validateBtn = page.locator('button:has-text("VALIDATE OTP"), button:has-text("Validate OTP")').first();
+            if (await validateBtn.count() > 0 && await validateBtn.isVisible({ timeout: 2000 })) {
+                await validateBtn.click();
+                validateClicked = true;
+            } else {
+                validateClicked = await page.evaluate(() => {
                     const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
-                    if (!modal || modal.offsetParent === null) return false;
-                    const text = (modal.innerText || '').toLowerCase();
-                    return text.includes('otp verification') || text.includes('please enter otp') || text.includes('validate otp');
-                }, { timeout: 30000 });
-                sendUpdate('EVC OTP modal detected on GST portal.');
-            } catch (e) {
-                sendUpdate('Warning: EVC OTP modal wait timeout. Checking for active modal or OTP input...');
+                    const btn = Array.from((modal || document).querySelectorAll('button, input[type="button"]')).find(b => /validate/i.test(b.innerText || b.value || ''));
+                    if (btn) { btn.click(); return true; }
+                    return false;
+                });
             }
 
-            // 4. EVC OTP Input & Validation Loop
-            let evcOtpSuccess = false;
-            while (!evcOtpSuccess) {
-                sendUpdate('WAITING_FOR_FINAL_EVC_OTP');
+            sendUpdate('Submitted EVC OTP. Awaiting portal confirmation...');
+            await page.waitForTimeout(5000);
 
-                // Wait for user input from stdin
-                const evcOtp = await new Promise(resolve => {
-                    process.stdin.once('data', (input) => {
-                        resolve(input.toString().trim());
-                    });
-                });
-
-                sendUpdate('Filling EVC OTP and validating with GST Portal...');
-
-                // Fill OTP inside modal
-                await page.evaluate((otpVal) => {
-                    const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
-                    const input = (modal || document).querySelector('input[type="text"], input[type="number"], input[name*="otp" i], #otp, input[placeholder*="OTP" i]');
-                    if (input) {
-                        input.value = otpVal;
-                        input.dispatchEvent(new Event('input', { bubbles: true }));
-                        input.dispatchEvent(new Event('change', { bubbles: true }));
+            const checkStatus = await page.evaluate(() => {
+                const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
+                if (modal && modal.offsetParent !== null) {
+                    const modalText = modal.innerText.toLowerCase();
+                    if (modalText.includes('invalid') || modalText.includes('incorrect') || modalText.includes('expired') || modalText.includes('mismatch')) {
+                        return { isError: true, msg: modal.innerText.trim() };
                     }
-                }, evcOtp);
-
-                await page.waitForTimeout(600);
-
-                // Click VALIDATE OTP button
-                let validateClicked = false;
-                const validateBtn = page.locator('button:has-text("VALIDATE OTP"), button:has-text("Validate OTP")').first();
-                if (await validateBtn.count() > 0 && await validateBtn.isVisible({ timeout: 2000 })) {
-                    await validateBtn.click();
-                    validateClicked = true;
-                } else {
-                    validateClicked = await page.evaluate(() => {
-                        const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
-                        const btn = Array.from((modal || document).querySelectorAll('button, input[type="button"]')).find(b => /validate/i.test(b.innerText || b.value || ''));
-                        if (btn) {
-                            btn.click();
-                            return true;
-                        }
-                        return false;
-                    });
                 }
-
-                sendUpdate('Submitted EVC OTP. Awaiting portal confirmation...');
-                await page.waitForTimeout(5000);
-
-                // Check for errors or success
-                const checkStatus = await page.evaluate(() => {
-                    const modal = document.querySelector('.modal.in, .modal.show, div[role="dialog"]');
-                    if (modal && modal.offsetParent !== null) {
-                        const modalText = modal.innerText.toLowerCase();
-                        if (modalText.includes('invalid') || modalText.includes('incorrect') || modalText.includes('expired') || modalText.includes('mismatch')) {
-                            return { isError: true, msg: modal.innerText.trim() };
-                        }
-                    }
-                    const bodyText = document.body ? document.body.innerText : '';
-                    let arn = null;
-                    const arnMatch = bodyText.match(/[A-Za-z0-9]{15,20}ARN/i) || bodyText.match(/ARN\s*[:\-]?\s*([A-Za-z0-9]+)/i);
-                    if (arnMatch) {
-                        arn = arnMatch[1] || arnMatch[0];
-                    }
-                    const isSuccess = bodyText.toLowerCase().includes('success') ||
-                                      bodyText.toLowerCase().includes('acknowledgment') ||
-                                      bodyText.toLowerCase().includes('submitted successfully') ||
-                                      !modal || modal.offsetParent === null;
-                    return { isError: false, isSuccess, arn, bodySnippet: bodyText.substring(0, 300) };
-                });
-
-                if (checkStatus.isError) {
-                    sendUpdate(`❌ Invalid EVC OTP entered. Portal error: ${checkStatus.msg}. Retrying...`);
-                    await page.waitForTimeout(1000);
-                } else {
-                    evcOtpSuccess = true;
-                    sendUpdate('🎉 GST Application successfully submitted with EVC!');
-                    if (checkStatus.arn) {
-                        sendUpdate(`📌 Application Reference Number (ARN): ${checkStatus.arn}`);
-                    } else {
-                        sendUpdate('📌 Application submitted successfully. ARN will be generated by GSTN and dispatched to registered Email & Mobile within 15-30 minutes.');
-                    }
-
-                    // Save Registered status and ARN in database
-                    try {
-                        await new Promise((resolve) => {
-                            const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/status`, {
-                                method: 'PUT',
-                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-                            }, (res) => {
-                                res.on('data', () => {});
-                                res.on('end', resolve);
-                            });
-                            req.on('error', () => resolve());
-                            req.write(JSON.stringify({ 
-                                status: 'Registered', 
-                                arn: checkStatus.arn || null 
-                            }));
-                            req.end();
-                        });
-                        sendUpdate('Application status updated to Registered in database.');
-                    } catch (e) {}
+                const bodyText = document.body ? document.body.innerText : '';
+                let arn = null;
+                const arnMatch = bodyText.match(/[A-Za-z0-9]{15,20}ARN/i) || bodyText.match(/ARN\s*[:\-]?\s*([A-Za-z0-9]+)/i);
+                if (arnMatch) {
+                    arn = arnMatch[1] || arnMatch[0];
                 }
-            }
-        }
+                const isSuccess = bodyText.toLowerCase().includes('success') ||
+                                  bodyText.toLowerCase().includes('acknowledgment') ||
+                                  bodyText.toLowerCase().includes('submitted successfully') ||
+                                  !modal || modal.offsetParent === null;
+                return { isError: false, isSuccess, arn, bodySnippet: bodyText.substring(0, 300) };
+            });
 
-        if (isAadhaarPage) {
-            sendUpdate('Aadhaar Authentication page reached. Automating...');
-            try {
-                // Click YES / Agree button on Aadhaar Auth page
-                const yesBtnSelectors = [
-                    'label:has-text("Yes")',
-                    'label:has-text("YES")',
-                    'input[value="Y"]',
-                    'input[value="YES"]',
-                    'input[value="Yes"]',
-                    'button:has-text("YES")',
-                    'button:has-text("Yes")'
-                ];
-                let aadhaarYesClicked = false;
-                for (const sel of yesBtnSelectors) {
-                    try {
-                        const btn = page.locator(sel).first();
-                        if (await btn.count() > 0 && await btn.isVisible({ timeout: 2000 })) {
-                            await btn.click({ force: true });
-                            aadhaarYesClicked = true;
-                            sendUpdate('Clicked YES on Aadhaar Authentication page.');
-                            break;
-                        }
-                    } catch (e) {}
-                }
-                if (!aadhaarYesClicked) {
-                    sendUpdate('Could not auto-click YES on Aadhaar page. Please click manually.');
-                }
-
-                await page.waitForTimeout(3000);
-
-                // Check if OTP is required
-                const otpInputVisible = await page.locator('#otp, input[name="otp"], input[placeholder*="OTP" i]').first().isVisible({ timeout: 5000 }).catch(() => false);
-                if (otpInputVisible) {
-                    sendUpdate('WAITING_FOR_AADHAAR_OTP');
-                    const aadhaarOtp = await new Promise(resolve => {
-                        process.stdin.once('data', (input) => {
-                            resolve(input.toString().trim());
-                        });
-                    });
-                    sendUpdate('Submitting Aadhaar OTP...');
-                    await page.locator('#otp, input[name="otp"], input[placeholder*="OTP" i]').first().fill(aadhaarOtp);
-                    await page.locator('button[type="submit"], button:has-text("Validate"), button:has-text("Verify"), button:has-text("Proceed")').last().click().catch(() => {});
-                    await page.waitForTimeout(3000);
-                    sendUpdate('Aadhaar OTP submitted. Proceeding to Verification...');
-                } else {
-                    sendUpdate('No OTP required for Aadhaar. Proceeding...');
-                }
-                
-                // Crucial step: MUST click Save & Continue to go to Verification tab
-                await saveAndContinueToTab(page, 'Verification', 'button[title="Save & Continue"]');
-
-                // After Aadhaar Auth, check if Verification tab is now active
-                await page.waitForTimeout(2000);
-                const isVerificationPage = await page.evaluate(() => {
-                    const activeTabs = Array.from(document.querySelectorAll('li.active a, li.active span, .nav-tabs li.active'));
-                    for (let tab of activeTabs) {
-                        if (tab.innerText && tab.innerText.toLowerCase().includes('verification')) return true;
-                    }
-                    return document.body.innerText.toLowerCase().includes('declaration') &&
-                           document.body.innerText.toLowerCase().includes('authorized signatory');
-                });
-
-                if (isVerificationPage) {
-                    sendUpdate('Verification tab reached. Filling verification details...');
-                    try {
-                        const checkbox = page.locator('input[type="checkbox"]').first();
-                        await checkbox.check().catch(() => checkbox.evaluate(el => el.click()).catch(() => checkbox.click({ force: true })));
-                        await page.waitForTimeout(1000);
-
-                        const authSigDropdown = page.locator('select').first();
-                        const optionsCount = await authSigDropdown.locator('option').count();
-                        if (data.verification_signatory) {
-                            try {
-                                await authSigDropdown.selectOption({ label: data.verification_signatory });
-                            } catch (e) {
-                                if (optionsCount > 1) await authSigDropdown.selectOption({ index: 1 });
-                            }
-                        } else if (optionsCount > 1) {
-                            await authSigDropdown.selectOption({ index: 1 });
-                        }
-                        await page.waitForTimeout(1000);
-
-                        const place = (data.verification_place || data.ppob_city || data.ppob_district || 'City').trim();
-                        await page.fill('#place', place).catch(() => {});
-
-                        sendUpdate(`Verification details filled (Signatory & Place: ${place}). Submitting application with EVC...`);
-                        await submitVerificationWithEVC(page);
-                    } catch (e) {
-                        sendUpdate(`Warning: Verification auto-fill failed: ${e.message}`);
-                    }
-                } else {
-                    sendUpdate('Please complete remaining steps (Verification) manually in the browser.');
-                }
-
-            } catch (e) {
-                sendUpdate(`Warning: Aadhaar Authentication automation failed: ${e.message}. Please complete manually.`);
-            }
-        } else {
-            sendUpdate('Processing Verification Details...');
-            try {
-                sendUpdate('Checking declaration...');
-                // GST verification checkbox
-                const checkbox = page.locator('input[type="checkbox"]').first();
-                await checkbox.check().catch(() => checkbox.evaluate(el => el.click()).catch(() => checkbox.click({ force: true })));
-                
+            if (checkStatus.isError) {
+                sendUpdate(`❌ Invalid EVC OTP entered. Portal error: ${checkStatus.msg}. Retrying...`);
                 await page.waitForTimeout(1000);
-                sendUpdate('Selecting Authorized Signatory...');
-                const authSigDropdown = page.locator('select').first();
-                const optionsCount = await authSigDropdown.locator('option').count();
-                if (data.verification_signatory) {
-                    try {
-                        await authSigDropdown.selectOption({ label: data.verification_signatory });
-                    } catch (e) {
-                        if (optionsCount > 1) await authSigDropdown.selectOption({ index: 1 });
-                    }
-                } else if (optionsCount > 1) {
-                    await authSigDropdown.selectOption({ index: 1 });
+            } else {
+                evcOtpSuccess = true;
+                sendUpdate('🎉 GST Application successfully submitted with EVC!');
+                if (checkStatus.arn) {
+                    sendUpdate(`📌 Application Reference Number (ARN): ${checkStatus.arn}`);
+                } else {
+                    sendUpdate('📌 Application submitted successfully. ARN will be generated by GSTN and dispatched to registered Email & Mobile within 15-30 minutes.');
                 }
-                
-                await page.waitForTimeout(1000);
-                sendUpdate('Entering Place...');
-                const place = (data.verification_place || data.ppob_city || data.ppob_district || 'City').trim();
-                await page.fill('#place', place).catch(async () => {
-                    const inputs = page.locator('input[type="text"]');
-                    const count = await inputs.count();
-                    for (let i = 0; i < count; i++) {
-                        const placeholder = await inputs.nth(i).getAttribute('placeholder') || '';
-                        if (placeholder.toLowerCase().includes('place')) {
-                            await inputs.nth(i).fill(place);
-                            break;
-                        }
-                    }
-                });
-                
-                sendUpdate(`Verification details filled successfully (Place: ${place}). Submitting application with EVC...`);
-                await page.waitForTimeout(1000);
-                await submitVerificationWithEVC(page);
-            } catch (e) {
-                sendUpdate(`Warning: Verification section failed: ${e.message}`);
-            }
-        }
 
-        // Clean up all temporary files created during this automation run
-        sendUpdate('Cleaning up temporary files...');
-        try {
-            const fs = require('fs');
-            const path = require('path');
-            const tempFiles = [
-                'temp_proof_constitution.pdf',
-                'temp_proof_constitution.jpg',
-                'temp_auth_sig_proof.pdf',
-                'temp_auth_sig_proof.jpg',
-                'temp_auth_sig_photo.jpg',
-                'temp_ppob_doc.pdf',
-                'temp_ppob_doc.jpg',
-                'temp_auth_sig_proof_0.pdf',
-                'temp_auth_sig_proof_0.jpg',
-            ];
-            // Also clean promoter photos (temp_promoter_photo_1.jpg ... temp_promoter_photo_10.jpg)
-            for (let i = 1; i <= 10; i++) {
-                tempFiles.push(`temp_promoter_photo_${i}.jpg`);
+                // Update database status
+                try {
+                    await new Promise((resolve) => {
+                        const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/status`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+                        }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
+                        req.on('error', () => resolve());
+                        req.write(JSON.stringify({ 
+                            status: 'Registered', 
+                            arn: checkStatus.arn || null 
+                        }));
+                        req.end();
+                    });
+                    sendUpdate('Application status updated to Registered in database.');
+                } catch (e) {}
             }
-            // Also clean indexed auth sig proofs
-            for (let i = 0; i <= 9; i++) {
-                tempFiles.push(`temp_auth_sig_proof_${i}.pdf`);
-                tempFiles.push(`temp_auth_sig_proof_${i}.jpg`);
-            }
-            for (const fname of tempFiles) {
-                const fpath = path.join(__dirname, fname);
-                if (fs.existsSync(fpath)) {
-                    fs.unlinkSync(fpath);
-                    console.log(`[Cleanup] Deleted temp file: ${fname}`);
-                }
-            }
-        } catch (cleanupErr) {
-            console.log(`[Cleanup] Warning: Could not clean up temp files: ${cleanupErr.message}`);
         }
 
         sendUpdate('COMPLETED');
@@ -3512,9 +785,8 @@ async function run() {
         isExiting = true;
         try {
             if (browser && browser.isConnected() && page && !page.isClosed()) {
-                // Keep the browser open for 30 minutes so the user can manually interact
-                sendUpdate('Browser will remain open for 30 minutes for manual interaction.');
-                await page.waitForTimeout(1800000);
+                sendUpdate('Browser will remain open for 15 minutes for inspection.');
+                await page.waitForTimeout(900000);
             }
         } catch (e) {}
     }

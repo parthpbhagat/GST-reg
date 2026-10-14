@@ -54,6 +54,32 @@ function getPossessionCode(possessionName) {
     return 'CON';
 }
 
+const REASON_CODES = {
+    'voluntary basis': 'VOLN',
+    'crossing the threshold': 'CRSS',
+    'inter-state supply': 'INTR',
+    'liability to pay as recipient of goods or services': 'RCPT',
+    'transfer / succession of business': 'TRNS',
+    'death of the proprietor': 'DTHP',
+    'de-merger': 'DMER',
+    'change in constitution of business': 'CHCN',
+    'merger /amalgamation': 'MRGR',
+    'e-commerce operator': 'ECOM',
+    'selling through e-commerce portal': 'SECP',
+    'input service distributor only': 'ISDO',
+    'supplies on behalf of other taxable person': 'SOTP',
+    'sez unit': 'SEZU',
+    'sez developer': 'SEZD',
+    'corporate debtor undergoing the corporate insolvency resolution process with irp/rp': 'CDIR',
+    'others': 'OTHR'
+};
+
+function getReasonCode(reason) {
+    if (!reason) return 'VOLN';
+    const clean = String(reason).toLowerCase().trim();
+    return REASON_CODES[clean] || (reason.length <= 4 ? reason.toUpperCase() : 'VOLN');
+}
+
 function formatDDMMYYYY(dateStr) {
     if (!dateStr) {
         const now = new Date();
@@ -325,7 +351,7 @@ function buildGstApplicationPayload(data, draftId = '', trn = '') {
         bzdtls: {
             bzdtlsbz: {
                 cobz: constitutionCode,
-                rslibrg: data.reasonToObtainRegistration || 'VOLN',
+                rslibrg: getReasonCode(data.reasonToObtainRegistration),
                 lgnmbzpan: cleanLegalName,
                 pan: {
                     num: cleanPan,
@@ -334,15 +360,15 @@ function buildGstApplicationPayload(data, draftId = '', trn = '') {
                 },
                 stcd: stateCd,
                 addltrdnms: data.tradeName ? [{ trdnm: data.tradeName }] : [],
-                isopcmp: 'N',
+                isopcmp: (data.optComposition === 'Yes' || data.isopcmp === 'Y') ? 'Y' : 'N',
                 cmbzdt: commencementDate,
-                iscasdl: 'N',
+                iscasdl: (data.isCasualTaxable === 'Yes' || data.iscasdl === 'Y') ? 'Y' : 'N',
                 otherRsLib: '',
                 dst: (data.district || data.businessDistrict || data.ppob_district || '').trim(),
                 sezDtls: {},
                 regCategory: [],
-                optCat: 'Y',
-                optCatDeclStatus: 'Y'
+                optCat: (data.optComposition === 'Yes' || data.isopcmp === 'Y') ? 'Y' : 'N',
+                optCatDeclStatus: (data.optComposition === 'Yes' || data.isopcmp === 'Y') ? 'Y' : 'N'
             },
             exrgdtls: []
         },

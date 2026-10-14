@@ -10,7 +10,14 @@ window.resetFormDraft = function () {
     }
 };
 
-const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:3002' : 'https://gst-reg.onrender.com';
+const API_BASE_URL = (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    /^192\.168\./.test(window.location.hostname) ||
+    /^10\./.test(window.location.hostname) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(window.location.hostname) ||
+    window.location.port
+) ? `http://${window.location.hostname}:3002` : 'https://gst-reg.onrender.com';
 
 // ---------------- AUTHENTICATION SETUP ----------------
 const supabaseUrl = (window.ENV && window.ENV.SUPABASE_URL) ? window.ENV.SUPABASE_URL : '';

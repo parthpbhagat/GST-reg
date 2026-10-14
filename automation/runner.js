@@ -599,39 +599,131 @@ async function run() {
             }
         }, { draftId: capturedDraftId, payload: finalGstPayload });
 
-        sendUpdate('✅ Official JSON payload successfully uploaded to GST portal endpoints!');
+        if (uploadResult && uploadResult.report) {
+            sendUpdate(`JSON upload report: AppData=${uploadResult.report.appDataStatus}, FinalForm=${uploadResult.report.finalFormStatus}`);
+        }
+        sendUpdate('✅ Official JSON payload processed for GST portal endpoints.');
 
         // =========================================================================
-        // [પગલું ૪: EVC OTP મોકલવો]
-        // પોર્ટલ સીધું Verification કમ્પ્લીટ માનીને મોબાઈલ/ઈમેલ પર EVC OTP ડિસ્પેચ કરશે
+        // [પગલું ૪: Verification Tab & EVC OTP Dispatch]
         // =========================================================================
-        sendUpdate('[પગલું ૪: EVC OTP મોકલવો] પોર્ટલ સીધું Verification કમ્પ્લીટ માનીને મોબાઈલ/ઈમેલ પર EVC OTP ડિસ્પેચ કરશે...');
+        sendUpdate('[પગલું ૪: EVC OTP મોકલવો] Verification સ્ક્રીન પર જઈને EVC OTP વિનંતી કરવી...');
 
-        // Navigate directly to Verification tab
-        sendUpdate('Switching to Verification tab...');
+        // 1. First, make sure we do not leave any accidental toggles on Business Details
         await page.evaluate(() => {
-            const tabs = Array.from(document.querySelectorAll('.nav-tabs li a, .wizard-step a, .step-wizard a, a[data-toggle="tab"]'));
-            const vTab = tabs.find(t => (t.innerText || '').toLowerCase().includes('verification'));
-            if (vTab) {
-                vTab.click();
-                return true;
+            const labels = Array.from(document.querySelectorAll('label, div, p'));
+            const casualLabel = labels.find(l => /casual taxable person/i.test(l.innerText || ''));
+            if (casualLabel) {
+                const toggle = casualLabel.closest('div')?.querySelector('input[type="checkbox"], input[type="radio"]');
+                if (toggle && toggle.checked) toggle.click();
             }
-            if (tabs.length > 0) {
-                tabs[tabs.length - 1].click();
-                return true;
+            const compLabel = labels.find(l => /option for composition/i.test(l.innerText || ''));
+            if (compLabel) {
+                const toggle = compLabel.closest('div')?.querySelector('input[type="checkbox"], input[type="radio"]');
+                if (toggle && toggle.checked) toggle.click();
             }
-            return false;
         });
 
-        await page.waitForTimeout(2500);
+        // 2. Navigate directly to Verification tab
+        sendUpdate('Switching to Verification tab...');
+        let isOnVerification = false;
 
-        // Fill Verification details
+        for (let attempt = 0; attempt < 5; attempt++) {
+            // Check if we are already on the Verification screen
+            isOnVerification = await page.evaluate(() => {
+                const text = (document.body.innerText || '').toLowerCase();
+                const hasEvc = !!Array.from(document.querySelectorAll('button, input')).find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));
+                const hasDecl = text.includes('hereby solemnly') || text.includes('affirm and declare') || !!document.querySelector('#chkVerify');
+                return hasEvc || hasDecl;
+            });
+
+            if (isOnVerification) {
+                sendUpdate('Verified: Successfully reached Verification tab.');
+                break;
+            }
+
+            // Click the Verification tab in the wizard
+            sendUpdate(`Attempt ${attempt + 1}: Navigating to Verification tab...`);
+            await page.evaluate(() => {
+                const all = Array.from(document.querySelectorAll('a, button, li, .wizard-step, .step-wizard, .nav-tabs li, .steps li'));
+                const v = all.find(el => {
+                    const t = (el.innerText || '').trim().toLowerCase();
+                    return t === 'verification' || t.endsWith('verification') || t.includes('verification');
+                });
+                if (v) {
+                    v.click();
+                    const a = v.querySelector('a') || v.closest('a');
+                    if (a) a.click();
+                }
+
+                if (window.angular) {
+                    try {
+                        const body = document.querySelector('[ng-controller], [data-ng-controller], body');
+                        const sc = window.angular.element(body).scope();
+                        if (sc) {
+                            if (typeof sc.gotoTab === 'function') sc.gotoTab('verification');
+                            else if (typeof sc.goto === 'function') sc.goto(10);
+                            else if (typeof sc.setTab === 'function') sc.setTab(10);
+                            if (!sc.$$phase) sc.$apply();
+                        }
+                    } catch (e) { }
+                }
+            });
+
+            // Also try Playwright locator click
+            try {
+                const vLocator = page.locator('a, li, button').filter({ hasText: /^Verification$/i }).last();
+                if (await vLocator.count() > 0) {
+                    await vLocator.scrollIntoViewIfNeeded().catch(() => {});
+                    await vLocator.click({ force: true }).catch(() => {});
+                }
+            } catch (e) {}
+
+            await page.waitForTimeout(2000);
+
+            // If still blocked, click "Save & Continue" or Next button if available
+            if (!isOnVerification && attempt >= 2) {
+                await page.evaluate(() => {
+                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
+                    const saveNext = btns.find(b => /save\s*&\s*continue|continue|next/i.test(b.innerText || b.value || ''));
+                    if (saveNext && !saveNext.disabled) {
+                        saveNext.click();
+                    }
+                });
+                await page.waitForTimeout(2000);
+            }
+        }
+
+        // Fill Verification details only on Verification tab
         sendUpdate('Filling Verification Details (Declaration, Signatory & Place)...');
         const place = (data.verification_place || data.ppob_city || data.district || '').trim();
+
         try {
-            // Check declaration checkbox
-            const checkbox = page.locator('input[type="checkbox"]').first();
-            await checkbox.check().catch(() => checkbox.evaluate(el => el.click()).catch(() => checkbox.click({ force: true })));
+            // Check ONLY the verification declaration checkbox
+            await page.evaluate(() => {
+                const chk = document.querySelector('#chkVerify, input[type="checkbox"][id*="chk" i], input[type="checkbox"][name*="decl" i], input[type="checkbox"][name*="verif" i]');
+                if (chk) {
+                    if (!chk.checked) {
+                        chk.checked = true;
+                        chk.dispatchEvent(new Event('change', { bubbles: true }));
+                        chk.dispatchEvent(new Event('click', { bubbles: true }));
+                    }
+                    return;
+                }
+                const labels = Array.from(document.querySelectorAll('label, div'));
+                const declLabel = labels.find(l => {
+                    const t = (l.innerText || '').toLowerCase();
+                    return t.includes('solemnly') || t.includes('affirm') || t.includes('declare');
+                });
+                if (declLabel) {
+                    const cb = declLabel.querySelector('input[type="checkbox"]') || declLabel.parentElement?.querySelector('input[type="checkbox"]');
+                    if (cb && !cb.checked) {
+                        cb.checked = true;
+                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                        cb.dispatchEvent(new Event('click', { bubbles: true }));
+                    }
+                }
+            });
             await page.waitForTimeout(600);
 
             // Select Authorized Signatory
@@ -648,61 +740,30 @@ async function run() {
             }
             await page.waitForTimeout(600);
 
-            // Fill Place with quick 2s timeout
-            await page.fill('#place', place, { timeout: 2000 }).catch(async () => {
-                const inputs = page.locator('input[type="text"]');
-                const count = await inputs.count();
-                for (let i = 0; i < count; i++) {
-                    const placeholder = await inputs.nth(i).getAttribute('placeholder') || '';
-                    if (placeholder.toLowerCase().includes('place')) {
-                        await inputs.nth(i).fill(place);
-                        break;
+            // Fill Place
+            if (place) {
+                await page.evaluate((placeVal) => {
+                    const pInput = document.querySelector('#place, input[name*="place" i], input[placeholder*="place" i]');
+                    if (pInput) {
+                        pInput.value = placeVal;
+                        pInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        pInput.dispatchEvent(new Event('change', { bubbles: true }));
                     }
-                }
-            });
-
-            // Ensure Angular digest & validity in DOM
-            await page.evaluate(({ placeVal, signatoryVal }) => {
-                const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
-                for (const cb of cbs) {
-                    if (!cb.checked) {
-                        cb.checked = true;
-                        cb.dispatchEvent(new Event('change', { bubbles: true }));
-                        cb.dispatchEvent(new Event('click', { bubbles: true }));
+                    if (window.angular) {
+                        try {
+                            const sc = window.angular.element(pInput || document.body).scope();
+                            if (sc && !sc.$$phase) sc.$apply();
+                        } catch(e) {}
                     }
-                }
-
-                const selects = Array.from(document.querySelectorAll('select'));
-                for (const sel of selects) {
-                    if (sel.options && sel.options.length > 1 && sel.selectedIndex <= 0) {
-                        sel.selectedIndex = 1;
-                        sel.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                }
-
-                const pInputs = Array.from(document.querySelectorAll('input[type="text"], #place'));
-                const pInput = pInputs.find(i => i.id === 'place' || /place/i.test(i.name || '') || /place/i.test(i.placeholder || '')) || pInputs[pInputs.length - 1];
-                if (pInput && !pInput.value) {
-                    pInput.value = placeVal;
-                    pInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    pInput.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-
-                if (window.angular) {
-                    try {
-                        const el = document.querySelector('[ng-controller], [data-ng-controller], form, body');
-                        const sc = window.angular.element(el).scope();
-                        if (sc && !sc.$$phase) sc.$apply();
-                    } catch (e) {}
-                }
-            }, { placeVal: place, signatoryVal: data.verification_signatory || '' });
+                }, place);
+            }
 
             sendUpdate(`Verification details confirmed (Place: ${place}).`);
         } catch (vErr) {
             sendUpdate(`Verification note: ${vErr.message}`);
         }
 
-        // Click SUBMIT WITH EVC
+        // Trigger SUBMIT WITH EVC button on GST portal
         sendUpdate('Triggering SUBMIT WITH EVC button on GST portal...');
         let evcClicked = false;
         const evcSelectors = [
@@ -742,7 +803,7 @@ async function run() {
         }
 
         // Wait for EVC OTP Verification modal (and automatically handle any intermediate confirmation popups)
-        sendUpdate('Waiting for EVC OTP modal on GST portal...');
+        sendUpdate('Waiting for GST Portal to dispatch EVC OTP...');
         const evcWaitStart = Date.now();
         let evcModalReady = false;
 
@@ -767,16 +828,23 @@ async function run() {
                         }
                     }
                 }
+                // Check if any error notification appeared
+                const errorBox = document.querySelector('.alert-danger, .toast-error, .has-error');
+                if (errorBox && errorBox.innerText) {
+                    return { state: 'portal_error', errorText: errorBox.innerText.trim() };
+                }
                 return { state: 'waiting' };
             });
 
             if (modalCheck.state === 'clicked_proceed') {
-                sendUpdate(`Confirmed dialog on portal: clicked "${modalCheck.text}".`);
+                sendUpdate(`Confirmed dialog on portal: clicked "${modalCheck.text}". Waiting for OTP modal...`);
                 await page.waitForTimeout(2000);
             } else if (modalCheck.state === 'otp_modal_ready') {
                 evcModalReady = true;
-                sendUpdate('EVC OTP modal detected! OTP has been dispatched to your mobile and email.');
+                sendUpdate('✅ EVC OTP modal detected! GST Portal has dispatched the OTP to your Mobile and Email.');
                 break;
+            } else if (modalCheck.state === 'portal_error') {
+                sendUpdate(`GST Portal message: ${modalCheck.errorText}`);
             }
 
             // If 6 seconds elapsed without any modal, retry clicking the EVC button
@@ -784,9 +852,7 @@ async function run() {
                 await page.evaluate(() => {
                     const btns = Array.from(document.querySelectorAll('button, input[type="button"]'));
                     const evc = btns.find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));
-                    if (evc) {
-                        evc.disabled = false;
-                        evc.removeAttribute('disabled');
+                    if (evc && !evc.disabled) {
                         evc.click();
                     }
                 });
@@ -796,7 +862,7 @@ async function run() {
         }
 
         if (!evcModalReady) {
-            sendUpdate('Notice: Awaiting EVC OTP verification modal...');
+            sendUpdate('Warning: EVC OTP modal did not appear. Please inspect the Live Browser Preview to verify the state on GST Portal.');
         }
 
         // =========================================================================

@@ -189,12 +189,11 @@ app.post('/api/applications', authenticateToken, async (req, res) => {
             data: data,
             status: status,
             userEmail: userEmail,
-            trn: trnVal,
-            arn: arnVal
+            trn: trnVal
         }, { onConflict: 'appId' });
 
         try {
-            await oldSupabase.from('applications').upsert({ appId, data, status, userEmail, trn: trnVal, arn: arnVal });
+            await oldSupabase.from('applications').upsert({ appId, data, status, userEmail, trn: trnVal });
         } catch (oldErr) {
             console.error('Error syncing to oldSupabase:', oldErr.message || oldErr);
         }
@@ -410,7 +409,6 @@ app.put('/api/applications/:id', authenticateToken, async (req, res) => {
         const updatePayload = { data };
         if (status) updatePayload.status = status;
         if (data.trn || req.body.trn) updatePayload.trn = data.trn || req.body.trn;
-        if (data.arn || req.body.arn) updatePayload.arn = data.arn || req.body.arn;
 
         let updateQuery = supabase.from('applications').update(updatePayload).eq('appId', id);
         if (req.user && req.user.email && req.user.email !== 'admin@example.com') {

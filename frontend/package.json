@@ -5,9 +5,9 @@
   "main": "fix.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "node generate_config.js && vite",
+    "dev": "node generate_config.js && vite --host 0.0.0.0",
     "build": "node generate_config.js && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview --host 0.0.0.0"
   },
   "keywords": [],
   "author": "",

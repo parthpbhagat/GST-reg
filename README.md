@@ -1,116 +1,106 @@
-# GST Registration Automation Platform
-
-## 🌟 Executive Summary
-This project represents a **paradigm shift in financial compliance operations**. By replacing manual data entry with an intelligent, end-to-end automation pipeline, it bridges the gap between clients, compliance firms, and the official government GST portal. 
-- **Zero Typo Guarantee**: Eliminates human error by programmatically injecting client-submitted data directly into the portal.
-- **Drastic Time Reduction**: Transforms a 40-minute manual task into a seamless, few-click automated process.
-- **Human-in-the-Loop Security**: Intelligently pauses for critical human input (like CAPTCHAs or OTPs) before seamlessly resuming execution.
-
-## 📌 Project Overview
-This project is an **End-to-End Automation Solution** designed to streamline, simplify, and fully automate the complex GST Registration process in India. 
-
-Traditionally, filling out GST applications on the government portal is a tedious, multi-step process that requires manually uploading multiple documents, typing out lengthy addresses, and jumping through hoops of OTP validations. 
-This platform solves that problem by providing:
-1. A **Custom User-Friendly Web Form** for users to easily fill out their details.
-2. An **Admin Dashboard** to review, accept, or reject applications.
-3. A **Headless Browser Bot (Playwright)** that automatically goes to the official GST portal, types in all the data, uploads the correct documents, and handles OTPs/Captchas by prompting the admin in real-time.
+# 🇮🇳 GST Registration Automation Platform
+> **GST નવા રજીસ્ટ્રેશનની સંપૂર્ણ ઓટોમેટેડ પ્રક્રિયા (End-to-End Automated GST Registration Solution)**
 
 ---
 
-## 📸 Screenshots
+## 🌟 સરળ ભાષામાં પ્રોજેક્ટની સમજૂતી (Simple Project Explanation)
 
-### 1. Client Onboarding (Frontend Wizard)
-![Frontend Wizard Screenshot](screenshot_signin.png)
+આ પ્રોજેક્ટ ભારત સરકારના સત્તાવાર GST પોર્ટલ (**reg.gst.gov.in**) પર નવી GST અરજી (New GST Registration) કરવાની પ્રક્રિયાને **૧૦૦% ઓટોમેટિક** બનાવે છે.
 
-### 2. Admin Dashboard (Application Review)
-![Admin Dashboard Screenshot](screenshot_admin.png)
-
-### 3. Live Automation Terminal (Handling CAPTCHA)
-![Automation Terminal Screenshot](screenshot_terminal_captcha.png)
-
-### 4. Live Automation Terminal (Handling OTP)
-![OTP Screenshot](screenshot_terminal_otp.png)
-
----
-
-## 🏗️ System Architecture
-
-The project is divided into three main components:
-
-### 1. Frontend (`/frontend`)
-- **Tech Stack**: Vanilla HTML/JS/CSS, Vite, Supabase JS.
-- **Features**:
-  - Provides a beautiful, fully responsive (mobile-first) wizard interface for applicants to enter their GST details step-by-step.
-  - Generates an automatic "Declaration Form" PDF using `html2pdf.js`.
-  - Integrates MapmyIndia (Mappls) for Address Autocomplete and Pincode lookups.
-  - Includes a secure Admin Dashboard to view pending applications.
-  - Provides a real-time console view to monitor the background Playwright automation process and submit CAPTCHAs/OTPs on the fly.
-
-### 2. Backend API (`/backend`)
-- **Tech Stack**: Node.js, Express, SQLite, Socket.io, Supabase.
-- **Features**:
-  - Acts as the central communication hub.
-  - Stores heavy file uploads (photos, proofs of constitution) locally to avoid database bloat.
-  - Exposes REST endpoints to fetch jurisdictions, districts, and HSN/SAC codes.
-  - Dynamically spawns the Playwright automation script.
-  - Uses **Socket.io** to stream live logs, browser screenshots, and CAPTCHA images directly to the frontend admin panel.
-
-### 3. Automation Bot (`/automation`)
-- **Tech Stack**: Node.js, Playwright.
-- **Features**:
-  - A robust robotic process automation (RPA) script that controls a Chromium browser.
-  - Simulates human typing, clicking, and file uploading on `reg.gst.gov.in`.
-  - Intelligently waits for network requests and handles dynamic portal timeouts.
-  - Features a **Robust Retry Loop**: If an incorrect OTP or CAPTCHA is entered by the admin, the bot safely clears the fields and asks for it again without crashing the flow.
+### 📌 સામાન્ય પ્રક્રિયા વિરુદ્ધ આપણી ઓટોમેશન સિસ્ટમ:
+* **સામાન્ય રીતે (Manual Process):** કોઈપણ CA, એકાઉન્ટન્ટ કે વ્યાપારીને GST પોર્ટલ પર જઈને ૧૦ અલગ-અલગ ટેબ્સ (Business Details, Promoters, Signatory, Address, HSN, Aadhaar વગેરે) માં હાથેથી માહિતી ટાઈપ કરવી પડે છે અને દસ્તાવેજો અપલોડ કરવા પડે છે, જેમાં ૩૦ થી ૪૫ મિનિટનો સમય બગડે છે અને ભૂલ થવાની સંભાવના રહે છે.
+* **આપણા પ્લેટફોર્મ દ્વારા (Our Automated System):** 
+  1. અરજદાર અમારા સરળ પોર્ટલ પર એકવાર ફોર્મ ભરે છે.
+  2. સિસ્ટમ આપમેળે આધાર/પાન કાર્ડમાંથી OCR દ્વારા ડેટા ખેંચી લે છે.
+  3. એડમિન માત્ર એક ક્લિક (`Register Automatically`) કરે છે.
+  4. અમારો **Playwright Automation Bot** આપમેળે સરકારી પોર્ટલ ખોલીને બધો જ ડેટા સીધો સેકન્ડોમાં પોર્ટલ પર ભરી દે છે અને Verification સ્ક્રીન પર પહોંચીને **Submit with EVC** ક્લિક કરી દે છે.
+  5. અરજદારના મોબાઈલ પર આવતો OTP એડમિન સ્ક્રીન પર નાખતા જ અરજી સબમિટ થઈ જાય છે અને **ARN નંબર** જનરેટ થઈ જાય છે!
 
 ---
 
-## 🚀 Getting Started
+## 🏗️ પ્રોજેક્ટ આર્કિટેક્ચર (Project Architecture)
 
-To run the project locally, you will need to start both the backend server and the frontend development server.
+પ્રોજેક્ટ મુખ્ય ત્રણ ભાગોમાં વહેંચાયેલો છે:
 
-### Prerequisites
-- Node.js (v18+) installed on your machine.
-- A Supabase Project (URL and Anon Key).
-
-### 1. Start the Backend
-The backend must be running to serve the API, manage files, and trigger the automation scripts.
-
-```bash
-cd backend
-npm install
-node server.js
 ```
-The backend server will run on `http://localhost:3000`.
+[ Frontend (Client Form & Admin) ]  <---> [ Backend (Node.js & Express) ]  <---> [ Automation Bot (Playwright) ]
+        (Port: 5173)                                (Port: 3002)                          (reg.gst.gov.in)
+              |                                            |
+              +-------------------> [ Supabase Database ] -+
+```
 
-### 2. Start the Frontend
-The frontend provides the user interface for applicants and admins. 
-First, create a `.env` file in the frontend directory with your Supabase credentials (`VITE_SUPABASE_URL` and `VITE_SUPABASE_KEY`).
+### ૧. Frontend (`/frontend`) - ક્લાયન્ટ ઇન્ટરફેસ & એડમિન પેનલ
+* **ટેકનોલોજી:** HTML5, CSS3, JavaScript (Vanilla), Vite.
+* **કાર્યો:**
+  * **Applicant Wizard:** અરજદાર માટે સ્ટેપ-બાય-સ્ટેપ ૧૦ સ્ટેપનું સુંદર અને મોબાઇલ-ફ્રેન્ડલી ફોર્મ.
+  * **Client-side OCR:** પાન કાર્ડ અને આધાર કાર્ડમાંથી આપમેળે નામ, નંબર અને પિનકોડ વાંચી લે છે.
+  * **Mappls (MapmyIndia) Integration:** નકશા પર ક્લિક કરીને અથવા પિનકોડ નાખીને સરનામું, અક્ષાંશ-રેખાંશ અને જ્યુરિડિક્શન આપમેળે મેળવે છે.
+  * **Admin Dashboard:** આવેલી અરજીઓ જોવી, મંજૂર/નામંજૂર કરવી અને ઓટોમેશન શરૂ કરવું.
+  * **Live Console Modal:** ઓટોમેશન દરમિયાન બ્રાઉઝરની લાઇવ સ્ક્રીન, કેપ્ચા અને OTP દાખલ કરવા માટેનું ઇન્ટરેક્ટિવ મોડલ.
 
-Open a **new terminal window** and run:
+### ૨. Backend API (`/backend`) - સેન્ટ્રલ સર્વર & ડેટાબેઝ
+* **ટેકનોલોજી:** Node.js, Express, Socket.IO, Supabase, SQLite.
+* **કાર્યો:**
+  * તમામ અરજીઓનો ડેટા સુરક્ષિત સંગ્રહ કરવો.
+  * અપલોડ કરેલા મોટા ફોટા અને દસ્તાવેજોને લોકલ ડિરેક્ટરી (`backend/data/...`) માં સાચવવા.
+  * **GST Payload Builder (`gst_payload_builder.js`):** ક્લાયન્ટના ડેટામાંથી GST પોર્ટલ સ્વીકારે તેવું સત્તાવાર JSON સ્ટ્રક્ચર તૈયાર કરવું.
+  * **Socket.IO Real-time Pipeline:** ઓટોમેશન બોટમાંથી લાઇવ લૉગ્સ, સ્ક્રીનશોટ અને કેપ્ચા ઈમેજીસ એડમિનના બ્રાઉઝર સુધી સેકન્ડના દસમા ભાગમાં પહોંચાડવા.
 
+### ૩. Automation Bot (`/automation/runner.js`) - રોબોટિક બોટ
+* **ટેકનોલોજી:** Playwright (Chromium Headless/Headful Browser Automation).
+* **કાર્યો:**
+  * પોર્ટલ પર જવું, Part A માં TRN બનાવવો અને TRN OTP લૉગિન કરવું.
+  * સત્તાવાર JSON સીધું જ પોર્ટલના એન્ડપોઇન્ટ પર સિંક્રોનાઇઝ કરવું.
+  * Business Details (Constitution, Reason, Date of Commencement) ઑટો-ફિલ કરવી.
+  * ૧૦ વિઝાર્ડ ટેબ્સમાંથી પસાર થઈને Verification સ્ક્રીન પર Declaration, Signatory અને Place કન્ફર્મ કરીને **Submit with EVC** બટન દબાવવું.
+  * એડમિન પાસેથી EVC OTP મેળવીને સબમિટ કરવું અને મેળવેલ ARN નંબર ડેટાબેઝમાં સેવ કરવો.
+
+---
+
+## 🔄 ઓટોમેશનના ૫ મુખ્ય પગલાં (The 5 Pipeline Steps)
+
+1. **પગલું ૧: TRN Generation & Login**  
+   અરજદારના પાન, ઇમેઇલ અને મોબાઇલ દ્વારા Part A ફોર્મ ભરીને TRN નંબર જનરેટ કરવો અને લૉગિન કરવું. જો અરજી પાસે પહેલેથી TRN હોય, તો સીધું TRN લૉગિન સ્ક્રીન પર પહોંચી જવું.
+2. **પગલું ૨: વચ્ચેના સ્ટેપ SKIP**  
+   હાથેથી ફોર્મ ભરવાને બદલે અગાઉથી તૈયાર સત્તાવાર ડેટાનો ઉપયોગ કરવો.
+3. **પગલું ૩: Direct JSON Upload & Synchronization**  
+   સંપૂર્ણ એપ્લિકેશન ડેટા (`gst_final_uploaded_payload.json`) સીધો જ પોર્ટલના વેલિડેશન એન્ડપોઇન્ટ પર મોકલવો.
+4. **પગલું ૪: Business Details & Verification Screen Navigation**  
+   Business Details માં Constitution, Reason, Commencement Date અને Liability Date ભરીને Verification ટેબ પર પહોંચવું.
+5. **પગલું ૫: EVC OTP Submission & Final ARN Generation**  
+   Declaration અને Signatory સિલેક્ટ કરી **SUBMIT WITH EVC** ક્લિક કરવું. પોર્ટલ દ્વારા મોકલેલ OTP દાખલ કરતાં જ અરજી કાયમી માટે જમા થઈને ARN (Application Reference Number) મળી જશે.
+
+---
+
+## 🚀 પ્રોજેક્ટ કેવી રીતે ચલાવવો (How to Run Locally)
+
+### જરૂરિયાતો (Prerequisites)
+* Node.js (v18 અથવા તેથી વધુ)
+* Supabase એકાઉન્ટ (credentials `.env` માં સેટ કરેલા હોવા જોઈએ)
+
+### ૧. Backend સર્વર શરૂ કરો:
+નવું ટર્મિનલ ખોલો અને નીચેનો કમાન્ડ ચલાવો:
+```bash
+node backend/server.js
+```
+*બેકએન્ડ સર્વર પોર્ટ `3002` પર સક્રિય થશે.*
+
+### ૨. Frontend ક્લાયન્ટ શરૂ કરો:
+બીજું ટર્મિનલ ખોલો અને નીચેનો કમાન્ડ ચલાવો:
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
-The frontend web app will run on `http://localhost:5173`.
+*ફ્રન્ટએન્ડ `http://localhost:5173` પર ઉપલબ્ધ થશે.*
 
 ---
 
-## 💻 Usage & Workflow
-
-1. **Applicant Submission:** A user visits the frontend URL, fills out the wizard, and submits their application. Data is saved to Supabase, and files are sent to the Node backend.
-2. **Admin Review:** An admin logs into the portal, navigates to "My Applications" (`/admin`), and clicks **Preview** on a pending application.
-3. **Trigger Automation:** The admin clicks **Register Automatically**. 
-4. **Live Execution:** A modal opens showing a live terminal. The Node backend spawns the Playwright bot.
-5. **Human-in-the-Loop:** When the bot encounters a CAPTCHA or requires an Aadhaar/TRN OTP, it pauses. The backend sends a real-time request to the frontend via Socket.io. The admin sees the CAPTCHA image or OTP prompt, types the answer, and clicks submit. The bot resumes instantly.
-6. **Completion:** Once successful, the bot extracts the generated TRN (Temporary Reference Number), saves it to the database, and closes the browser.
+## 🛡️ તાજેતરમાં સોલ્વ કરવામાં આવેલી ખામીઓ (Recent Fixes)
+1. **Date of Commencement Validation:** પોર્ટલના Angular UI-Bootstrap Datepicker ઇનપુટ (`#cmbzdt`) ને સીધા ID/name દ્વારા લોકેટ કરીને કીસ્ટ્રોક્સ અને Angular `$setViewValue` સાથે સિંક કર્યું.
+2. **False-Positive File Size Error:** પોર્ટલના પ્રોમોટર ટેબ પર આવતી કાયમી સૂચનાઓને ઇગ્નોર કરવા માટે યુનિફાઇડ ફિલ્ટર લગાવ્યું.
+3. **Authorized Signatory & Submit with EVC:** Verification સ્ક્રીન પર Authorized Signatory નું સાચું ડ્રોપડાઉન સિલેક્ટ કરીને **SUBMIT WITH EVC** બટન ટ્રિગર કરવામાં આવ્યું, તથા સત્તાવાર OTP API સાથે સીધું ફોલબેક કનેક્શન સેટ કર્યું.
 
 ---
 
-## ⚠️ Important Notes
-
-- **Environment Variables:** Never commit `config.js` or `.env` files containing your Supabase keys to public repositories.
-- **Data Privacy:** All sensitive documents (proof of constitution, promoter photos) uploaded during the application process are handled securely via local backend storage.
-- **Portal Changes:** The official GST portal's DOM structure may change over time. If the automation bot starts failing at specific steps, the Playwright selectors in `runner.js` will need to be updated.
+## 📄 લાયસન્સ (License)
+આ પ્રોજેક્ટ આંતરિક વ્યવસાયિક ઓટોમેશન માટે તૈયાર કરવામાં આવ્યો છે.

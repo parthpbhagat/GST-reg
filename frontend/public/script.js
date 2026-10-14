@@ -2781,6 +2781,96 @@ window.showPromoterList = function () {
     renderContent();
 };
 
+window.savePromoterAndContinue = function () {
+    const p = window.form[currentPromoterKey];
+    if (p && !p.firstName && !p.lastName) {
+        alert('Please enter at least First Name for Promoter.');
+        return;
+    }
+    if (window.saveDraftToStorage) window.saveDraftToStorage();
+    setStep(2);
+};
+
+window.openCameraModal = function (targetKey, fieldName) {
+    let existingModal = document.getElementById('camera-modal-overlay');
+    if (existingModal) existingModal.remove();
+
+    const modalHtml = `
+    <div id="camera-modal-overlay" style="position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;">
+        <div style="background: white; border-radius: 8px; width: 100%; max-width: 480px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3); animation: slideUpFade 0.25s ease;">
+            <div style="background: #204d74; color: white; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center;">
+                <strong style="font-size: 15px; display: flex; align-items: center; gap: 8px;">📷 Take Selfie Photograph</strong>
+                <button type="button" onclick="window.closeCameraModal()" style="background: transparent; border: none; color: white; font-size: 22px; cursor: pointer; line-height: 1;">&times;</button>
+            </div>
+            <div style="padding: 16px; text-align: center;">
+                <video id="webcam-preview" autoplay playsinline style="width: 100%; height: 280px; object-fit: cover; border-radius: 6px; background: #111;"></video>
+                <canvas id="webcam-canvas" style="display: none;"></canvas>
+                <div id="camera-status-msg" style="font-size: 12px; color: #6b7280; margin-top: 8px;">Initializing camera... Please allow permission if prompted.</div>
+            </div>
+            <div style="background: #f9fafb; padding: 12px 18px; border-top: 1px solid #e5e7eb; display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" onclick="window.closeCameraModal()" style="background: white; border: 1px solid #d1d5db; padding: 8px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer;">Cancel</button>
+                <button type="button" id="snap-photo-btn" onclick="window.snapCameraPhoto('${targetKey}', '${fieldName}')" style="background: #204d74; color: white; border: none; padding: 8px 18px; border-radius: 4px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                    📸 Capture &amp; Use
+                </button>
+            </div>
+        </div>
+    </div>`;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    const video = document.getElementById('webcam-preview');
+    const msg = document.getElementById('camera-status-msg');
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        if (msg) msg.textContent = 'Camera is not supported on this browser. Please upload via Choose File.';
+        return;
+    }
+
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } })
+        .then(stream => {
+            window._cameraStream = stream;
+            video.srcObject = stream;
+            if (msg) msg.textContent = 'Center your face and click "Capture & Use".';
+        })
+        .catch(err => {
+            if (msg) msg.textContent = 'Camera access denied or unavailable (' + err.message + '). Please use Choose File.';
+        });
+};
+
+window.closeCameraModal = function () {
+    if (window._cameraStream) {
+        window._cameraStream.getTracks().forEach(track => track.stop());
+        window._cameraStream = null;
+    }
+    const modal = document.getElementById('camera-modal-overlay');
+    if (modal) modal.remove();
+};
+
+window.snapCameraPhoto = function (targetKey, fieldName) {
+    const video = document.getElementById('webcam-preview');
+    const canvas = document.getElementById('webcam-canvas');
+    if (!video || !canvas) return;
+
+    canvas.width = 400;
+    canvas.height = 400;
+    const ctx = canvas.getContext('2d');
+
+    const minDim = Math.min(video.videoWidth || 400, video.videoHeight || 400);
+    const startX = ((video.videoWidth || 400) - minDim) / 2;
+    const startY = ((video.videoHeight || 400) - minDim) / 2;
+    ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, 400, 400);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+    if (window.form[targetKey]) {
+        window.form[targetKey][fieldName] = dataUrl;
+        window.form[targetKey][fieldName + 'Name'] = 'camera_photo_' + Date.now() + '.jpg';
+    }
+
+    window.closeCameraModal();
+    renderContent();
+};
+
 function renderContent() {
     const content = document.getElementById('wizard-content-inner');
     if (!content) return;
@@ -3141,55 +3231,105 @@ function renderContent() {
                 ${field('Floor No.', `<input type="text" placeholder="Enter Floor No." value="${pForm.res_floor || ''}" onchange="window.updateForm('${currentPromoterKey}.res_floor', this.value)" />`)}
                 ${field('Nearby Landmark', `<input type="text" placeholder="Enter Nearby Landmark" value="${pForm.res_landmark || ''}" onchange="window.updateForm('${currentPromoterKey}.res_landmark', this.value)" />`)}
             </div>
-            <h3 style="font-size: 18px; font-weight: 600; color: #1e3a8a; margin: 32px 0 20px;">
-                Other Information
-            </h3>
-            <div style="border: 1px solid #e2e8f0; padding: 20px; border-radius: var(--radius-md); margin-bottom: 20px; background: #f8fafc;">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
+            <!-- Section 1: Document Upload (Styled exactly as Image 2) -->
+            <div style="margin-top: 28px; margin-bottom: 22px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="#204d74" style="vertical-align: middle;">
+                        <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+                    </svg>
+                    <span style="font-size: 16px; font-weight: 700; color: #204d74;">Document Upload</span>
+                    <span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: #000; color: #fff; border-radius: 50%; font-size: 11px; font-weight: bold; cursor: help;" title="Upload Photograph">i</span>
+                </div>
+                <hr style="border: none; border-top: 1px solid #d1d5db; margin: 0 0 14px 0;" />
+
+                <div style="font-size: 14px; font-weight: 500; color: #374151; margin-bottom: 12px;">
+                    Upload Photograph (of person whose information has been given above) <span style="color: #ef4444;">*</span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr auto 1fr; gap: 20px; align-items: center; padding: 6px 0;">
+                    <!-- Left: File Choose -->
                     <div>
-                        <div style="font-size: 15px; font-weight: 600; color: #1e293b;">Also Authorized Signatory</div>
-                        <p style="font-size: 13px; color: #64748b; margin-top: 4px;">Is this promoter also an authorized signatory?</p>
+                        <div style="font-size: 12px; color: #4b5563; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                            <span style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; background: #4b5563; color: #fff; border-radius: 50%; font-size: 9px; font-weight: bold;">i</span>
+                            Only JPEG file format is allowed
+                        </div>
+                        <div style="font-size: 12px; color: #4b5563; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                            <span style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; background: #4b5563; color: #fff; border-radius: 50%; font-size: 9px; font-weight: bold;">i</span>
+                            Maximum file size for upload is 100 KB
+                        </div>
+                        <input type="file" accept="image/jpeg, image/jpg" onchange="window.handleFileUpload(this, 'jpeg', 100, (data, filename) => { window.form['${currentPromoterKey}'].promoterPhotoFile = data; window.form['${currentPromoterKey}'].promoterPhotoFileName = filename; renderContent(); })" style="font-size: 13px;" />
+                        ${pForm.promoterPhotoFile ? `
+                        <div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;">
+                            <span style="word-break: break-all;">📄 ${pForm.promoterPhotoFileName || 'Uploaded Photograph'}</span>
+                            <button type="button" onclick="window.deleteFile(window.form['${currentPromoterKey}'].promoterPhotoFile, () => { window.form['${currentPromoterKey}'].promoterPhotoFile = ''; window.form['${currentPromoterKey}'].promoterPhotoFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button>
+                            <button type="button" onclick="window.viewDocument(window.form['${currentPromoterKey}'].promoterPhotoFile); return false;" class="btn-doc-view">View</button>
+                        </div>` : ''}
                     </div>
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                        <span style="font-size: 14px; font-weight: 600; color: ${pForm.alsoAuthorizedSignatory ? '#22c55e' : '#94a3b8'};">${pForm.alsoAuthorizedSignatory ? 'Yes' : 'No'}</span>
-                        <label class="switch">
-                            <input type="checkbox" ${pForm.alsoAuthorizedSignatory ? 'checked' : ''} onchange="window.updateForm('${currentPromoterKey}.alsoAuthorizedSignatory', this.checked); renderContent();">
-                            <span class="slider"></span>
-                        </label>
+
+                    <!-- Center: OR Divider -->
+                    <div class="gst-or-divider">
+                        <span>OR</span>
+                    </div>
+
+                    <!-- Right: Camera Take Picture -->
+                    <div>
+                        <button type="button" class="btn-take-picture" onclick="window.openCameraModal('${currentPromoterKey}', 'promoterPhotoFile')">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                <circle cx="12" cy="12" r="3.2"/>
+                                <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+                            </svg>
+                            TAKE PICTURE
+                        </button>
+                        <div style="font-size: 12px; color: #4b5563; margin-top: 8px; display: flex; align-items: center; gap: 6px;">
+                            <span style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; background: #4b5563; color: #fff; border-radius: 50%; font-size: 9px; font-weight: bold;">i</span>
+                            You can use your device camera to take selfie photograph.
+                        </div>
                     </div>
                 </div>
-                ${pForm.alsoAuthorizedSignatory ? `
-                <hr style="border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-                <div style="margin-bottom: 12px;">
-                    ${field('Proof of details of authorized signatory <span style="color: #ef4444">*</span>', `<select style="width: 100%; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 14px; margin-bottom: 8px; outline: none;" onchange="window.form['${currentPromoterKey}'].authSigProofType = this.value; renderContent();"><option value="">Select</option><option value="Letter of Authorisation" ${pForm.authSigProofType === 'Letter of Authorisation' ? 'selected' : ''}>Letter of Authorisation</option><option value="Copy of resolution passed by BoD / Managing Committee" ${pForm.authSigProofType === 'Copy of resolution passed by BoD / Managing Committee' ? 'selected' : ''}>Copy of resolution passed by BoD / Managing Committee</option></select>`)}
-                    <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ File with PDF or JPEG format is only allowed. Max size 1 MB.</p>
-                    <div style="display: flex; gap: 10px; align-items: center; margin-top: 4px;">
-                        <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form['${currentPromoterKey}'].authSigProofFile = data; window.form['${currentPromoterKey}'].authSigProofFileName = filename; renderContent(); })" style="font-size: 14px; ${pForm.authSigProofFile ? 'display: none;' : ''}" />
-                        ${!pForm.authSigProofFile ? `<button class="btn accent" style="padding: 6px 12px; font-size: 13px;" onclick="window.openDeclarationModal('${currentPromoterKey}')">Auto-Generate Declaration</button>` : ''}
-                    </div>
-                    ${pForm.authSigProofFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${pForm.authSigProofFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentPromoterKey}'].authSigProofFile, () => { window.form['${currentPromoterKey}'].authSigProofFile = ''; window.form['${currentPromoterKey}'].authSigProofFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentPromoterKey}'].authSigProofFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
-                </div>
-                ` : ''}
             </div>
-            <h3 style="font-size: 18px; font-weight: 600; color: #1e3a8a; margin: 32px 0 20px;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="vertical-align: text-bottom; margin-right: 8px;"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
-                Document Upload
-            </h3>
-            <div style="border: 1px solid #e2e8f0; padding: 20px; border-radius: var(--radius-md);">
-                <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
-                    <div style="flex: 1; min-width: 300px;">
-                        <div style="font-size: 14px; font-weight: 500; color: #1e293b; margin-bottom: 8px;">Upload Photograph (of person whose information has been given above) <span style="color: #ef4444">*</span></div>
-                        <p style="font-size: 12px; color: #64748b; margin-top: 8px;">ℹ Only JPEG file format is allowed</p>
-                        <p style="font-size: 12px; color: #64748b; margin-bottom: 8px;">ℹ Maximum file size for upload is 100 KB</p>
-                        <input type="file" accept="image/jpeg, image/jpg" onchange="window.handleFileUpload(this, 'jpeg', 100, (data, filename) => { window.form['${currentPromoterKey}'].promoterPhotoFile = data; window.form['${currentPromoterKey}'].promoterPhotoFileName = filename; renderContent(); })" style="font-size: 14px; margin-top: 5px; ${pForm.promoterPhotoFile ? 'display: none;' : ''}" />
-                        ${pForm.promoterPhotoFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${pForm.promoterPhotoFileName || 'Uploaded Photograph'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentPromoterKey}'].promoterPhotoFile, () => { window.form['${currentPromoterKey}'].promoterPhotoFile = ''; window.form['${currentPromoterKey}'].promoterPhotoFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentPromoterKey}'].promoterPhotoFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
+
+            <!-- Section 2: Other Information (Styled exactly as Image 2) -->
+            <div style="margin-top: 24px; margin-bottom: 24px;">
+                <div style="font-size: 16px; font-weight: 700; color: #204d74; margin-bottom: 6px;">
+                    Other Information
+                </div>
+                <hr style="border: none; border-top: 1px solid #d1d5db; margin: 0 0 14px 0;" />
+
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: #374151;">
+                        Also Authorized Signatory
+                        <span style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; background: #000; color: #fff; border-radius: 50%; font-size: 10px; font-weight: bold; cursor: help;" title="Is this promoter also an authorized signatory?">i</span>
                     </div>
+
+                    <!-- GST Green Toggle Switch -->
+                    <div style="display: inline-flex; align-items: center;">
+                        <div class="gst-toggle-switch ${pForm.alsoAuthorizedSignatory ? 'active' : ''}" onclick="window.updateForm('${currentPromoterKey}.alsoAuthorizedSignatory', !window.form['${currentPromoterKey}'].alsoAuthorizedSignatory); renderContent();">
+                            ${pForm.alsoAuthorizedSignatory ? '<span class="toggle-label" style="margin-left: 6px;">Yes</span>' : ''}
+                            <div class="toggle-knob"></div>
+                            ${!pForm.alsoAuthorizedSignatory ? '<span class="toggle-label" style="margin-right: 6px;">No</span>' : ''}
+                        </div>
+                    </div>
+
+                    ${pForm.alsoAuthorizedSignatory ? `
+                    <div style="margin-top: 14px; background: #f9fafb; padding: 14px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                        ${field('Proof of details of authorized signatory <span style="color: #ef4444">*</span>', `<select style="width: 100%; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 14px; margin-bottom: 8px; outline: none;" onchange="window.form['${currentPromoterKey}'].authSigProofType = this.value; renderContent();"><option value="">Select</option><option value="Letter of Authorisation" ${pForm.authSigProofType === 'Letter of Authorisation' ? 'selected' : ''}>Letter of Authorisation</option><option value="Copy of resolution passed by BoD / Managing Committee" ${pForm.authSigProofType === 'Copy of resolution passed by BoD / Managing Committee' ? 'selected' : ''}>Copy of resolution passed by BoD / Managing Committee</option></select>`)}
+                        <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ File with PDF or JPEG format is only allowed. Max size 1 MB.</p>
+                        <div style="display: flex; gap: 10px; align-items: center; margin-top: 4px;">
+                            <input type="file" accept=".pdf, .jpeg, .jpg" onchange="window.handleFileUpload(this, 'pdf/jpeg', 1024, (data, filename) => { window.form['${currentPromoterKey}'].authSigProofFile = data; window.form['${currentPromoterKey}'].authSigProofFileName = filename; renderContent(); })" style="font-size: 14px; ${pForm.authSigProofFile ? 'display: none;' : ''}" />
+                            ${!pForm.authSigProofFile ? `<button type="button" class="btn accent" style="padding: 6px 12px; font-size: 13px;" onclick="window.openDeclarationModal('${currentPromoterKey}')">Auto-Generate Declaration</button>` : ''}
+                        </div>
+                        ${pForm.authSigProofFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${pForm.authSigProofFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button type="button" onclick="window.deleteFile(window.form['${currentPromoterKey}'].authSigProofFile, () => { window.form['${currentPromoterKey}'].authSigProofFile = ''; window.form['${currentPromoterKey}'].authSigProofFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button type="button" onclick="window.viewDocument(window.form['${currentPromoterKey}'].authSigProofFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
+                    </div>
+                    ` : ''}
                 </div>
             </div>
-            <div style="margin-top: 20px; text-align: left; padding-top: 20px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <button class="btn accent" style="padding: 10px 20px; font-weight: 600;" onclick="window.showPromoterList()">Save Promoter & Show list</button>
-                </div>
+
+            <!-- Section 3: Bottom Action Buttons Bar (Styled exactly as Image 2) -->
+            <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #d1d5db;">
+                <button type="button" class="btn-gst-back" onclick="setStep(0)">BACK</button>
+                <button type="button" class="btn-gst-show-list" onclick="window.showPromoterList()">SHOW LIST</button>
+                <button type="button" class="btn-gst-add-new" onclick="window.addPromoter()">ADD NEW</button>
+                <button type="button" class="btn-gst-save-continue" onclick="window.savePromoterAndContinue()">SAVE &amp; CONTINUE</button>
             </div>
             </div>
             </div>
@@ -3395,19 +3535,36 @@ function renderContent() {
                 </div>
                 ${aForm.authSigProofFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${aForm.authSigProofFileName || 'Uploaded Document'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentAuthSigKey}'].authSigProofFile, () => { window.form['${currentAuthSigKey}'].authSigProofFile = ''; window.form['${currentAuthSigKey}'].authSigProofFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentAuthSigKey}'].authSigProofFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
             </div>
-            <hr style="border-top: 1px solid #e2e8f0; margin-bottom: 12px;" />
-            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
-                <div style="flex: 1; min-width: 300px;">
-                    <div style="font-size: 14px; font-weight: 500; color: #1e293b; margin-bottom: 4px;">Upload Photograph (of person whose information has been given above) <span style="color: #ef4444">*</span></div>
-                    <p style="font-size: 12px; color: #64748b; margin-top: 4px;">ℹ Only JPEG file format is allowed. Max size 100 KB.</p>
-                    <input type="file" accept="image/jpeg, image/jpg" onchange="window.handleFileUpload(this, 'jpeg', 100, (data, filename) => { window.form['${currentAuthSigKey}'].authSigPhotoFile = data; window.form['${currentAuthSigKey}'].authSigPhotoFileName = filename; renderContent(); })" style="font-size: 14px; margin-top: 4px; ${aForm.authSigPhotoFile ? 'display: none;' : ''}" />
-                    ${aForm.authSigPhotoFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${aForm.authSigPhotoFileName || 'Uploaded Photograph'}</span> <div style="display: flex; gap: 12px;"><button onclick="window.deleteFile(window.form['${currentAuthSigKey}'].authSigPhotoFile, () => { window.form['${currentAuthSigKey}'].authSigPhotoFile = ''; window.form['${currentAuthSigKey}'].authSigPhotoFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button onclick="window.viewDocument(window.form['${currentAuthSigKey}'].authSigPhotoFile); return false;" class="btn-doc-view">View</button></div></div>` : ''}
+            <hr style="border-top: 1px solid #e2e8f0; margin-bottom: 14px;" />
+            <div style="font-size: 14px; font-weight: 500; color: #374151; margin-bottom: 12px;">Upload Photograph (of person whose information has been given above) <span style="color: #ef4444">*</span></div>
+            <div style="display: grid; grid-template-columns: 1fr auto 1fr; gap: 20px; align-items: center; padding: 6px 0;">
+                <div>
+                    <div style="font-size: 12px; color: #4b5563; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;"><span style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; background: #4b5563; color: #fff; border-radius: 50%; font-size: 9px; font-weight: bold;">i</span> Only JPEG file format is allowed</div>
+                    <div style="font-size: 12px; color: #4b5563; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;"><span style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; background: #4b5563; color: #fff; border-radius: 50%; font-size: 9px; font-weight: bold;">i</span> Maximum file size for upload is 100 KB</div>
+                    <input type="file" accept="image/jpeg, image/jpg" onchange="window.handleFileUpload(this, 'jpeg', 100, (data, filename) => { window.form['${currentAuthSigKey}'].authSigPhotoFile = data; window.form['${currentAuthSigKey}'].authSigPhotoFileName = filename; renderContent(); })" style="font-size: 13px;" />
+                    ${aForm.authSigPhotoFile ? `<div style="margin-top: 8px; font-size: 13px; color: #166534; font-weight: 500; display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px;"><span style="word-break: break-all;">📄 ${aForm.authSigPhotoFileName || 'Uploaded Photograph'}</span> <button type="button" onclick="window.deleteFile(window.form['${currentAuthSigKey}'].authSigPhotoFile, () => { window.form['${currentAuthSigKey}'].authSigPhotoFile = ''; window.form['${currentAuthSigKey}'].authSigPhotoFileName = ''; renderContent(); }); return false;" class="btn-doc-delete">Delete</button> <button type="button" onclick="window.viewDocument(window.form['${currentAuthSigKey}'].authSigPhotoFile); return false;" class="btn-doc-view">View</button></div>` : ''}
+                </div>
+                <div class="gst-or-divider"><span>OR</span></div>
+                <div>
+                    <button type="button" class="btn-take-picture" onclick="window.openCameraModal('${currentAuthSigKey}', 'authSigPhotoFile')">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                            <circle cx="12" cy="12" r="3.2"/>
+                            <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+                        </svg>
+                        TAKE PICTURE
+                    </button>
+                    <div style="font-size: 12px; color: #4b5563; margin-top: 8px; display: flex; align-items: center; gap: 6px;"><span style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; background: #4b5563; color: #fff; border-radius: 50%; font-size: 9px; font-weight: bold;">i</span> You can use your device camera to take selfie photograph.</div>
                 </div>
             </div>
         </div>
         </div>
         </div>
-        <div><button class="btn accent" style="padding: 10px 20px; font-weight: 600; margin-top: 20px;" onclick="window.showAuthSigList()">Save Signatory & Show list</button></div>
+        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #d1d5db;">
+            <button type="button" class="btn-gst-back" onclick="setStep(1)">BACK</button>
+            <button type="button" class="btn-gst-show-list" onclick="window.showAuthSigList()">SHOW LIST</button>
+            <button type="button" class="btn-gst-add-new" onclick="window.addAuthSig()">ADD NEW</button>
+            <button type="button" class="btn-gst-save-continue" onclick="setStep(3)">SAVE &amp; CONTINUE</button>
+        </div>
         </section>`;
         }
     } else if (step === 3) {
@@ -3662,17 +3819,20 @@ function renderContent() {
         </section>`;
     }
 
-    html += `
-    <div class="nav" style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
-        <div style="display: flex; gap: 12px; align-items: center;">
-            ${step > 0 ? `<button class="btn ghost" onclick="setStep(${step - 1})">Back</button>` : '<div></div>'}
-            <button class="btn ghost" style="color: #ef4444; border-color: #fca5a5; font-size: 13px;" onclick="window.resetFormDraft()">🗑️ Clear Draft</button>
-        </div>
-        <div style="display: flex; gap: 12px; align-items: center;">
-            ${(window.form && window.form._appId) ? `<button class="btn accent" style="background: #10b981; border-color: #10b981;" onclick="submitApplication()">💾 Save / Update Application</button>` : ''}
-            ${step < STEPS.length - 1 ? `<button class="btn primary" onclick="setStep(${step + 1})">Next</button>` : ''}
-        </div>
-    </div>`;
+    const hasInternalActionButtons = (step === 1 && !isPromoterListView) || (step === 2 && !isAuthSigListView);
+    if (!hasInternalActionButtons) {
+        html += `
+        <div class="nav" style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
+            <div style="display: flex; gap: 12px; align-items: center;">
+                ${step > 0 ? `<button class="btn ghost" onclick="setStep(${step - 1})">Back</button>` : '<div></div>'}
+                <button class="btn ghost" style="color: #ef4444; border-color: #fca5a5; font-size: 13px;" onclick="window.resetFormDraft()">🗑️ Clear Draft</button>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                ${(window.form && window.form._appId) ? `<button class="btn accent" style="background: #10b981; border-color: #10b981;" onclick="submitApplication()">💾 Save / Update Application</button>` : ''}
+                ${step < STEPS.length - 1 ? `<button class="btn primary" onclick="setStep(${step + 1})">Next</button>` : ''}
+            </div>
+        </div>`;
+    }
     content.innerHTML = editBannerHtml + html;
 
     if (step === 2 && !isAuthSigListView && window.isViewingPromoter) {

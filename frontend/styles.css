@@ -1399,3 +1399,151 @@ input:not(:placeholder-shown):not(:read-only):invalid {
   border-color: #fca5a5;
   color: #b91c1c;
 }
+
+/* GST Portal Document Upload & Switch Styles matching Image 2 */
+.gst-toggle-switch {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  width: 72px;
+  height: 28px;
+  background-color: #94a3b8;
+  border-radius: 14px;
+  padding: 2px 4px;
+  box-sizing: border-box;
+  transition: all 0.25s ease;
+  user-select: none;
+  position: relative;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.gst-toggle-switch.active {
+  background-color: #2ea44f;
+  justify-content: space-between;
+}
+
+.gst-toggle-switch:not(.active) {
+  background-color: #94a3b8;
+  justify-content: flex-end;
+}
+
+.gst-toggle-switch .toggle-knob {
+  width: 22px;
+  height: 22px;
+  background-color: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s ease;
+}
+
+.gst-toggle-switch .toggle-label {
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.gst-or-divider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  height: 90px;
+  width: 40px;
+}
+
+.gst-or-divider::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: #d1d5db;
+}
+
+.gst-or-divider span {
+  position: relative;
+  background: #ffffff;
+  padding: 3px 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #9ca3af;
+  z-index: 2;
+}
+
+.btn-take-picture {
+  background-color: #204d74 !important;
+  color: #ffffff !important;
+  border: none !important;
+  padding: 9px 18px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  border-radius: 3px !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  letter-spacing: 0.5px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15) !important;
+  transition: background-color 0.2s !important;
+}
+
+.btn-take-picture:hover {
+  background-color: #1a3e5e !important;
+}
+
+.btn-gst-back, .btn-gst-show-list {
+  background: #ffffff !important;
+  color: #374151 !important;
+  border: 1px solid #374151 !important;
+  padding: 7px 20px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  border-radius: 2px !important;
+  cursor: pointer !important;
+  text-transform: uppercase !important;
+  transition: background-color 0.15s !important;
+}
+
+.btn-gst-back:hover, .btn-gst-show-list:hover {
+  background: #f3f4f6 !important;
+}
+
+.btn-gst-add-new {
+  background: #b0c7de !important;
+  color: #ffffff !important;
+  border: 1px solid #b0c7de !important;
+  padding: 7px 20px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  border-radius: 2px !important;
+  cursor: pointer !important;
+  text-transform: uppercase !important;
+  transition: background-color 0.15s !important;
+}
+
+.btn-gst-add-new:hover {
+  background: #9ab7d3 !important;
+}
+
+.btn-gst-save-continue {
+  background: #204d74 !important;
+  color: #ffffff !important;
+  border: 1px solid #204d74 !important;
+  padding: 7px 20px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  border-radius: 2px !important;
+  cursor: pointer !important;
+  text-transform: uppercase !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1) !important;
+  transition: background-color 0.15s !important;
+}
+
+.btn-gst-save-continue:hover {
+  background: #1a3e5e !important;
+}

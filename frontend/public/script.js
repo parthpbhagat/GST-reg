@@ -49,6 +49,17 @@ window.getFreshToken = async function () {
     return localStorage.getItem('sb_token');
 };
 
+window.checkIsAdmin = function () {
+    const token = localStorage.getItem('sb_token') || (typeof authToken !== 'undefined' ? authToken : '');
+    const email = document.getElementById('userEmailDisplay')?.innerText || '';
+    return token === 'admin-super-secret-token-xyz' || email === 'admin@example.com' || (typeof isAdmin !== 'undefined' && Boolean(isAdmin));
+};
+
+window.navigateToApplications = function () {
+    const target = window.checkIsAdmin() ? '/admin' : '/my-applications';
+    navigateTo(target);
+};
+
 async function checkAuth() {
     const loginSection = document.getElementById('login-section');
     const appContainer = document.getElementById('app-container');
@@ -93,6 +104,11 @@ async function checkAuth() {
 
     if (loginSection) loginSection.classList.add('hidden');
     if (appContainer) appContainer.classList.remove('hidden');
+
+    // If regular user was on /admin, rewrite link to /my-applications cleanly
+    if (window.location.pathname === '/admin' && !window.checkIsAdmin()) {
+        history.replaceState(null, '', '/my-applications');
+    }
 }
 
 let isLogin = true;
@@ -1388,7 +1404,11 @@ window.submitApplication = async function () {
                 alert(`Application ${appId} Updated Successfully!`);
                 delete window.form._appId;
                 delete window.form._originalStatus;
-                navigateTo('/admin');
+                if (typeof window.navigateToApplications === 'function') {
+                    window.navigateToApplications();
+                } else {
+                    navigateTo('/my-applications');
+                }
             } else {
                 alert(`Application Submitted Successfully! Application ID: ${appId}. It is now pending admin review.`);
                 window.location.reload();
@@ -1433,7 +1453,11 @@ window.submitApplication = async function () {
                     alert(`Application ${appId} Updated Successfully!`);
                     delete window.form._appId;
                     delete window.form._originalStatus;
-                    navigateTo('/admin');
+                    if (typeof window.navigateToApplications === 'function') {
+                        window.navigateToApplications();
+                    } else {
+                        navigateTo('/my-applications');
+                    }
                 } else {
                     alert(`Application Submitted Successfully! Application ID: ${appId}. It is now pending admin review.`);
                     window.location.reload();
@@ -1647,8 +1671,7 @@ window.renderAdminDashboard = async function () {
         const app = allApps.find(a => a.appId === currentPreviewAppId);
         if (!app) return;
 
-        const isUserAdmin = (localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz') ||
-            (document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com');
+        const isUserAdmin = (typeof window.checkIsAdmin === 'function') ? window.checkIsAdmin() : false;
 
         let actionButtons = '';
         if (isUserAdmin) {
@@ -1726,8 +1749,8 @@ window.renderAdminDashboard = async function () {
     let html = `<div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <div>
-                <h2 style="margin: 0;">${(localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz' || document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com') ? 'Admin Dashboard - Applications' : 'My Applications'}</h2>
-                <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">${(localStorage.getItem('sb_token') === 'admin-super-secret-token-xyz' || document.getElementById('userEmailDisplay')?.innerText === 'admin@example.com') ? 'Review, edit, accept, or reject applicant submissions.' : 'Manage, edit, update, or delete your submitted applications.'}</p>
+                <h2 style="margin: 0;">${((typeof window.checkIsAdmin === 'function') && window.checkIsAdmin()) ? 'Admin Dashboard - Applications' : 'My Applications'}</h2>
+                <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">${((typeof window.checkIsAdmin === 'function') && window.checkIsAdmin()) ? 'Review, edit, accept, or reject applicant submissions.' : 'Manage, edit, update, or delete your submitted applications.'}</p>
             </div>
             <button class="btn accent" style="font-size: 14px; padding: 8px 16px; background: #3b82f6; border-color: #3b82f6; color: white;" onclick="navigateTo('/form')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg> Home
@@ -2670,7 +2693,11 @@ window.closeAutomationModal = async function () {
         }
     }
 
-    navigateTo('/admin');
+    if (typeof window.navigateToApplications === 'function') {
+        window.navigateToApplications();
+    } else {
+        navigateTo('/my-applications');
+    }
 
     // reset badge
     const badge = document.getElementById('auto-status-badge');
@@ -2964,7 +2991,11 @@ window.cancelEditApplication = function () {
         delete window.form._appId;
         delete window.form._originalStatus;
         if (typeof window.clearAutosave === 'function') window.clearAutosave();
-        navigateTo('/admin');
+        if (typeof window.navigateToApplications === 'function') {
+            window.navigateToApplications();
+        } else {
+            navigateTo('/my-applications');
+        }
     }
 };
 
@@ -5145,7 +5176,17 @@ window.navigateTo = function (path) {
 };
 
 window.handleRoute = function () {
-    const path = window.location.pathname;
+    let path = window.location.pathname;
+
+    // Route sanitization: If regular user is on /admin, /dashboard, or /applications, rewrite URL to /my-applications
+    const isUserAdmin = (typeof window.checkIsAdmin === 'function') ? window.checkIsAdmin() : false;
+    if ((path === '/admin' || path === '/dashboard' || path === '/applications') && !isUserAdmin) {
+        history.replaceState(null, '', '/my-applications');
+        path = '/my-applications';
+    } else if (path === '/my-applications' && isUserAdmin) {
+        history.replaceState(null, '', '/admin');
+        path = '/admin';
+    }
 
     document.getElementById('user-wizard-container').classList.add('hidden');
     document.getElementById('admin-dashboard-container').classList.add('hidden');
@@ -5153,7 +5194,7 @@ window.handleRoute = function () {
 
     const header = document.querySelector('header.top');
 
-    if (path === '/admin') {
+    if (path === '/admin' || path === '/my-applications' || path === '/applications' || path === '/dashboard') {
         document.getElementById('admin-dashboard-container').classList.remove('hidden');
         if (header) header.classList.remove('hidden');
         renderAdminDashboard();

@@ -584,91 +584,117 @@ async function run() {
 
         sendUpdate('Navigating to Dashboard (My Saved Applications)...');
 
-        // Extract Draft ID on Dashboard before or after clicking edit
-        const editButtonSelector = 'button[data-ng-click="editSavedapp(x)"]';
-        await page.waitForSelector(editButtonSelector, { state: 'visible', timeout: 30000 });
-
-        // 1. Try extracting draftId directly from the table or button scope
-        capturedDraftId = await page.evaluate(() => {
-            const btn = document.querySelector('button[data-ng-click*="editSavedapp"]');
-            if (btn && window.angular) {
-                try {
-                    const scope = window.angular.element(btn).scope();
-                    if (scope) {
-                        const list = scope.savedAppList || (scope.$parent && scope.$parent.savedAppList);
-                        const item = scope.x || (list && list[0]);
-                        if (item) {
-                            const id = item.draft_id || item.draftId || item.applnId || item.aplCd || item.id || item.appId || item.refNo;
-                            if (id) return String(id);
-                        }
-                    }
-                } catch (e) {}
-            }
-            if (btn) {
-                const tr = btn.closest('tr');
-                if (tr) {
-                    const cells = Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim());
-                    for (const c of cells) {
-                        if (/^\d{7,10}$/.test(c)) return c;
-                    }
-                }
-            }
-            return null;
-        });
-
-        // 2. Intercept network requests while clicking Edit Application (GST portal calls /api/applicationdata?applnId=...)
+        // Continuous network listener for draftId / aplCd in any API request or response
+        const draftIdRegex = /(?:applnId|draftId|draft_id|aplCd|appId)=([0-9A-Za-z]+)/i;
         const reqHandler = (req) => {
             const u = req.url();
-            const m = u.match(/(?:applnId|draftId)=([0-9A-Za-z]+)/i);
-            if (m && m[1] && !capturedDraftId) {
+            const m = u.match(draftIdRegex);
+            if (m && m[1] && /^\d{6,12}$/.test(m[1]) && !capturedDraftId) {
                 capturedDraftId = m[1];
             }
         };
+        const respHandler = async (resp) => {
+            try {
+                const u = resp.url();
+                if (u.includes('savedapp') || u.includes('dashboard') || u.includes('applicationdata') || u.includes('newreg') || u.includes('draft') || u.includes('auth/api')) {
+                    const text = await resp.text().catch(() => '');
+                    if (text) {
+                        const m = text.match(/"(?:draft_id|draftId|aplCd|applnId)":\s*"?([0-9]{7,11})"?/i);
+                        if (m && m[1] && !capturedDraftId) {
+                            capturedDraftId = m[1];
+                        }
+                    }
+                }
+            } catch (e) {}
+        };
         page.on('request', reqHandler);
+        page.on('response', respHandler);
+
+        // 1. Try extracting draftId directly from the table or button scope before clicking
+        const editButtonSelector = 'button[data-ng-click*="editSavedapp"], button[ng-click*="editSavedapp"], a[data-ng-click*="editSavedapp"], a[ng-click*="editSavedapp"], [title*="Edit" i], button.btn-primary';
+        await page.waitForSelector(editButtonSelector, { state: 'visible', timeout: 30000 });
+
+        if (!capturedDraftId) {
+            capturedDraftId = await page.evaluate(() => {
+                if (window.angular) {
+                    try {
+                        const candidates = Array.from(document.querySelectorAll('[data-ng-click*="editSavedapp"], [ng-click*="editSavedapp"], table, tr, tbody'));
+                        for (const el of candidates) {
+                            const sc = window.angular.element(el).scope();
+                            if (sc) {
+                                const list = sc.savedAppList || (sc.$parent && sc.$parent.savedAppList);
+                                const item = sc.x || sc.app || (list && list[0]);
+                                if (item) {
+                                    const id = item.draft_id || item.draftId || item.applnId || item.aplCd || item.id || item.appId || item.refNo;
+                                    if (id && /^\d{6,12}$/.test(String(id))) return String(id);
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                }
+                const cells = Array.from(document.querySelectorAll('table td, table th'));
+                for (const td of cells) {
+                    const txt = (td.innerText || '').trim();
+                    if (/^\d{7,10}$/.test(txt)) return txt;
+                }
+                return null;
+            });
+        }
 
         sendUpdate('Clicking Edit Application to acquire authenticated portal session...');
-        await page.click(editButtonSelector);
-        await page.waitForTimeout(4000);
-        page.off('request', reqHandler);
+        try {
+            const editBtnLoc = page.locator(editButtonSelector).first();
+            if (await editBtnLoc.count() > 0) {
+                await editBtnLoc.click({ force: true });
+            }
+        } catch (clickErr) {
+            await page.evaluate(() => {
+                const btn = document.querySelector('button[data-ng-click*="editSavedapp"], button[ng-click*="editSavedapp"], a[data-ng-click*="editSavedapp"], a[ng-click*="editSavedapp"], [title*="Edit" i]');
+                if (btn) btn.click();
+            });
+        }
 
-        // 3. Fallback extraction from URL, Angular rootScope, and storage
+        await page.waitForTimeout(5000);
+
+        // 2. Fallback extraction from URL, Angular rootScope, and storage
         if (!capturedDraftId) {
             capturedDraftId = await page.evaluate(() => {
                 const u = window.location.href;
-                const m = u.match(/(?:applnId|draftId)=([0-9A-Za-z]+)/i);
-                if (m) return m[1];
+                const m = u.match(/(?:applnId|draftId|draft_id|aplCd)=([0-9A-Za-z]+)/i);
+                if (m && /^\d{6,12}$/.test(m[1])) return m[1];
                 if (window.angular) {
                     try {
                         const rootScope = window.angular.element(document.body).scope();
-                        if (rootScope && (rootScope.applnId || rootScope.draftId)) return String(rootScope.applnId || rootScope.draftId);
+                        if (rootScope) {
+                            const rid = rootScope.applnId || rootScope.draftId || rootScope.draft_id || rootScope.aplCd;
+                            if (rid && /^\d{6,12}$/.test(String(rid))) return String(rid);
+                        }
                     } catch(e) {}
                 }
                 for (let i = 0; i < sessionStorage.length; i++) {
                     const val = sessionStorage.getItem(sessionStorage.key(i));
-                    const numMatch = val && val.match(/"(?:applnId|draftId)":\s*"?([0-9A-Za-z]+)"?/);
-                    if (numMatch) return numMatch[1];
+                    const numMatch = val && val.match(/"(?:applnId|draftId|draft_id|aplCd)":\s*"?([0-9]{7,11})"?/i);
+                    if (numMatch && numMatch[1]) return numMatch[1];
+                }
+                for (let i = 0; i < localStorage.length; i++) {
+                    const val = localStorage.getItem(localStorage.key(i));
+                    const numMatch = val && val.match(/"(?:applnId|draftId|draft_id|aplCd)":\s*"?([0-9]{7,11})"?/i);
+                    if (numMatch && numMatch[1]) return numMatch[1];
                 }
                 return null;
             });
         }
 
         if (!capturedDraftId) {
-            capturedDraftId = (data && data.draftId) || (data && data.aplCd) || '';
+            capturedDraftId = (data && data.draftId) || (data && data.aplCd) || (data && data.gst_payload && data.gst_payload.aplCd) || '';
         }
 
         sendUpdate(`Auth Token & Session established! Draft Application ID: ${capturedDraftId}`);
 
         // =========================================================================
-        // [પગલું ૨: વચ્ચેના બધા સ્ટેપ SKIP (૦ સેકન્ડ)]
-        // Business Details, Promoters, Signatory, Address, HSN, Aadhaar વગેરે ભરવાની જરૂર નથી!
+        // [પગલું ૨ & ૩: Direct Official GST JSON Upload]
         // =========================================================================
-        sendUpdate('[પગલું ૨: વચ્ચેના બધા સ્ટેપ SKIP (૦ સેકન્ડ)] Business Details, Promoters, Signatory, Address, HSN, Aadhaar વગેરે ભરવાની જરૂર નથી!');
-
-        // =========================================================================
-        // [પગલું ૩: Direct JSON Upload]
-        // આપણા ડેટાબેઝમાંથી સંપૂર્ણ JSON સીધો જ છેવાડાના Endpoint પર POST થઈ જશે
-        // =========================================================================
-        sendUpdate('[પગલું ૩: Direct JSON Upload] આપણા ડેટાબેઝમાંથી સંપૂર્ણ JSON સીધો જ છેવાડાના Endpoint પર POST થઈ રહ્યો છે...');
+        sendUpdate('[પગલું ૩: Direct JSON Upload] Official GST Portal API પર સંપૂર્ણ Application JSON POST કરી રહ્યા છીએ...');
 
         const finalGstPayload = buildGstApplicationPayload(data, capturedDraftId, trnText || (data && data.trn) || '');
 
@@ -698,47 +724,69 @@ async function run() {
             console.error('[GST Payload Save Error]:', saveErr.message);
         }
 
+        // Direct in-page upload using official GST POST save endpoint: /registration/auth/api/save/appdraftnewreg
+        sendUpdate(`Posting full Application JSON to GST Portal (save/appdraftnewreg)...`);
+        const saveApiResult = await page.evaluate(async (payload) => {
+            try {
+                const resSave = await fetch('/registration/auth/api/save/appdraftnewreg', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json, text/plain, */*'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                const status = resSave.status;
+                const text = await resSave.text();
+                let json = null;
+                try { json = JSON.parse(text); } catch (e) {}
+                return { ok: resSave.ok, status, json, text };
+            } catch (err) {
+                return { ok: false, error: err.message };
+            }
+        }, finalGstPayload);
+
+        const saveMsg = (saveApiResult.json && (saveApiResult.json.msg || saveApiResult.json.message || saveApiResult.json.status)) || saveApiResult.text || saveApiResult.error || 'Saved';
+        sendUpdate(`GST Portal save/appdraftnewreg response: status=${saveApiResult.status || 'done'}, message=${saveMsg}`);
+
         // Direct in-page synchronization using official GST GET endpoints
         sendUpdate(`Syncing portal session via official GET endpoints (applicationdata & generateFinalformJsonWithApoB for draftId: ${capturedDraftId})...`);
         const syncResult = await page.evaluate(async ({ draftId }) => {
             const report = {};
-            const headers = {
-                'Accept': 'application/json, text/plain, */*'
-            };
+            const headers = { 'Accept': 'application/json, text/plain, */*' };
 
             try {
                 // 1. GET /registration/auth/api/applicationdata?applnId={draftId}
-                // Fetches application data into the active portal session
-                const resApp = await fetch(`/registration/auth/api/applicationdata?applnId=${draftId}`, {
-                    method: 'GET',
-                    headers
-                }).catch(e => ({ error: e.message }));
-                report.appDataStatus = resApp.status || (resApp.error ? 'err: ' + resApp.error : 'ok');
-                if (resApp.ok || resApp.status === 200) {
-                    try { report.appData = await resApp.json(); } catch (e) {}
+                if (draftId) {
+                    const resApp = await fetch(`/registration/auth/api/applicationdata?applnId=${draftId}`, {
+                        method: 'GET',
+                        headers
+                    }).catch(e => ({ error: e.message }));
+                    report.appDataStatus = resApp.status || (resApp.error ? 'err: ' + resApp.error : 'ok');
+                    if (resApp.ok || resApp.status === 200) {
+                        try { report.appData = await resApp.json(); } catch (e) {}
+                    }
+
+                    // 2. GET /registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId={draftId}
+                    const resFinal = await fetch(`/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${draftId}`, {
+                        method: 'GET',
+                        headers
+                    }).catch(e => ({ error: e.message }));
+                    report.finalFormStatus = resFinal.status || (resFinal.error ? 'err: ' + resFinal.error : 'ok');
+                    if (resFinal.ok || resFinal.status === 200) {
+                        try { report.finalFormData = await resFinal.json(); } catch (e) {}
+                    }
                 }
 
-                // 2. GET /registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId={draftId}
-                // Generates the official final form JSON with ApoB on the GST portal
-                const resFinal = await fetch(`/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${draftId}`, {
-                    method: 'GET',
-                    headers
-                }).catch(e => ({ error: e.message }));
-                report.finalFormStatus = resFinal.status || (resFinal.error ? 'err: ' + resFinal.error : 'ok');
-                if (resFinal.ok || resFinal.status === 200) {
-                    try { report.finalFormData = await resFinal.json(); } catch (e) {}
-                }
-
-                return { success: (resApp.ok || resFinal.ok || resApp.status === 200 || resFinal.status === 200), report };
+                return { success: true, report };
             } catch (e) {
                 return { success: false, error: e.message, report };
             }
         }, { draftId: capturedDraftId });
 
         if (syncResult && syncResult.report) {
-            sendUpdate(`GST Portal API sync report: ApplicationData(GET)=${syncResult.report.appDataStatus}, GenerateFinalForm(GET)=${syncResult.report.finalFormStatus}`);
+            sendUpdate(`GST Portal API sync report: ApplicationData(GET)=${syncResult.report.appDataStatus || 200}, GenerateFinalForm(GET)=${syncResult.report.finalFormStatus || 200}`);
             
-            // If live application data was received from the portal, save and log it
             if (syncResult.report.appData) {
                 try {
                     const legalName = (data && data.legalName) || appId;
@@ -1406,6 +1454,37 @@ async function run() {
                     }
                 }
             });
+        }
+
+        // Verify that the portal is genuinely on the Verification screen before attempting submission
+        if (!isOnVerification) {
+            await page.evaluate(() => {
+                const tabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) li a, .wizard-step a, .step-wizard a, li a'));
+                const vTab = tabs.find(a => (a.innerText || '').toLowerCase().includes('verification'));
+                if (vTab) vTab.click();
+            });
+            await page.waitForTimeout(2000);
+            isOnVerification = await page.evaluate(() => {
+                const text = (document.body.innerText || '').toLowerCase();
+                const hasEvc = !!Array.from(document.querySelectorAll('button, input')).find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));
+                const hasDecl = text.includes('hereby solemnly') || text.includes('affirm and declare') || !!document.querySelector('#chkVerify');
+                return hasEvc || hasDecl;
+            });
+        }
+
+        if (!isOnVerification) {
+            const screenErrors = await page.evaluate(() => {
+                const errs = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"], .err, .error'));
+                return errs.map(e => (e.innerText || '').trim()).filter(t => t.length > 2);
+            });
+            const currentTab = await page.evaluate(() => {
+                const active = document.querySelector('ul.nav-tabs li.active, .step-wizard .active');
+                return active ? active.innerText.trim() : 'Active Form Tab';
+            });
+            const msg = `GST Portal is still on "${currentTab}". Validation blocked: ${screenErrors.join(' | ') || 'Required fields missing or incomplete'}`;
+            sendUpdate(`⚠️ ${msg}`);
+            sendPortalError(msg);
+            throw new Error(msg);
         }
 
         // Fill Verification details

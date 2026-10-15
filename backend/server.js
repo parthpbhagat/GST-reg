@@ -19,6 +19,23 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// GET /api/gst-endpoints - Return configured GST endpoints from environment
+app.get('/api/gst-endpoints', (req, res) => {
+    res.json({
+        pincodes: process.env.GST_API_PINCODES || 'https://reg.gst.gov.in/master/pincodes',
+        docsize: process.env.GST_API_DOCSIZE || 'https://reg.gst.gov.in/master/docsize',
+        allstates: process.env.GST_API_ALLSTATES || 'https://reg.gst.gov.in/master/allstates',
+        cstnbus_aplrg: process.env.GST_API_CSTNBUS_APLRG || 'https://reg.gst.gov.in/master/cstnbus/aplrg',
+        reason_business: process.env.GST_API_REASON_BUSINESS || 'https://reg.gst.gov.in/pages/registration/data/reason_business.json',
+        centrecommisionerate: process.env.GST_API_CENTRECOMMISIONERATE || 'https://reg.gst.gov.in/master/jursd/centrecommisionerate',
+        applicationdata: process.env.GST_API_APPLICATION_DATA || 'https://reg.gst.gov.in/registration/auth/api/applicationdata',
+        applicationdata_draft: process.env.GST_API_APPLICATION_DATA_DRAFT || 'https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92980126',
+        generateFinalformJsonWithApoB: process.env.GST_API_GENERATE_FINAL_FORM || 'https://reg.gst.gov.in/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=92980126',
+        evc_otp: process.env.GST_API_EVC_OTP_SEND || 'https://reg.gst.gov.in/registration/auth/api/evc/otp',
+        verify_otp: process.env.GST_API_EVC_OTP_VERIFY || 'https://reg.gst.gov.in/registration/auth/api/verify/otp'
+    });
+});
+
 app.post('/api/log-ocr', async (req, res) => {
     console.log('\n[' + new Date().toISOString() + '] --- NEW OCR PROCESS LOG ---');
     console.log('Document Type:', req.body.type);

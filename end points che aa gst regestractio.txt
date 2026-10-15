@@ -30,11 +30,11 @@ https://reg.gst.gov.in/pages/registration/data/loap.json
 
 *******************************auth token:  6c65900f66c14a98b33b503f85e20d22**************************************
 
-https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92818437
+https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92980126
 https://reg.gst.gov.in/registration/auth/api/ca-number-enabled?stCd=27
 https://reg.gst.gov.in/registration/auth/api/doc-legibility/config
 https://reg.gst.gov.in/registration/auth/mmiapi/gettoken?regen=Y                     "map API"
-https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92818437        "application data API"
+https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92980126        "application data API"
 
 
 https://reg.gst.gov.in/master/doclist/bd/active
@@ -49,8 +49,8 @@ https://reg.gst.gov.in/master/hsn/l1/100                                        
 
 
 
-https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92818437        "application data GET API"
-https://reg.gst.gov.in/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=75028658    "final form JSON verification GET API"
+https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92980126        "application data GET API"
+https://reg.gst.gov.in/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=92980126    "final form JSON verification GET API"
 https://reg.gst.gov.in/registration/auth/api/evc/otp                                                               "EVC OTP send POST API"
 https://reg.gst.gov.in/registration/auth/api/verify/otp                                                               "EVC OTP verify/validate POST API"
 

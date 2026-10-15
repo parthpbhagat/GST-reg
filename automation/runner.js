@@ -1749,7 +1749,23 @@ async function run() {
                     }
                 });
                 sendUpdate('Saved Promoter details.');
-                await page.waitForTimeout(2500);
+                await page.waitForTimeout(3000);
+
+                // Auto-confirm any confirmation modal immediately (e.g. Aadhaar Auth warning, Confirm, OK)
+                try {
+                    const modalProceedBtn = page.locator('.modal.in button, .modal.show button, div[role="dialog"] button, .sweet-alert button').filter({ hasText: /proceed|continue|yes|confirm|ok|close/i }).first();
+                    if (await modalProceedBtn.count() > 0 && await modalProceedBtn.isVisible()) {
+                        await modalProceedBtn.click({ force: true }).catch(() => {});
+                    }
+                } catch (e) {}
+                await page.evaluate(() => {
+                    const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .sweet-alert'));
+                    for (const d of dialogs) {
+                        const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn'));
+                        const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|close/i.test(b.innerText || b.value || ''));
+                        if (okBtn) okBtn.click();
+                    }
+                });
             }
 
             // If on Principal Place of Business, ensure possession and business activity are chosen
@@ -1777,31 +1793,53 @@ async function run() {
                 await page.waitForTimeout(1000);
             }
 
-            // Try clicking the Verification tab header if available and not disabled
+            // Auto-confirm any confirmation or warning dialogs (e.g. Locality mismatch, Proceed, OK)
+            try {
+                const modalProceedBtn = page.locator('.modal.in button, .modal.show button, div[role="dialog"] button, .sweet-alert button').filter({ hasText: /proceed|continue|yes|confirm|ok|close/i }).first();
+                if (await modalProceedBtn.count() > 0 && await modalProceedBtn.isVisible()) {
+                    await modalProceedBtn.click({ force: true }).catch(() => {});
+                }
+            } catch (e) {}
             await page.evaluate(() => {
+                const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .sweet-alert'));
+                for (const d of dialogs) {
+                    const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn'));
+                    const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|close/i.test(b.innerText || b.value || ''));
+                    if (okBtn) okBtn.click();
+                }
+            });
+
+            // Try clicking the Verification tab header if available and not disabled
+            await page.evaluate((tStep) => {
                 const tabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) li a, .wizard-step a, .step-wizard a, li a'));
                 const vTab = tabs.find(a => (a.innerText || '').toLowerCase().includes('verification'));
                 if (vTab && (!vTab.parentElement || !vTab.parentElement.classList.contains('disabled'))) {
                     vTab.click();
+                    return;
                 }
-            });
+                // Try clicking next unlocked tab
+                const nextTab = tabs[tStep + 1];
+                if (nextTab && (!nextTab.parentElement || !nextTab.parentElement.classList.contains('disabled'))) {
+                    nextTab.click();
+                }
+            }, tabStep);
 
             await page.waitForTimeout(600);
 
             // Click Save & Continue or Next button using Playwright locator and native click
             try {
-                const saveBtnLoc = page.locator('button, input[type="button"], a.btn').filter({ hasText: /save\s*&\s*continue|continue/i }).first();
-                if (await saveBtnLoc.count() > 0 && await saveBtnLoc.isVisible()) {
+                const saveBtnLoc = page.locator('button, input[type="button"], a.btn').filter({ hasText: /save\s*&\s*continue|continue|save\s*&\s*next|next/i }).last();
+                if (await saveBtnLoc.count() > 0) {
                     await saveBtnLoc.scrollIntoViewIfNeeded().catch(() => {});
                     await saveBtnLoc.click({ force: true }).catch(() => {});
                     sendUpdate('Clicked "SAVE & CONTINUE" to advance wizard.');
                 } else {
                     const clickedBtn = await page.evaluate(() => {
+                        window.scrollTo(0, document.body.scrollHeight);
                         const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
-                        const btn = btns.find(b => {
-                            if (b.offsetParent === null) return false;
+                        const btn = btns.reverse().find(b => {
                             const t = (b.innerText || b.value || b.getAttribute('title') || '').trim().toLowerCase();
-                            return (t.includes('save') && t.includes('continue')) || t === 'next' || t === 'continue';
+                            return (t.includes('save') && t.includes('continue')) || t === 'next' || t === 'continue' || t === 'save & next';
                         });
                         if (btn && !btn.disabled) {
                             btn.click();
@@ -1816,24 +1854,6 @@ async function run() {
             } catch (e) {}
 
             await page.waitForTimeout(2500);
-
-            // Auto-confirm any confirmation or warning dialogs (e.g. Locality mismatch, Proceed, OK)
-            try {
-                const modalProceedBtn = page.locator('.modal.in button, .modal.show button, div[role="dialog"] button').filter({ hasText: /proceed|continue|yes|confirm|ok/i }).first();
-                if (await modalProceedBtn.count() > 0 && await modalProceedBtn.isVisible()) {
-                    await modalProceedBtn.click({ force: true }).catch(() => {});
-                }
-            } catch (e) {}
-            await page.evaluate(() => {
-                const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"]'));
-                for (const d of dialogs) {
-                    if (d.offsetParent !== null) {
-                        const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn'));
-                        const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok/i.test(b.innerText || b.value || ''));
-                        if (okBtn) okBtn.click();
-                    }
-                }
-            });
         }
 
         // Verify that the portal is genuinely on the Verification screen before attempting submission

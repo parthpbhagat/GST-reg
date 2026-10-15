@@ -82,6 +82,9 @@ function mapPortalError(msg) {
     if (text.includes('district') || text.includes('state')) {
         return { field: 'district', step: 0, stepName: 'Business Details', label: 'State / District' };
     }
+    if (text.includes('gender')) {
+        return { field: 'p1_gender', step: 1, stepName: 'Promoter / Partners', label: 'Gender of Promoter' };
+    }
     if (text.includes('promoter') || text.includes('partner') || text.includes('director') || text.includes('father') || text.includes('dob')) {
         return { field: 'p1_firstName', step: 1, stepName: 'Promoter / Partners', label: 'Promoter / Partner Details' };
     }
@@ -1835,7 +1838,10 @@ async function run() {
                     const pRoad = (p.res_road || data.ppob_street || '9 giriraj vibhag 2').trim();
                     const pBno = (p.res_buildingNo || data.ppob_flatNo || '29').trim();
 
-                    // 1. Playwright native typing for Email & Mobile
+                    const pGender = (p.gender || data.gender || 'Male').trim();
+                    const pGenderCode = pGender.toLowerCase().startsWith('f') ? 'F' : 'M';
+
+                    // 1. Playwright native interaction for Email, Mobile & Gender Radio
                     try {
                         const emLoc = page.locator('#em, #pd_email, #email, input[name="em"], input[placeholder*="Email" i], input[type="email"], input[ng-model*="em" i]').first();
                         if (await emLoc.count() > 0 && await emLoc.isVisible()) {
@@ -1845,10 +1851,19 @@ async function run() {
                         if (await mbLoc.count() > 0 && await mbLoc.isVisible()) {
                             await mbLoc.fill(pMobile).catch(() => {});
                         }
+
+                        // Native Playwright click on Gender radio & label
+                        const genderSelector = (pGenderCode === 'F') 
+                            ? '#radiofemale, label[for="radiofemale"], input[type="radio"][value="F"], input[name="gender"][value="F"]'
+                            : '#radiomale, label[for="radiomale"], input[type="radio"][value="M"], input[name="gender"][value="M"]';
+                        const gLoc = page.locator(genderSelector).first();
+                        if (await gLoc.count() > 0) {
+                            await gLoc.click({ force: true }).catch(() => {});
+                        }
                     } catch (e) {}
 
                     // 2. DOM evaluate to set all Promoter fields with complete AngularJS scope & ngModel binding
-                    await page.evaluate(({ f, m, l, ff, fm, fl, dob, mob, em, dg, pan, pin, city, road, bno }) => {
+                    await page.evaluate(({ f, m, l, ff, fm, fl, dob, mob, em, dg, pan, pin, city, road, bno, gd, gender }) => {
                         const setVal = (selectors, val) => {
                             if (!val) return;
                             const selArr = Array.isArray(selectors) ? selectors : selectors.split(',').map(s => s.trim());
@@ -1894,12 +1909,25 @@ async function run() {
                         setVal(['#dg', 'input[placeholder*="Designation" i]'], dg);
                         setVal(['#pan', 'input[placeholder*="PAN" i]'], pan);
 
-                        // Gender: Male
-                        const maleR = document.querySelector('#radiomale, input[type="radio"][value="M"], input[type="radio"][value="Male"]');
-                        if (maleR && !maleR.checked) {
-                            maleR.click();
-                            maleR.checked = true;
-                            maleR.dispatchEvent(new Event('change', { bubbles: true }));
+                        // Gender: Explicit selection via radio, label, and event dispatch
+                        const allRadios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                        const targetRadio = allRadios.find(r => {
+                            const v = (r.value || '').toUpperCase();
+                            const id = (r.id || '').toLowerCase();
+                            const name = (r.name || '').toLowerCase();
+                            if (gd === 'F') {
+                                return v === 'F' || v === 'FEMALE' || id.includes('female');
+                            }
+                            return (v === 'M' || v === 'MALE' || id.includes('male') || name.includes('gender') || name.includes('gd')) && !id.includes('female');
+                        }) || document.querySelector(gd === 'F' ? '#radiofemale' : '#radiomale');
+
+                        if (targetRadio) {
+                            targetRadio.checked = true;
+                            targetRadio.dispatchEvent(new Event('input', { bubbles: true }));
+                            targetRadio.dispatchEvent(new Event('change', { bubbles: true }));
+                            targetRadio.dispatchEvent(new Event('click', { bubbles: true }));
+                            const lbl = document.querySelector(`label[for="${targetRadio.id}"]`) || targetRadio.closest('label');
+                            if (lbl) lbl.click();
                         }
 
                         // Address
@@ -1927,20 +1955,31 @@ async function run() {
                             }
                         }
 
+                        // AngularJS scope: explicitly bind gd & gender so GST portal validation passes
                         if (window.angular) {
                             try {
-                                const sc = window.angular.element(document.querySelector('#fnm') || document.body).scope();
+                                const sc = window.angular.element(document.querySelector('#fnm') || targetRadio || document.body).scope();
                                 if (sc) {
                                     if (sc.pd) {
+                                        sc.pd.gd = gd;
+                                        sc.pd.gender = gender;
                                         sc.pd.em = em;
                                         sc.pd.email = em;
                                         sc.pd.mbno = mob;
+                                    }
+                                    if (sc.x) {
+                                        sc.x.gd = gd;
+                                        sc.x.gender = gender;
+                                    }
+                                    if (sc.p) {
+                                        sc.p.gd = gd;
+                                        sc.p.gender = gender;
                                     }
                                     if (!sc.$$phase) sc.$apply();
                                 }
                             } catch (e) {}
                         }
-                    }, { f: pFirst, m: pMiddle, l: pLast, ff: pFatherFirst, fm: pFatherMiddle, fl: pFatherLast, dob: pDob, mob: pMobile, em: pEmail, dg: pDg, pan: pPan, pin: pPin, city: pCity, road: pRoad, bno: pBno });
+                    }, { f: pFirst, m: pMiddle, l: pLast, ff: pFatherFirst, fm: pFatherMiddle, fl: pFatherLast, dob: pDob, mob: pMobile, em: pEmail, dg: pDg, pan: pPan, pin: pPin, city: pCity, road: pRoad, bno: pBno, gd: pGenderCode, gender: pGender });
 
                     await page.waitForTimeout(1000);
 
@@ -1965,16 +2004,53 @@ async function run() {
 
                     await page.waitForTimeout(1000);
 
-                    // Click Save Promoter & Show list
+                    // Click Save Promoter & Show list (matching data-ng-click="savePromoter", "Save Promoter", or "Save" button)
                     await page.evaluate(() => {
                         const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn, a'));
-                        const savePromoter = btns.find(b => /save promoter/i.test(b.innerText || b.value || b.textContent || ''));
+                        const savePromoter = btns.find(b => {
+                            const t = (b.innerText || b.value || b.textContent || '').trim().toLowerCase();
+                            const ng = (b.getAttribute('data-ng-click') || b.getAttribute('ng-click') || '').toLowerCase();
+                            if (ng.includes('savepromoter') || ng.includes('addpromoter') || ng.includes('promoter')) return true;
+                            if (t === 'save promoter' || (t === 'save' && (b.closest('form') || b.closest('.panel') || b.closest('[ng-form]')))) return true;
+                            return false;
+                        }) || btns.find(b => /save promoter/i.test(b.innerText || b.value || ''));
+
                         if (savePromoter && !savePromoter.disabled) {
                             savePromoter.click();
+                        } else if (window.angular) {
+                            try {
+                                const sc = window.angular.element(document.querySelector('#fnm') || document.body).scope();
+                                if (sc && typeof sc.savePromoter === 'function') {
+                                    sc.savePromoter(sc.pd || sc.x);
+                                    if (!sc.$$phase) sc.$apply();
+                                }
+                            } catch (e) {}
                         }
                     });
+
+                    // Also Playwright click on save promoter button
+                    try {
+                        const pSaveBtn = page.locator('button[data-ng-click*="savePromoter"], button[ng-click*="savePromoter"], button:has-text("Save Promoter")').first();
+                        if (await pSaveBtn.count() > 0 && await pSaveBtn.isVisible()) {
+                            await pSaveBtn.click({ force: true }).catch(() => {});
+                        }
+                    } catch (e) {}
+
                     sendUpdate('Saved Promoter details.');
-                    await page.waitForTimeout(2500);
+                    await page.waitForTimeout(2000);
+
+                    // Check if table is now revealed or click "Show list"
+                    try {
+                        const showListLoc2 = page.locator('button, input[type="button"], a.btn, a').filter({ hasText: /show\s*list/i }).first();
+                        if (await showListLoc2.count() > 0 && await showListLoc2.isVisible()) {
+                            await showListLoc2.click({ force: true }).catch(() => {});
+                            await page.waitForTimeout(1000);
+                        }
+                    } catch (e) {}
+                    const hasTableNow = await page.evaluate(() => Array.from(document.querySelectorAll('table tr')).length > 1);
+                    if (hasTableNow) {
+                        screenInfo.isPromoterAlreadySaved = true;
+                    }
                 }
             }
 

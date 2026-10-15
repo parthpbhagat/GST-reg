@@ -19,20 +19,80 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// GET /api/gst-endpoints - Return configured GST endpoints from environment
+// GET /api/gst-endpoints - Return dynamically formatted GST endpoints based on input parameters
 app.get('/api/gst-endpoints', (req, res) => {
-    res.json({
+    const draftId = String(req.query.draftId || req.query.applnId || '92980126');
+    const state_cd = String(req.query.state_cd || req.query.stCd || '27');
+    const pincode = String(req.query.pincode || '444906');
+    const docId = String(req.query.docId || '20261027178892');
+    const chapter = String(req.query.chapter || '100');
+    const amendFlag = String(req.query.amendFlag || 'APLRG');
+
+    const formatUrl = (tmpl) => {
+        return tmpl
+            .replace(/\{state_cd\}/g, state_cd)
+            .replace(/\{draftId\}/g, draftId)
+            .replace(/\{pincode\}/g, pincode)
+            .replace(/\{docId\}/g, docId)
+            .replace(/\{chapter\}/g, chapter)
+            .replace(/\{amendFlag\}/g, amendFlag);
+    };
+
+    const templates = {
+        // 1. Part A & TRN Authentication
+        sendotp: process.env.GST_API_SEND_OTP || 'https://reg.gst.gov.in/registration/api/submit/sendotp',
+        ustatus: process.env.GST_API_STATUS || 'https://reg.gst.gov.in/services/api/ustatus',
+        submitotp: process.env.GST_API_SUBMIT_OTP || 'https://reg.gst.gov.in/registration/api/submit/submitotp',
+        sendtrnotp: process.env.GST_API_SEND_TRN_OTP || 'https://reg.gst.gov.in/registration/api/submit/sendtrnotp',
+
+        // 2. Master Data
         pincodes: process.env.GST_API_PINCODES || 'https://reg.gst.gov.in/master/pincodes',
         docsize: process.env.GST_API_DOCSIZE || 'https://reg.gst.gov.in/master/docsize',
         allstates: process.env.GST_API_ALLSTATES || 'https://reg.gst.gov.in/master/allstates',
+        country: process.env.GST_API_COUNTRY || 'https://reg.gst.gov.in/master/country',
         cstnbus_aplrg: process.env.GST_API_CSTNBUS_APLRG || 'https://reg.gst.gov.in/master/cstnbus/aplrg',
+        natpos_aplrg: process.env.GST_API_NATPOS_APLRG || 'https://reg.gst.gov.in/master/natpos/aplrg',
+        existing_reg: process.env.GST_API_EXISTING_REG || 'https://reg.gst.gov.in/pages/registration/data/existing_reg.json',
         reason_business: process.env.GST_API_REASON_BUSINESS || 'https://reg.gst.gov.in/pages/registration/data/reason_business.json',
+        promoterMapping: process.env.GST_API_PROMOTER_MAPPING || 'https://reg.gst.gov.in/pages/registration/data/promoterMapping.json',
         centrecommisionerate: process.env.GST_API_CENTRECOMMISIONERATE || 'https://reg.gst.gov.in/master/jursd/centrecommisionerate',
-        applicationdata: process.env.GST_API_APPLICATION_DATA || 'https://reg.gst.gov.in/registration/auth/api/applicationdata',
-        applicationdata_draft: process.env.GST_API_APPLICATION_DATA_DRAFT || 'https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92980126',
-        generateFinalformJsonWithApoB: process.env.GST_API_GENERATE_FINAL_FORM || 'https://reg.gst.gov.in/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=92980126',
+        loap: process.env.GST_API_LOAP || 'https://reg.gst.gov.in/pages/registration/data/loap.json',
+        doclist_bd_active: process.env.GST_API_DOCLIST_BD_ACTIVE || 'https://reg.gst.gov.in/master/doclist/bd/active',
+        sez: process.env.GST_API_SEZ || 'https://reg.gst.gov.in/master/sez/{state_cd}',
+        activedistrict: process.env.GST_API_ACTIVE_DISTRICT || 'https://reg.gst.gov.in/master/st/{state_cd}/activedistrict',
+        pincode_jurisdiction: process.env.GST_API_PINCODE_JURISDICTION || 'https://reg.gst.gov.in/master/jursd/bypincode/state/{state_cd}/{pincode}',
+        hsn: process.env.GST_API_HSN || 'https://reg.gst.gov.in/master/hsn',
+        hsn_l1: process.env.GST_API_HSN_L1 || 'https://reg.gst.gov.in/master/hsn/l1/{chapter}',
+
+        // 3. Authenticated Session & Application Draft
+        save_appdraftnewreg: process.env.GST_API_SAVE_APP_DRAFT || 'https://reg.gst.gov.in/registration/auth/api/save/appdraftnewreg',
+        eb_dtls: process.env.GST_API_EB_DTLS || 'https://reg.gst.gov.in/registration/auth/api/eb-dtls?stCd={state_cd}',
+        applicationdata: process.env.GST_API_APPLICATION_DATA || 'https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId={draftId}',
+        generateFinalformJsonWithApoB: process.env.GST_API_GENERATE_FINAL_FORM || 'https://reg.gst.gov.in/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag={amendFlag}&draftId={draftId}',
+        ca_number_enabled: process.env.GST_API_CA_NUMBER_ENABLED || 'https://reg.gst.gov.in/registration/auth/api/ca-number-enabled?stCd={state_cd}',
+        doc_legibility_config: process.env.GST_API_DOC_LEGIBILITY_CONFIG || 'https://reg.gst.gov.in/registration/auth/api/doc-legibility/config',
+        gettoken_mmi: process.env.GST_API_GET_TOKEN_MMI || 'https://reg.gst.gov.in/registration/auth/mmiapi/gettoken?regen=Y',
+
+        // 4. Document Upload & Status
+        document_b64: process.env.GST_API_DOCUMENT_B64 || 'https://reg.gst.gov.in/document/b64',
+        document: process.env.GST_API_DOCUMENT || 'https://reg.gst.gov.in/document',
+        document_status: process.env.GST_API_DOCUMENT_STATUS || 'https://reg.gst.gov.in/documenthb/docstatus/{docId}',
+
+        // 5. Verification & EVC OTP
         evc_otp: process.env.GST_API_EVC_OTP_SEND || 'https://reg.gst.gov.in/registration/auth/api/evc/otp',
         verify_otp: process.env.GST_API_EVC_OTP_VERIFY || 'https://reg.gst.gov.in/registration/auth/api/verify/otp'
+    };
+
+    const resolved = {};
+    for (const [key, tmpl] of Object.entries(templates)) {
+        resolved[key] = formatUrl(tmpl);
+    }
+
+    res.json({
+        success: true,
+        params: { draftId, state_cd, pincode, docId, chapter, amendFlag },
+        endpoints: resolved,
+        templates
     });
 });
 

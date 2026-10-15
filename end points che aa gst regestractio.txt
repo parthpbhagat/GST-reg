@@ -1,56 +1,48 @@
-********* end points che aa gst regestraction********************************
+********* end points che aa gst regestraction ********************************
+
+# 1. Registration Part A & TRN Authentication
+https://reg.gst.gov.in/registration/api/submit/sendotp                        "send otp"
+https://reg.gst.gov.in/services/api/ustatus                                   "status"
+https://reg.gst.gov.in/registration/api/submit/submitotp                      "submit otp and (trn generate)"
+https://reg.gst.gov.in/registration/api/submit/sendtrnotp                     "trn otp"
 
 
-* https://reg.gst.gov.in/registration/api/submit/sendotp                        "send otp"
-* https://reg.gst.gov.in/services/api/ustatus                                   "status"
-* https://reg.gst.gov.in/registration/api/submit/submitotp                      "submit otp and (trn generate)"
-* https://reg.gst.gov.in/registration/api/submit/sendtrnotp                       "trn otp"
+# 2. Master Data APIs
+https://reg.gst.gov.in/master/pincodes                                        "pin codes list"
+https://reg.gst.gov.in/master/docsize                                         "allowed document sizes"
+https://reg.gst.gov.in/master/allstates                                       "all states list"
+https://reg.gst.gov.in/master/country                                         "country list"
+https://reg.gst.gov.in/master/cstnbus/aplrg                                   "constitution of business (Regular APLRG)"
+https://reg.gst.gov.in/master/natpos/aplrg                                    "nature of possession of premises (NATPOS)"
+https://reg.gst.gov.in/pages/registration/data/existing_reg.json              "existing registrations list"
+https://reg.gst.gov.in/pages/registration/data/reason_business.json           "reason to obtain registration"
+https://reg.gst.gov.in/pages/registration/data/promoterMapping.json          "promoter mapping rules"
+https://reg.gst.gov.in/master/jursd/centrecommisionerate                      "centre commissionerate list"
+https://reg.gst.gov.in/pages/registration/data/loap.json                      "loap data"
+https://reg.gst.gov.in/master/doclist/bd/active                               "active business documents"
+https://reg.gst.gov.in/master/sez/27                                          "SEZ details (stateCd: 27)"
+https://reg.gst.gov.in/master/st/27/activedistrict                            "active district API (stateCd: 27)"
+https://reg.gst.gov.in/master/jursd/bypincode/state/27/444906                 "jurisdiction by pincode API"
+https://reg.gst.gov.in/master/hsn                                             "HSN master API"
+https://reg.gst.gov.in/master/hsn/l1/100                                      "HSN code level 1 API (chapter: 100)"
 
 
+# 3. Authenticated Session & Draft Registration APIs
+https://reg.gst.gov.in/registration/auth/api/save/appdraftnewreg              "save application draft POST API"
+https://reg.gst.gov.in/registration/auth/api/eb-dtls?stCd=27                  "electricity board details API (stateCd: 27)"
+https://reg.gst.gov.in/registration/auth/api/ca-number-enabled?stCd=27        "CA number enabled check API"
+https://reg.gst.gov.in/registration/auth/api/doc-legibility/config            "doc legibility config"
+https://reg.gst.gov.in/registration/auth/mmiapi/gettoken?regen=Y              "map API token (MapMyIndia)"
+https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92980126 "application data GET API (draftId dynamic)"
+https://reg.gst.gov.in/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=92980126  "final form JSON verification GET API"
 
 
-
-**********************************business deatail ni API******************************************* 
-
-
-https://reg.gst.gov.in/master/pincodes   
-
-https://reg.gst.gov.in/master/docsize
-
-https://reg.gst.gov.in/master/allstates
-https://reg.gst.gov.in/master/cstnbus/aplrg
-https://reg.gst.gov.in/pages/registration/data/existing_reg.json
-
-https://reg.gst.gov.in/pages/registration/data/reason_business.json                "Reason to obtain registration"
-
-https://reg.gst.gov.in/master/jursd/centrecommisionerate
-
-https://reg.gst.gov.in/pages/registration/data/loap.json
+# 4. Document Upload & Status APIs
+https://reg.gst.gov.in/document/b64                                           "document base64 upload POST API"
+https://reg.gst.gov.in/document                                               "document multipart upload POST API"
+https://reg.gst.gov.in/documenthb/docstatus/20261027178892                    "declaration letter / docstatus GET API (docId dynamic)"
 
 
-*******************************auth token:  6c65900f66c14a98b33b503f85e20d22**************************************
-
-https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92980126
-https://reg.gst.gov.in/registration/auth/api/ca-number-enabled?stCd=27
-https://reg.gst.gov.in/registration/auth/api/doc-legibility/config
-https://reg.gst.gov.in/registration/auth/mmiapi/gettoken?regen=Y                     "map API"
-https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92980126        "application data API"
-
-
-https://reg.gst.gov.in/master/doclist/bd/active
-
-https://reg.gst.gov.in/master/st/27/activedistrict
-
-https://reg.gst.gov.in/master/st/27/activedistrict                                   "active district API"
-
-
-https://reg.gst.gov.in/master/jursd/bypincode/state/27/444906                        "pin API"
-https://reg.gst.gov.in/master/hsn/l1/100                                             "hsn code"
-
-
-
-https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92980126        "application data GET API"
-https://reg.gst.gov.in/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=92980126    "final form JSON verification GET API"
-https://reg.gst.gov.in/registration/auth/api/evc/otp                                                               "EVC OTP send POST API"
-https://reg.gst.gov.in/registration/auth/api/verify/otp                                                               "EVC OTP verify/validate POST API"
-
+# 5. Verification & EVC OTP Submission
+https://reg.gst.gov.in/registration/auth/api/evc/otp                          "EVC OTP send POST API"
+https://reg.gst.gov.in/registration/auth/api/verify/otp                          "EVC OTP verify/validate POST API"

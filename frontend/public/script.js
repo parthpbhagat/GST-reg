@@ -3625,10 +3625,10 @@ function renderContent() {
                     <label style="display: block; font-size: 13px; font-weight: 600; color: #1f2937; margin-bottom: 8px;">Option for registration under Rule 14A <span style="color: #ef4444;">*</span></label>
                     <div style="display: flex; gap: 24px; align-items: center; margin-bottom: 12px;">
                         <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: #374151; cursor: pointer; margin: 0;">
-                            <input type="radio" id="rule14A_Yes" name="rule14A" value="Yes" ${form.rule14A === 'Yes' ? 'checked' : ''} onchange="updateForm('rule14A', this.value); if(typeof renderContent === 'function') renderContent();" style="accent-color: #16a34a; width: 16px; height: 16px;" /> Yes
+                            <input type="radio" id="rule14A_Yes" name="rule14A" value="Yes" ${form.rule14A === 'Yes' ? 'checked' : ''} onchange="updateForm('rule14A', this.value); updateForm('rule14ADeclaration', true); if(typeof renderContent === 'function') renderContent();" style="accent-color: #16a34a; width: 16px; height: 16px;" /> Yes
                         </label>
                         <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: #374151; cursor: pointer; margin: 0;">
-                            <input type="radio" id="rule14A_No" name="rule14A" value="No" ${(form.rule14A === 'No' || !form.rule14A) ? 'checked' : ''} onchange="updateForm('rule14A', this.value); if(typeof renderContent === 'function') renderContent();" style="accent-color: #16a34a; width: 16px; height: 16px;" /> No
+                            <input type="radio" id="rule14A_No" name="rule14A" value="No" ${(form.rule14A === 'No' || !form.rule14A) ? 'checked' : ''} onchange="updateForm('rule14A', this.value); updateForm('rule14ADeclaration', false); if(typeof renderContent === 'function') renderContent();" style="accent-color: #16a34a; width: 16px; height: 16px;" /> No
                         </label>
                     </div>
 

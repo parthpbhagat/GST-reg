@@ -1420,58 +1420,11 @@ async function run() {
 
         await page.waitForTimeout(2500);
 
-        // 2. Navigate through wizard tabs to reach the Verification tab
-        sendUpdate('Advancing through wizard steps to Verification tab...');
+        // 2. Navigate through wizard tabs step-by-step to reach the Verification tab
+        sendUpdate('Advancing through wizard steps sequentially (1 to 10)...');
         let isOnVerification = false;
 
-        // Helper to attempt jumping directly to the Verification tab
-        const jumpToVerificationTab = async () => {
-            try {
-                const vLoc = page.locator('button, a, li, span, div').filter({ hasText: /^(?:10\s*)?Verification$/i }).first();
-                if (await vLoc.count() > 0 && await vLoc.isVisible()) {
-                    await vLoc.click({ force: true }).catch(() => {});
-                    await page.waitForTimeout(800);
-                }
-            } catch (e) {}
-
-            await page.evaluate(() => {
-                const all = Array.from(document.querySelectorAll('button, a, li, span, div, p'));
-                const vEl = all.reverse().find(el => {
-                    const t = (el.innerText || el.textContent || '').trim();
-                    return /^(?:10\s*)?verification$/i.test(t) && !el.closest('.modal, .sweet-alert, footer, .alert');
-                });
-                if (vEl) {
-                    vEl.click();
-                    if (window.angular) {
-                        try {
-                            const sc = window.angular.element(vEl).scope();
-                            if (sc) {
-                                if (typeof sc.goToTab === 'function') sc.goToTab(9);
-                                if (typeof sc.goToStep === 'function') sc.goToStep(10);
-                                if (typeof sc.selectTab === 'function') sc.selectTab(9);
-                                if (!sc.$$phase) sc.$apply();
-                            }
-                        } catch (e) {}
-                    }
-                }
-            });
-
-            // Auto-confirm any modal dialogs (e.g. Aadhaar confirmation, Locality mismatch, Proceed, OK)
-            await page.evaluate(() => {
-                const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .sweet-alert'));
-                for (const d of dialogs) {
-                    const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn, a'));
-                    const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|close/i.test(b.innerText || b.value || b.textContent || ''));
-                    if (okBtn) okBtn.click();
-                }
-            });
-        };
-
-        // Try direct jump immediately (the draft JSON is already fully uploaded via Step 3 API)
-        await jumpToVerificationTab();
-        await page.waitForTimeout(1000);
-
-        for (let tabStep = 0; tabStep < 14; tabStep++) {
+        for (let tabStep = 0; tabStep < 18; tabStep++) {
             // Check if we have already reached Verification screen
             isOnVerification = await page.evaluate(() => {
                 const text = (document.body.innerText || '').toLowerCase();
@@ -1481,7 +1434,7 @@ async function run() {
             });
 
             if (isOnVerification) {
-                sendUpdate('Verified: Successfully reached Verification tab.');
+                sendUpdate('Verified: Successfully reached Verification tab step-by-step.');
                 break;
             }
 
@@ -1544,11 +1497,11 @@ async function run() {
             });
 
             const currentTabTitle = screenInfo.tabText || screenInfo.headerText || `Step ${tabStep + 1}`;
-            sendUpdate(`Navigating wizard: current tab is "${currentTabTitle}"...`);
+            sendUpdate(`Processing step-by-step: Current tab is "${currentTabTitle}"...`);
 
-            // If still on Business Details tab, actively heal Date & accept Declaration
+            // Step 1: Business Details tab - actively heal Date & accept Declaration
             if (currentTabTitle.toLowerCase().includes('business details') || await page.locator('#cmbzdt').count() > 0) {
-                sendUpdate('Ensuring Business Details declaration & commencement date are accepted...');
+                sendUpdate('[પગલું ૧: Business Details] તારીખ અને ડિક્લેરેશન કન્ફર્મ કરી રહ્યા છીએ...');
                 await page.evaluate(({ commVal, liabVal, r14Val }) => {
                     const parseDateObj = (str) => {
                         try {
@@ -1698,12 +1651,13 @@ async function run() {
                 } catch (e) {}
             }
 
-            // If on Promoter tab: check if saved promoter table is accessible via "Show list"
-            if (screenInfo.isPromoterTab) {
+            // Step 2: Promoter / Partner tab
+            if (screenInfo.isPromoterTab || currentTabTitle.toLowerCase().includes('promoter') || currentTabTitle.toLowerCase().includes('partner')) {
+                sendUpdate('[પગલું ૨: Promoter / Partner] વિગતો કન્ફર્મ કરી રહ્યા છીએ...');
+                // Check if "Show list" is available to reveal already-saved promoter table
                 try {
                     const showListLoc = page.locator('button, input[type="button"], a.btn, a').filter({ hasText: /show\s*list/i }).first();
                     if (await showListLoc.count() > 0 && await showListLoc.isVisible()) {
-                        sendUpdate('Draft promoter exists. Clicking "Show list" to display saved promoter table...');
                         await showListLoc.click({ force: true }).catch(() => {});
                         await page.waitForTimeout(1000);
                     }
@@ -1712,190 +1666,174 @@ async function run() {
                 if (hasSavedTable) {
                     screenInfo.isPromoterAlreadySaved = true;
                 }
-            }
 
-            // If on Promoter tab and no saved list is displayed, populate and save
-            if (screenInfo.isPromoterTab && !screenInfo.isPromoterAlreadySaved) {
-                sendUpdate('Populating Promoter / Partner (P1) details...');
-                const p = (data && data.p1) || {};
-                const nameParts = ((data && data.legalName) || 'Parth Purushottam Bhagat').split(' ');
-                const pFirst = (p.firstName || nameParts[0] || 'Parth').trim();
-                const pMiddle = (p.middleName || (nameParts.length > 2 ? nameParts[1] : '') || 'Purushottam').trim();
-                const pLast = (p.lastName || (nameParts.length > 2 ? nameParts.slice(2).join(' ') : nameParts[1] || '') || 'Bhagat').trim();
-                const pFatherFirst = (p.fatherFirstName || 'Purushottam').trim();
-                const pFatherMiddle = (p.fatherMiddleName || 'Vishram').trim();
-                const pFatherLast = (p.fatherLastName || 'Bhagat').trim();
-                const pDob = formatDDMMYYYY(p.dob || '29/01/1997');
-                const pMobile = (p.mobile || data.mobile || '9011494385').trim();
-                const pEmail = (p.email || data.email || 'parthpbhagat@gmail.com').trim().toLowerCase();
-                const pDg = (p.designation || 'Proprietor').trim();
-                const pPan = (p.pan || data.pan || 'AAQFH0648P').trim();
-                const pPin = (p.res_pincode || data.ppob_pincode || '444906').trim();
-                const pCity = (p.res_city || data.ppob_city || 'warud').trim();
-                const pRoad = (p.res_road || data.ppob_street || '9 giriraj vibhag 2').trim();
-                const pBno = (p.res_buildingNo || data.ppob_flatNo || '29').trim();
+                // If on Promoter tab and no saved list is displayed, populate and save
+                if (!screenInfo.isPromoterAlreadySaved) {
+                    sendUpdate('Populating Promoter / Partner (P1) details...');
+                    const p = (data && data.p1) || {};
+                    const nameParts = ((data && data.legalName) || 'Parth Purushottam Bhagat').split(' ');
+                    const pFirst = (p.firstName || nameParts[0] || 'Parth').trim();
+                    const pMiddle = (p.middleName || (nameParts.length > 2 ? nameParts[1] : '') || 'Purushottam').trim();
+                    const pLast = (p.lastName || (nameParts.length > 2 ? nameParts.slice(2).join(' ') : nameParts[1] || '') || 'Bhagat').trim();
+                    const pFatherFirst = (p.fatherFirstName || 'Purushottam').trim();
+                    const pFatherMiddle = (p.fatherMiddleName || 'Vishram').trim();
+                    const pFatherLast = (p.fatherLastName || 'Bhagat').trim();
+                    const pDob = formatDDMMYYYY(p.dob || '29/01/1997');
+                    const pMobile = (p.mobile || data.mobile || '9011494385').trim();
+                    const pEmail = (p.email || data.email || 'parthpbhagat@gmail.com').trim().toLowerCase();
+                    const pDg = (p.designation || 'Proprietor').trim();
+                    const pPan = (p.pan || data.pan || 'AAQFH0648P').trim();
+                    const pPin = (p.res_pincode || data.ppob_pincode || '444906').trim();
+                    const pCity = (p.res_city || data.ppob_city || 'warud').trim();
+                    const pRoad = (p.res_road || data.ppob_street || '9 giriraj vibhag 2').trim();
+                    const pBno = (p.res_buildingNo || data.ppob_flatNo || '29').trim();
 
-                // 1. Playwright native typing for Email & Mobile
-                try {
-                    const emLoc = page.locator('#em, #pd_email, #email, input[name="em"], input[placeholder*="Email" i], input[type="email"], input[ng-model*="em" i]').first();
-                    if (await emLoc.count() > 0 && await emLoc.isVisible()) {
-                        await emLoc.fill(pEmail).catch(() => {});
-                    }
-                    const mbLoc = page.locator('#mbno, #pd_mbno, input[name="mbno"], input[placeholder*="Mobile" i], input[ng-model*="mbno" i]').first();
-                    if (await mbLoc.count() > 0 && await mbLoc.isVisible()) {
-                        await mbLoc.fill(pMobile).catch(() => {});
-                    }
-                } catch (e) {}
-
-                // 2. DOM evaluate to set all Promoter fields with complete AngularJS scope & ngModel binding
-                await page.evaluate(({ f, m, l, ff, fm, fl, dob, mob, em, dg, pan, pin, city, road, bno }) => {
-                    const setVal = (selectors, val) => {
-                        if (!val) return;
-                        const selArr = Array.isArray(selectors) ? selectors : selectors.split(',').map(s => s.trim());
-                        let el = null;
-                        for (const s of selArr) {
-                            el = document.querySelector(s);
-                            if (el) break;
+                    // 1. Playwright native typing for Email & Mobile
+                    try {
+                        const emLoc = page.locator('#em, #pd_email, #email, input[name="em"], input[placeholder*="Email" i], input[type="email"], input[ng-model*="em" i]').first();
+                        if (await emLoc.count() > 0 && await emLoc.isVisible()) {
+                            await emLoc.fill(pEmail).catch(() => {});
                         }
-                        if (el) {
-                            el.removeAttribute('disabled');
-                            el.removeAttribute('readonly');
-                            el.value = val;
-                            el.dispatchEvent(new Event('input', { bubbles: true }));
-                            el.dispatchEvent(new Event('change', { bubbles: true }));
-                            el.dispatchEvent(new Event('blur', { bubbles: true }));
-                            if (window.angular) {
-                                try {
-                                    const ngEl = window.angular.element(el);
-                                    const ngModel = ngEl.controller('ngModel');
-                                    if (ngModel) {
-                                        ngModel.$setViewValue(val);
-                                        ngModel.$modelValue = val;
-                                        ngModel.$setValidity('required', true);
-                                        ngModel.$setValidity('email', true);
-                                        ngModel.$setValidity('pattern', true);
-                                        ngModel.$render();
-                                        ngModel.$commitViewValue();
-                                    }
-                                } catch (e) {}
+                        const mbLoc = page.locator('#mbno, #pd_mbno, input[name="mbno"], input[placeholder*="Mobile" i], input[ng-model*="mbno" i]').first();
+                        if (await mbLoc.count() > 0 && await mbLoc.isVisible()) {
+                            await mbLoc.fill(pMobile).catch(() => {});
+                        }
+                    } catch (e) {}
+
+                    // 2. DOM evaluate to set all Promoter fields with complete AngularJS scope & ngModel binding
+                    await page.evaluate(({ f, m, l, ff, fm, fl, dob, mob, em, dg, pan, pin, city, road, bno }) => {
+                        const setVal = (selectors, val) => {
+                            if (!val) return;
+                            const selArr = Array.isArray(selectors) ? selectors : selectors.split(',').map(s => s.trim());
+                            let el = null;
+                            for (const s of selArr) {
+                                el = document.querySelector(s);
+                                if (el) break;
                             }
-                        }
-                    };
-
-                    setVal(['#fnm', 'input[placeholder*="First Name" i]'], f);
-                    setVal(['#pd_mname', '#mname', 'input[placeholder*="Middle Name" i]'], m);
-                    setVal(['#pd_lname', '#lname', 'input[placeholder*="Last Name" i]'], l);
-                    setVal(['#ffname'], ff);
-                    setVal(['#pd_fmname'], fm);
-                    setVal(['#pd_flname'], fl);
-                    setVal(['#dob', 'input[placeholder*="dd/mm/yyyy" i]', 'input[placeholder*="mm/dd/yyyy" i]'], dob);
-                    setVal(['#mbno', '#pd_mbno', 'input[name="mbno"]', 'input[placeholder*="Mobile" i]', 'input[ng-model*="mbno" i]'], mob);
-                    setVal(['#em', '#pd_email', '#email', 'input[name="em"]', 'input[name="email"]', 'input[placeholder*="Email" i]', 'input[type="email"]', 'input[ng-model*="em" i]', 'input[ng-model*="email" i]'], em);
-                    setVal(['#dg', 'input[placeholder*="Designation" i]'], dg);
-                    setVal(['#pan', 'input[placeholder*="PAN" i]'], pan);
-
-                    // Gender: Male
-                    const maleR = document.querySelector('#radiomale, input[type="radio"][value="M"], input[type="radio"][value="Male"]');
-                    if (maleR && !maleR.checked) {
-                        maleR.click();
-                        maleR.checked = true;
-                        maleR.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-
-                    // Address
-                    setVal(['#pncd', 'input[placeholder*="PIN" i]'], pin);
-                    setVal(['#pd_locality', 'input[placeholder*="Locality" i]', 'input[placeholder*="Village" i]'], city);
-                    setVal(['#pd_road', 'input[placeholder*="Road" i]', 'input[placeholder*="Street" i]'], road);
-                    setVal(['#pd_bdname', 'input[placeholder*="Premises" i]', 'input[placeholder*="Building" i]'], bno);
-                    setVal(['#pd_bno', 'input[placeholder*="Building No" i]', 'input[placeholder*="Flat" i]'], bno);
-
-                    // Also Authorized Signatory switch
-                    const labels = Array.from(document.querySelectorAll('label, div, p, span'));
-                    const asLbl = labels.find(el => (el.innerText || '').toLowerCase().includes('also authorized signatory'));
-                    if (asLbl) {
-                        const parent = asLbl.closest('.form-group, .row, div') || asLbl.parentElement;
-                        if (parent) {
-                            const cb = parent.querySelector('input[type="checkbox"]');
-                            const sw = parent.querySelector('.switch, label.switch');
-                            if (cb && !cb.checked) {
-                                cb.click();
-                                cb.checked = true;
-                                cb.dispatchEvent(new Event('change', { bubbles: true }));
-                            } else if (sw) {
-                                sw.click();
-                            }
-                        }
-                    }
-
-                    if (window.angular) {
-                        try {
-                            const sc = window.angular.element(document.querySelector('#fnm') || document.body).scope();
-                            if (sc) {
-                                if (sc.pd) {
-                                    sc.pd.em = em;
-                                    sc.pd.email = em;
-                                    sc.pd.mbno = mob;
+                            if (el) {
+                                el.removeAttribute('disabled');
+                                el.removeAttribute('readonly');
+                                el.value = val;
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                el.dispatchEvent(new Event('blur', { bubbles: true }));
+                                if (window.angular) {
+                                    try {
+                                        const ngEl = window.angular.element(el);
+                                        const ngModel = ngEl.controller('ngModel');
+                                        if (ngModel) {
+                                            ngModel.$setViewValue(val);
+                                            ngModel.$modelValue = val;
+                                            ngModel.$setValidity('required', true);
+                                            ngModel.$setValidity('email', true);
+                                            ngModel.$setValidity('pattern', true);
+                                            ngModel.$render();
+                                            ngModel.$commitViewValue();
+                                        }
+                                    } catch (e) {}
                                 }
-                                if (!sc.$$phase) sc.$apply();
                             }
-                        } catch (e) {}
-                    }
-                }, { f: pFirst, m: pMiddle, l: pLast, ff: pFatherFirst, fm: pFatherMiddle, fl: pFatherLast, dob: pDob, mob: pMobile, em: pEmail, dg: pDg, pan: pPan, pin: pPin, city: pCity, road: pRoad, bno: pBno });
+                        };
 
-                await page.waitForTimeout(1000);
+                        setVal(['#fnm', 'input[placeholder*="First Name" i]'], f);
+                        setVal(['#pd_mname', '#mname', 'input[placeholder*="Middle Name" i]'], m);
+                        setVal(['#pd_lname', '#lname', 'input[placeholder*="Last Name" i]'], l);
+                        setVal(['#ffname'], ff);
+                        setVal(['#pd_fmname'], fm);
+                        setVal(['#pd_flname'], fl);
+                        setVal(['#dob', 'input[placeholder*="dd/mm/yyyy" i]', 'input[placeholder*="mm/dd/yyyy" i]'], dob);
+                        setVal(['#mbno', '#pd_mbno', 'input[name="mbno"]', 'input[placeholder*="Mobile" i]', 'input[ng-model*="mbno" i]'], mob);
+                        setVal(['#em', '#pd_email', '#email', 'input[name="em"]', 'input[name="email"]', 'input[placeholder*="Email" i]', 'input[type="email"]', 'input[ng-model*="em" i]', 'input[ng-model*="email" i]'], em);
+                        setVal(['#dg', 'input[placeholder*="Designation" i]'], dg);
+                        setVal(['#pan', 'input[placeholder*="PAN" i]'], pan);
 
-                // Upload Photograph if available
-                try {
-                    const photoData = p.promoterPhotoFile || '';
-                    if (photoData && photoData.startsWith('data:image')) {
-                        const fs = require('fs');
-                        const path = require('path');
-                        const cleanB64 = photoData.replace(/^data:.*?;base64,/, '');
-                        const tempPhotoPath = path.join(__dirname, 'temp_promoter_photo_1.jpg');
-                        fs.writeFileSync(tempPhotoPath, cleanB64, 'base64');
-                        const photoInput = page.locator('#pd_upload, input[type="file"]').first();
-                        if (await photoInput.count() > 0) {
-                            await photoInput.setInputFiles(tempPhotoPath).catch(() => {});
-                            sendUpdate('Promoter photograph uploaded.');
+                        // Gender: Male
+                        const maleR = document.querySelector('#radiomale, input[type="radio"][value="M"], input[type="radio"][value="Male"]');
+                        if (maleR && !maleR.checked) {
+                            maleR.click();
+                            maleR.checked = true;
+                            maleR.dispatchEvent(new Event('change', { bubbles: true }));
                         }
+
+                        // Address
+                        setVal(['#pncd', 'input[placeholder*="PIN" i]'], pin);
+                        setVal(['#pd_locality', 'input[placeholder*="Locality" i]', 'input[placeholder*="Village" i]'], city);
+                        setVal(['#pd_road', 'input[placeholder*="Road" i]', 'input[placeholder*="Street" i]'], road);
+                        setVal(['#pd_bdname', 'input[placeholder*="Premises" i]', 'input[placeholder*="Building" i]'], bno);
+                        setVal(['#pd_bno', 'input[placeholder*="Building No" i]', 'input[placeholder*="Flat" i]'], bno);
+
+                        // Also Authorized Signatory switch
+                        const labels = Array.from(document.querySelectorAll('label, div, p, span'));
+                        const asLbl = labels.find(el => (el.innerText || '').toLowerCase().includes('also authorized signatory'));
+                        if (asLbl) {
+                            const parent = asLbl.closest('.form-group, .row, div') || asLbl.parentElement;
+                            if (parent) {
+                                const cb = parent.querySelector('input[type="checkbox"]');
+                                const sw = parent.querySelector('.switch, label.switch');
+                                if (cb && !cb.checked) {
+                                    cb.click();
+                                    cb.checked = true;
+                                    cb.dispatchEvent(new Event('change', { bubbles: true }));
+                                } else if (sw) {
+                                    sw.click();
+                                }
+                            }
+                        }
+
+                        if (window.angular) {
+                            try {
+                                const sc = window.angular.element(document.querySelector('#fnm') || document.body).scope();
+                                if (sc) {
+                                    if (sc.pd) {
+                                        sc.pd.em = em;
+                                        sc.pd.email = em;
+                                        sc.pd.mbno = mob;
+                                    }
+                                    if (!sc.$$phase) sc.$apply();
+                                }
+                            } catch (e) {}
+                        }
+                    }, { f: pFirst, m: pMiddle, l: pLast, ff: pFatherFirst, fm: pFatherMiddle, fl: pFatherLast, dob: pDob, mob: pMobile, em: pEmail, dg: pDg, pan: pPan, pin: pPin, city: pCity, road: pRoad, bno: pBno });
+
+                    await page.waitForTimeout(1000);
+
+                    // Upload Photograph if available
+                    try {
+                        const photoData = p.promoterPhotoFile || '';
+                        if (photoData && photoData.startsWith('data:image')) {
+                            const fs = require('fs');
+                            const path = require('path');
+                            const cleanB64 = photoData.replace(/^data:.*?;base64,/, '');
+                            const tempPhotoPath = path.join(__dirname, 'temp_promoter_photo_1.jpg');
+                            fs.writeFileSync(tempPhotoPath, cleanB64, 'base64');
+                            const photoInput = page.locator('#pd_upload, input[type="file"]').first();
+                            if (await photoInput.count() > 0) {
+                                await photoInput.setInputFiles(tempPhotoPath).catch(() => {});
+                                sendUpdate('Promoter photograph uploaded.');
+                            }
+                        }
+                    } catch (photoErr) {
+                        sendUpdate(`Photo note: ${photoErr.message}`);
                     }
-                } catch (photoErr) {
-                    sendUpdate(`Photo note: ${photoErr.message}`);
+
+                    await page.waitForTimeout(1000);
+
+                    // Click Save Promoter & Show list
+                    await page.evaluate(() => {
+                        const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn, a'));
+                        const savePromoter = btns.find(b => /save promoter/i.test(b.innerText || b.value || b.textContent || ''));
+                        if (savePromoter && !savePromoter.disabled) {
+                            savePromoter.click();
+                        }
+                    });
+                    sendUpdate('Saved Promoter details.');
+                    await page.waitForTimeout(2500);
                 }
-
-                await page.waitForTimeout(1000);
-
-                // Click Save Promoter & Show list
-                await page.evaluate(() => {
-                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn, a'));
-                    const savePromoter = btns.find(b => /save promoter/i.test(b.innerText || b.value || b.textContent || ''));
-                    if (savePromoter && !savePromoter.disabled) {
-                        savePromoter.click();
-                    }
-                });
-                sendUpdate('Saved Promoter details.');
-                await page.waitForTimeout(2500);
-
-                // Auto-confirm any confirmation modal immediately
-                try {
-                    const modalProceedBtn = page.locator('.modal.in button, .modal.show button, div[role="dialog"] button, .sweet-alert button').filter({ hasText: /proceed|continue|yes|confirm|ok|close/i }).first();
-                    if (await modalProceedBtn.count() > 0 && await modalProceedBtn.isVisible()) {
-                        await modalProceedBtn.click({ force: true }).catch(() => {});
-                    }
-                } catch (e) {}
-                await page.evaluate(() => {
-                    const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .sweet-alert'));
-                    for (const d of dialogs) {
-                        const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn, a'));
-                        const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|close/i.test(b.innerText || b.value || b.textContent || ''));
-                        if (okBtn) okBtn.click();
-                    }
-                });
             }
 
-            // If on Authorized Signatory tab, ensure primary signatory checkbox is checked
+            // Step 3: Authorized Signatory tab
             if (currentTabTitle.toLowerCase().includes('authorized signatory')) {
-                sendUpdate('Confirming Authorized Signatory details...');
+                sendUpdate('[પગલું ૩: Authorized Signatory] પ્રાઇમરી સાઇન કરનાર કન્ફર્મ કરી રહ્યા છીએ...');
                 await page.evaluate(({ em, mob }) => {
                     const chk = document.querySelector('input[type="checkbox"][id*="asg" i], input[type="checkbox"][id*="primary" i], input[type="checkbox"][ng-model*="isasg" i], input[type="checkbox"][ng-model*="ispas" i]');
                     if (chk && !chk.checked) {
@@ -1904,12 +1842,30 @@ async function run() {
                         chk.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                 }, { em: (data.email || 'parthpbhagat@gmail.com').trim().toLowerCase(), mob: (data.mobile || '9011494385').trim() });
-                await page.waitForTimeout(1000);
+                await page.waitForTimeout(800);
             }
 
-            // If on Principal Place of Business, ensure possession, business activity, and contact details are filled
+            // Step 4: Authorized Representative tab
+            if (currentTabTitle.toLowerCase().includes('authorized representative')) {
+                sendUpdate('[પગલું ૪: Authorized Representative] પ્રતિનિધિ ઓપ્શન (No) કન્ફર્મ કરી રહ્યા છીએ...');
+                await page.evaluate(() => {
+                    const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                    const noR = radios.find(r => {
+                        const t = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || r.value || '').toLowerCase();
+                        return t.includes('no') || r.value === 'N' || r.value === 'No';
+                    });
+                    if (noR && !noR.checked) {
+                        noR.click();
+                        noR.checked = true;
+                        noR.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+                await page.waitForTimeout(600);
+            }
+
+            // Step 5: Principal Place of Business tab
             if (screenInfo.tabText.toLowerCase().includes('principal place') || screenInfo.headerText.toLowerCase().includes('principal place') || currentTabTitle.toLowerCase().includes('principal place')) {
-                sendUpdate('Confirming Principal Place of Business details...');
+                sendUpdate('[પગલું ૫: Principal Place of Business] મુખ્ય વેપાર સ્થળ વિગતો કન્ફર્મ કરી રહ્યા છીએ...');
                 
                 // Native Playwright fill for PPOB Email & Mobile
                 const ppobEm = (data.email || 'parthpbhagat@gmail.com').trim().toLowerCase();
@@ -1978,9 +1934,27 @@ async function run() {
                 await page.waitForTimeout(1000);
             }
 
-            // If on Goods and Services tab, ensure HSN code exists
+            // Step 6: Additional Places of Business tab
+            if (currentTabTitle.toLowerCase().includes('additional place')) {
+                sendUpdate('[પગલું ૬: Additional Places] વધારાના વેપાર સ્થળ (No) કન્ફર્મ કરી રહ્યા છીએ...');
+                await page.evaluate(() => {
+                    const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                    const noR = radios.find(r => {
+                        const t = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || r.value || '').toLowerCase();
+                        return t.includes('no') || r.value === 'N' || r.value === 'No';
+                    });
+                    if (noR && !noR.checked) {
+                        noR.click();
+                        noR.checked = true;
+                        noR.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+                await page.waitForTimeout(600);
+            }
+
+            // Step 7: Goods and Services tab
             if (currentTabTitle.toLowerCase().includes('goods and services') || currentTabTitle.toLowerCase().includes('goods & services') || screenInfo.hasHsnInput) {
-                sendUpdate('Confirming Goods & Services (HSN Code)...');
+                sendUpdate('[પગલું ૭: Goods and Services] HSN કોડ કન્ફર્મ કરી રહ્યા છીએ...');
                 await page.evaluate(() => {
                     const hsnRows = Array.from(document.querySelectorAll('table tbody tr'));
                     if (hsnRows.length === 0) {
@@ -2001,9 +1975,15 @@ async function run() {
                 } catch (e) {}
             }
 
-            // If on Aadhaar Authentication tab, ensure "Yes" is selected
+            // Step 8: State Specific Information tab
+            if (currentTabTitle.toLowerCase().includes('state specific') || currentTabTitle.toLowerCase().includes('bank')) {
+                sendUpdate('[પગલું ૮: State Specific Information] રાજ્ય સંબંધિત વિગતો કન્ફર્મ કરી રહ્યા છીએ...');
+                await page.waitForTimeout(600);
+            }
+
+            // Step 9: Aadhaar Authentication tab
             if (currentTabTitle.toLowerCase().includes('aadhaar')) {
-                sendUpdate('Confirming Aadhaar Authentication...');
+                sendUpdate('[પગલું ૯: Aadhaar Authentication] આધાર પ્રમાણીકરણ ઓપ્શન (Yes) કન્ફર્મ કરી રહ્યા છીએ...');
                 await page.evaluate(() => {
                     const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
                     const yesR = radios.find(r => {
@@ -2035,11 +2015,9 @@ async function run() {
                 }
             });
 
-            // Try direct jump to Verification tab header if unlocked
-            await jumpToVerificationTab();
             await page.waitForTimeout(600);
 
-            // Click Save & Continue or Next button using Playwright locator and native click
+            // Click Save & Continue or Next button to move to the NEXT step sequentially
             try {
                 const saveBtnLoc = page.locator('button, input[type="button"], input[type="submit"], a.btn, a').filter({
                     hasText: /save\s*&\s*continue|continue|save\s*&\s*next|\bnext\b/i
@@ -2047,7 +2025,7 @@ async function run() {
                 if (await saveBtnLoc.count() > 0 && await saveBtnLoc.isVisible()) {
                     await saveBtnLoc.scrollIntoViewIfNeeded().catch(() => {});
                     await saveBtnLoc.click({ force: true }).catch(() => {});
-                    sendUpdate('Clicked "Save & Continue" / "Next" to advance wizard.');
+                    sendUpdate('Clicked "Save & Continue" / "Next" to advance to next step.');
                 } else {
                     const clickedBtn = await page.evaluate(() => {
                         window.scrollTo(0, document.body.scrollHeight);
@@ -2066,7 +2044,7 @@ async function run() {
                         return null;
                     });
                     if (clickedBtn) {
-                        sendUpdate(`Clicked "${clickedBtn}" to advance wizard.`);
+                        sendUpdate(`Clicked "${clickedBtn}" to advance to next step.`);
                     }
                 }
             } catch (e) {}
@@ -2076,8 +2054,6 @@ async function run() {
 
         // Verify that the portal is genuinely on the Verification screen before attempting submission
         if (!isOnVerification) {
-            await jumpToVerificationTab();
-            await page.waitForTimeout(2000);
             isOnVerification = await page.evaluate(() => {
                 const text = (document.body.innerText || '').toLowerCase();
                 const hasEvc = !!Array.from(document.querySelectorAll('button, input')).find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));

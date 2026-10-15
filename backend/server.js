@@ -3,6 +3,7 @@ const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
 const { supabase, oldSupabase } = require('./database');
+const logger = require('./logger');
 
 const app = express();
 const PORT = 3002;
@@ -18,6 +19,23 @@ const io = new Server(server, {
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Global Request Logger Middleware
+app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+        if (req.originalUrl && req.originalUrl.startsWith('/socket.io/')) return;
+        logger.http(req, res, Date.now() - start);
+    });
+    next();
+});
+
+// POST /api/client-logs - Report errors from browser frontend directly to backend terminal
+app.post('/api/client-logs', (req, res) => {
+    const { level = 'error', message = '', location = '', stack = '', appId = '' } = req.body || {};
+    logger.frontend(level, `${appId ? `[App:${appId}] ` : ''}${message}`, location, stack);
+    res.status(204).end();
+});
 
 // GET /api/gst-endpoints - Return dynamically formatted GST endpoints based on input parameters
 app.get('/api/gst-endpoints', (req, res) => {
@@ -656,17 +674,22 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
         const lines = data.toString().split('\n');
         for (let line of lines) {
             line = line.trim();
+            if (!line) continue;
+
             if (line.startsWith('STATUS:')) {
                 const statusMsg = line.replace('STATUS:', '');
+                logger.runner(appId, 'STATUS', statusMsg);
                 io.to(appId).emit('automation_update', { status: statusMsg });
                 if (statusMsg.startsWith('PORTAL_ERROR:')) {
                     try {
                         const parsed = JSON.parse(statusMsg.replace('PORTAL_ERROR:', ''));
+                        logger.runner(appId, 'PORTAL_ERROR', JSON.stringify(parsed));
                         io.to(appId).emit('automation_portal_error', parsed);
                     } catch (e) {}
                 }
             } else if (line.startsWith('PORTAL_ERROR:')) {
                 const errDataStr = line.replace('PORTAL_ERROR:', '');
+                logger.runner(appId, 'PORTAL_ERROR', errDataStr);
                 try {
                     const errData = JSON.parse(errDataStr);
                     io.to(appId).emit('automation_portal_error', errData);
@@ -675,28 +698,36 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
                 }
             } else if (line.startsWith('CAPTCHA_IMAGE:')) {
                 const imageSrc = line.replace('CAPTCHA_IMAGE:', '');
+                logger.runner(appId, 'CAPTCHA', 'New CAPTCHA image received from GST portal');
                 io.to(appId).emit('automation_captcha_image', imageSrc);
             } else if (line.startsWith('SCREENSHOT:')) {
                 const base64 = line.replace('SCREENSHOT:', '');
+                logger.runner(appId, 'SCREENSHOT', 'Captured live browser screenshot');
                 io.to(appId).emit('automation_screenshot', { appId, image: base64 });
             } else if (line.startsWith('WAITING_FOR_WARNING_RESPONSE')) {
+                logger.runner(appId, 'WARNING', 'Waiting for address warning response');
                 io.to(appId).emit('automation_warning');
-            } else if (line) {
-                console.log(`[Runner Log]: ${line}`);
+            } else {
+                logger.runner(appId, 'LOG', line);
             }
         }
     });
 
     child.stderr.on('data', (data) => {
-        console.error(`[Runner Error]: ${data.toString()}`);
+        const errStr = data.toString().trim();
+        if (errStr) {
+            logger.runner(appId, 'STDERR', errStr);
+        }
     });
 
     child.on('close', (code) => {
-        console.log(`[Automation] Process exited with code ${code}`);
-        activeAutomations.delete(appId);
-        if (code !== 0) {
-            io.to(appId).emit('automation_update', { status: 'Failed: Automation process crashed unexpectedly.' });
+        if (code === 0) {
+            logger.runner(appId, 'COMPLETED', `Automation process completed with exit code 0`);
+        } else {
+            logger.runner(appId, 'EXIT_FAIL', `Automation process exited with error code ${code}`);
+            io.to(appId).emit('automation_update', { status: `Failed: Automation process crashed unexpectedly (exit code ${code}).` });
         }
+        activeAutomations.delete(appId);
     });
 
     res.json({ message: 'Automation started successfully' });
@@ -793,5 +824,6 @@ setInterval(() => {
 }, 14 * 60 * 1000);
 
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Backend server is running on http://localhost:${PORT}`);
+    logger.success(`Backend server is running on http://localhost:${PORT}`);
+    logger.info(`Terminal request & automation error logging is ACTIVE.`);
 });

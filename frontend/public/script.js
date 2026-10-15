@@ -1,3 +1,39 @@
+// Global Frontend Error Reporter - Streams all browser errors directly to Terminal
+(function() {
+    function reportClientError(level, message, source, lineno, colno, error) {
+        try {
+            const loc = (source ? source.split('/').pop() : 'script.js') + (lineno ? `:${lineno}:${colno || 0}` : '');
+            const stack = (error && error.stack) ? error.stack : '';
+            const payload = JSON.stringify({
+                level: level || 'error',
+                message: String(message || 'Unknown frontend error'),
+                location: loc,
+                stack: stack,
+                appId: window.activeAutomationAppId || (window.currentMultiStateApp && window.currentMultiStateApp.appId) || ''
+            });
+
+            const backendUrl = (window.API_BASE_URL || 'http://localhost:3002') + '/api/client-logs';
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon(backendUrl, payload);
+                navigator.sendBeacon('/api/client-logs', payload);
+            } else {
+                fetch(backendUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true }).catch(() => {});
+                fetch('/api/client-logs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true }).catch(() => {});
+            }
+        } catch (e) {}
+    }
+
+    window.addEventListener('error', function(event) {
+        reportClientError('error', event.message, event.filename, event.lineno, event.colno, event.error);
+    });
+
+    window.addEventListener('unhandledrejection', function(event) {
+        const reason = event.reason;
+        const msg = (reason && reason.message) ? reason.message : String(reason || 'Unhandled Promise Rejection');
+        reportClientError('unhandled_rejection', msg, '', 0, 0, reason);
+    });
+})();
+
 window.updateStatusBadge = function () {
     const badge = document.getElementById('application-status-badge');
     if (!badge) return;

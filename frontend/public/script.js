@@ -2286,12 +2286,11 @@ window.openMultiStateModal = function (appId) {
         if (secTokenInput) secTokenInput.value = trnVal;
         if (aplCdInput) {
             let derived = '';
-            if (trnVal) {
-                const match = trnVal.match(/(\d{4,7})TRN/i);
-                if (match) derived = match[1].slice(-4);
-            }
-            if (!derived && app.data && (app.data.draftId || app.data.aplCd)) {
+            if (app.data && (app.data.draftId || app.data.aplCd)) {
                 derived = String(app.data.draftId || app.data.aplCd);
+            } else if (trnVal) {
+                const match = trnVal.match(/(\d{4,10})TRN/i);
+                if (match) derived = match[1];
             }
             aplCdInput.value = derived;
         }
@@ -2330,12 +2329,11 @@ window.launchMultiStateAutomation = function () {
 
     const appTrn = currentMultiStateApp.trn || (currentMultiStateApp.data && currentMultiStateApp.data.trn) || '';
     let derivedAplCd = '';
-    if (appTrn) {
-        const m = appTrn.match(/(\d{4,7})TRN/i);
-        if (m) derivedAplCd = m[1].slice(-4);
-    }
-    if (!derivedAplCd && currentMultiStateApp.data && (currentMultiStateApp.data.draftId || currentMultiStateApp.data.aplCd)) {
+    if (currentMultiStateApp.data && (currentMultiStateApp.data.draftId || currentMultiStateApp.data.aplCd)) {
         derivedAplCd = String(currentMultiStateApp.data.draftId || currentMultiStateApp.data.aplCd);
+    } else if (appTrn) {
+        const m = appTrn.match(/(\d{4,10})TRN/i);
+        if (m) derivedAplCd = m[1];
     }
 
     let defaultCobz = 'PRO';

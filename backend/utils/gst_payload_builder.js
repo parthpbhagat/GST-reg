@@ -131,18 +131,20 @@ function computeFileHash(fileData) {
  * @param {string} trn - Temporary Reference Number
  * @returns {Object} JSON payload matching reg.gst.gov.in schema
  */
-function buildGstApplicationPayload(data, draftId = '', trn = '') {
+function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) {
     data = data || {};
-    const stateCd = getStateCode(data.state || data.ppob_state);
+    options = options || {};
+    const targetState = options.targetStateCode || data.state || data.ppob_state;
+    const stateCd = getStateCode(targetState);
     const cleanPan = (data.pan || '').toUpperCase().trim();
     const cleanLegalName = (data.legalName || '').trim();
     const cleanEmail = (data.email || data.ppob_email || '').toLowerCase().trim();
     const cleanMobile = (data.mobile || data.ppob_mobile || '').trim();
-    const constitutionCode = getConstitutionCode(data.businessConstitution);
+    const constitutionCode = options.cobz || getConstitutionCode(data.businessConstitution);
     const commencementDate = formatDDMMYYYY(data.dateOfCommencement);
 
-    const effectiveDraftId = String(draftId || data.draftId || data.aplCd || '').trim();
-    const effectiveTrn = String(trn || data.trn || (stateCd + '2600' + effectiveDraftId + 'TRN')).trim();
+    const effectiveDraftId = String(options.aplCd || draftId || data.draftId || data.aplCd || '').trim();
+    const effectiveTrn = String(options.secToken || trn || data.trn || (stateCd + '2600' + effectiveDraftId + 'TRN')).trim();
 
     // Promoters array (opdtls)
     const opdtls = [];
@@ -429,12 +431,12 @@ function buildGstApplicationPayload(data, draftId = '', trn = '') {
         sezPovToDateVald: '10',
         jurdFlag: 'Y',
         isAddlnInfo: 'Y',
-        isMsrChildFlow: 'N',
-        msrActiveTab: 'BKACDTLS',
+        isMsrChildFlow: (options.isMsr || data.isMsrChildFlow === 'Y') ? 'Y' : 'N',
+        msrActiveTab: options.msrActiveTab || 'BKACDTLS',
         itcPassonLimit: '250000',
         asgdtls: asgdtls,
         opdtls: opdtls,
-        validateMultiReg: 'N',
+        validateMultiReg: (options.isMsr || data.validateMultiReg === 'Y') ? 'Y' : 'N',
         gdssvcdtls: {
             bzgddtls: bzgddtls,
             bzsdtls: bzsdtls
@@ -479,6 +481,10 @@ function buildGstApplicationPayload(data, draftId = '', trn = '') {
         },
         adbzdtls: []
     };
+
+    if (options.stCds && Array.isArray(options.stCds) && options.stCds.length > 0) {
+        finalPayload.stCds = options.stCds;
+    }
 
     return finalPayload;
 }

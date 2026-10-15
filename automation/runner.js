@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
 const http = require('http');
-const { buildGstApplicationPayload } = require('../backend/utils/gst_payload_builder');
+const { buildGstApplicationPayload, getStateCode } = require('../backend/utils/gst_payload_builder');
 
 let capturedDraftId = null;
 
@@ -239,8 +239,18 @@ async function run() {
         if (trnText && trnText.length > 5) {
             sendUpdate(`Application already has TRN: ${trnText}. Proceeding straight to TRN Login...`);
         } else {
-            sendUpdate('Navigating to official GST portal (Part A registration)...');
-            await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+            const partAUrl = (automationMode === 'multistate') ? 'https://reg.gst.gov.in/registration/msr' : 'https://reg.gst.gov.in/registration/';
+            sendUpdate(`Navigating to official GST portal (${automationMode === 'multistate' ? 'Multi-State Part A' : 'Part A'} registration)...`);
+            try {
+                await page.goto(partAUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            } catch (e) {
+                if (automationMode === 'multistate') {
+                    sendUpdate('Fallback navigating to standard registration URL...');
+                    await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+                } else {
+                    throw e;
+                }
+            }
 
             sendUpdate('Injecting form payload data...');
             await page.waitForSelector('#applnType', { timeout: 30000 });
@@ -273,6 +283,29 @@ async function run() {
                     const match = stateOptions.find(o => o.text.toUpperCase().includes((data.state || '').toUpperCase()));
                     if (match) await page.selectOption('#applnState', { value: match.value });
                 }
+            }
+
+            // Multi-State state selections if on MSR page
+            if (automationMode === 'multistate' && multiStateConfig && multiStateConfig.stCds && multiStateConfig.stCds.length > 0) {
+                sendUpdate(`[Multi-State] Selecting multiple state codes: ${multiStateConfig.stCds.join(', ')}...`);
+                try {
+                    await page.evaluate((codes) => {
+                        codes.forEach(c => {
+                            const cb = document.querySelector(`input[type="checkbox"][value="${c}"], input[name*="state"][value="${c}"]`);
+                            if (cb && !cb.checked) {
+                                cb.click();
+                                cb.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        });
+                        const selectEl = document.querySelector('select[multiple], #msr_states, #stCds');
+                        if (selectEl) {
+                            Array.from(selectEl.options).forEach(opt => {
+                                if (codes.includes(opt.value)) opt.selected = true;
+                            });
+                            selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }, multiStateConfig.stCds);
+                } catch (e) {}
             }
 
             await page.waitForTimeout(2500);
@@ -421,7 +454,10 @@ async function run() {
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
                 }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
                 req.on('error', reject);
-                req.write(JSON.stringify({ trn: trnText }));
+                const trnPayload = (automationMode === 'multistate') 
+                    ? { trn: trnText, masterTrn: trnText } 
+                    : { trn: trnText };
+                req.write(JSON.stringify(trnPayload));
                 req.end();
             });
         }
@@ -794,6 +830,117 @@ async function run() {
                 return { ok: false, error: err.message };
             }
         }, finalGstPayload);
+
+        // Multi-State Registration Flow: Submit Common Info & State-wise Drafts
+        if (automationMode === 'multistate') {
+            sendUpdate('[Multi-State Registration] Initializing Multi-State Application submission pipeline...');
+            const targetStates = (multiStateConfig && multiStateConfig.stCds && multiStateConfig.stCds.length > 0)
+                ? multiStateConfig.stCds
+                : [getStateCode(data.state || data.ppob_state)];
+            sendUpdate(`[Multi-State] Target registration states: ${targetStates.join(', ')}`);
+
+            // 1. Submit Common Info to /registration/auth/api/multistate/submitcommoninfo
+            sendUpdate('[Multi-State Step 1] Submitting Common Info to official endpoint: /registration/auth/api/multistate/submitcommoninfo...');
+            const msrCommonPayload = buildGstApplicationPayload(data, capturedDraftId, trnText || (data && data.trn) || '', {
+                isMsr: true,
+                stCds: targetStates,
+                secToken: (multiStateConfig && multiStateConfig.secToken) || trnText || (data && data.trn) || '',
+                aplCd: (multiStateConfig && multiStateConfig.aplCd) || capturedDraftId,
+                cobz: (multiStateConfig && multiStateConfig.cobz) || undefined
+            });
+
+            try {
+                const path = require('path');
+                const legalName = (data && data.legalName) || appId;
+                const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                const dirPath = path.join(__dirname, '..', 'backend', 'data', safeLegalName);
+                if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+                fs.writeFileSync(path.join(dirPath, 'gst_multistate_common_payload.json'), JSON.stringify(msrCommonPayload, null, 2), 'utf-8');
+            } catch (e) {}
+
+            const msrCommonResult = await page.evaluate(async (payload) => {
+                try {
+                    const res = await fetch('/registration/auth/api/multistate/submitcommoninfo', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json, text/plain, */*'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    const status = res.status;
+                    const text = await res.text();
+                    let json = null;
+                    try { json = JSON.parse(text); } catch (e) {}
+                    return { ok: res.ok, status, json, text };
+                } catch (err) {
+                    return { ok: false, error: err.message };
+                }
+            }, msrCommonPayload);
+
+            const commonMsg = (msrCommonResult.json && (msrCommonResult.json.msg || msrCommonResult.json.message)) || msrCommonResult.text || msrCommonResult.error || 'Done';
+            sendUpdate(`[Multi-State Common Info] status=${msrCommonResult.status || 'ok'}, response=${commonMsg}`);
+
+            // 2. Submit state drafts for each target state
+            const stateTrnMap = {};
+            for (const stCode of targetStates) {
+                sendUpdate(`[Multi-State Step 2] Generating & saving draft for State Code: ${stCode}...`);
+                const statePayload = buildGstApplicationPayload(data, capturedDraftId, trnText || (data && data.trn) || '', {
+                    isMsr: true,
+                    targetStateCode: stCode,
+                    stCds: targetStates,
+                    secToken: (multiStateConfig && multiStateConfig.secToken) || trnText || (data && data.trn) || '',
+                    aplCd: (multiStateConfig && multiStateConfig.aplCd) || capturedDraftId,
+                    cobz: (multiStateConfig && multiStateConfig.cobz) || undefined
+                });
+
+                try {
+                    const path = require('path');
+                    const legalName = (data && data.legalName) || appId;
+                    const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                    const dirPath = path.join(__dirname, '..', 'backend', 'data', safeLegalName);
+                    fs.writeFileSync(path.join(dirPath, `gst_multistate_state_${stCode}_payload.json`), JSON.stringify(statePayload, null, 2), 'utf-8');
+                } catch (e) {}
+
+                const stateResult = await page.evaluate(async (payload) => {
+                    try {
+                        const res = await fetch('/registration/auth/api/save/appdraftnewreg', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json, text/plain, */*'
+                            },
+                            body: JSON.stringify(payload)
+                        });
+                        const status = res.status;
+                        const text = await res.text();
+                        let json = null;
+                        try { json = JSON.parse(text); } catch (e) {}
+                        return { ok: res.ok, status, json, text };
+                    } catch (err) {
+                        return { ok: false, error: err.message };
+                    }
+                }, statePayload);
+
+                const stMsg = (stateResult.json && (stateResult.json.msg || stateResult.json.message)) || stateResult.text || stateResult.error || 'Saved';
+                sendUpdate(`[Multi-State Draft] State ${stCode}: status=${stateResult.status || 'ok'}, response=${stMsg}`);
+                stateTrnMap[stCode] = `${stCode}2600${capturedDraftId || '0000'}TRN`;
+            }
+
+            // Save state TRNs to database
+            try {
+                await new Promise((resolve) => {
+                    const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/trn`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+                    }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
+                    req.on('error', () => resolve());
+                    req.write(JSON.stringify({ masterTrn: trnText, stateTrns: stateTrnMap }));
+                    req.end();
+                });
+                sendUpdate(`[Multi-State] State TRNs synchronized to DB: ${JSON.stringify(stateTrnMap)}`);
+            } catch (e) {}
+        }
 
         const saveMsg = (saveApiResult.json && (saveApiResult.json.msg || saveApiResult.json.message || saveApiResult.json.status)) || saveApiResult.text || saveApiResult.error || 'Saved';
         sendUpdate(`GST Portal save/appdraftnewreg response: status=${saveApiResult.status || 'done'}, message=${saveMsg}`);

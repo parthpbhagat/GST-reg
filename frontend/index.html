@@ -473,13 +473,15 @@
                     <h1>GST Registration Portal</h1>
                     <p>Applicant form</p>
                 </div>
-                <div class="top-actions" style="margin-left: auto; display: flex; gap: 12px; align-items: center;">
+                <div class="top-actions" style="margin-left: auto; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <span id="application-status-badge"
+                        style="font-size: 13px; font-weight: 600; padding: 4px 12px; border-radius: 9999px; background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; display: inline-flex; align-items: center; gap: 4px;">Status: New Draft</span>
                     <span id="autosave-indicator"
                         style="font-size: 13px; font-weight: 600; color: #4ade80; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(74, 222, 128, 0.3); border-radius: 9999px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 4px; transition: opacity 0.3s; opacity: 0.8;">Auto-saved
                         ✓</span>
                     <span id="userEmailDisplay"
                         style="font-size: 14px; font-weight: 500; color: #cbd5e1; margin-right: 8px;"></span>
-                    <button class="header-btn" onclick="navigateTo('/')">New Registration</button>
+                    <button class="header-btn" style="background: #2563eb; color: #ffffff; border: none; font-weight: 600; cursor: pointer; padding: 7px 14px; border-radius: 6px;" onclick="window.startNewRegistration ? window.startNewRegistration() : navigateTo('/')">+ New Registration</button>
                     <button class="header-btn header-btn-primary" onclick="window.navigateToApplications ? window.navigateToApplications() : navigateTo('/my-applications')">My
                         Applications</button>
                     <button id="logoutBtn"
@@ -1004,15 +1006,16 @@
     </div>
 
     <div id="missing-fields-modal" class="modal-overlay hidden">
-        <div class="modal" style="width: 400px; max-height: 80vh; overflow-y: auto;">
-            <h2>Missing Important Fields</h2>
-            <p style="font-size: 13px; color: #64748b; margin-bottom: 16px;">Please fill in the missing fields before
-                automatically registering.</p>
-            <div id="missing-fields-container"></div>
-            <div class="btn-group">
-                <button class="btn ghost"
-                    onclick="document.getElementById('missing-fields-modal').classList.add('hidden')">Cancel</button>
-                <button class="btn accent" onclick="saveMissingFields()">Save</button>
+        <div class="modal" style="width: 520px; max-width: 95vw; max-height: 85vh; overflow-y: auto;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <h2 id="missing-fields-title" style="margin: 0; font-size: 18px; color: #0f172a;">Required GST Portal Information</h2>
+                <button type="button" style="background: none; border: none; font-size: 20px; color: #64748b; cursor: pointer;" onclick="document.getElementById('missing-fields-modal').classList.add('hidden')">✕</button>
+            </div>
+            <p id="missing-fields-desc" style="font-size: 13px; color: #64748b; margin-bottom: 16px;">All required GST portal fields must be completed before an Application ID can be created.</p>
+            <div id="missing-fields-container" style="display: flex; flex-direction: column; gap: 12px;"></div>
+            <div class="btn-group" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn ghost" onclick="document.getElementById('missing-fields-modal').classList.add('hidden')">Cancel</button>
+                <button class="btn accent" id="missing-fields-save-btn" onclick="saveMissingFields()">Save & Proceed</button>
             </div>
         </div>
     </div>
@@ -1021,7 +1024,7 @@
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="/config.js?v=7"></script>
-    <script src="/script.js?v=1792008000000"></script>
+    <script src="/script.js?v=1792010000000"></script>
 
     <script>
         window.showLoader = function () {

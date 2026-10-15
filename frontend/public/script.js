@@ -1,12 +1,71 @@
+window.updateStatusBadge = function () {
+    const badge = document.getElementById('application-status-badge');
+    if (!badge) return;
+    if (window.form && window.form._appId) {
+        const st = window.form._originalStatus || 'Draft (Saved)';
+        badge.innerText = `Status: ${st} (#${window.form._appId})`;
+        badge.style.background = '#fef08a';
+        badge.style.color = '#854d0e';
+        badge.style.borderColor = '#fde047';
+    } else {
+        badge.innerText = 'Status: New Registration (Draft)';
+        badge.style.background = '#e0f2fe';
+        badge.style.color = '#0369a1';
+        badge.style.borderColor = '#bae6fd';
+    }
+};
+
+window.startNewRegistration = function () {
+    if (window.form && window.form._appId) {
+        if (!confirm("Start a new registration? The currently open application will be closed.")) {
+            return;
+        }
+    }
+    if (typeof window.clearAutosave === "function") window.clearAutosave();
+    localStorage.removeItem("gst_autosave");
+    window.currentAppForMissingFields = null;
+
+    window.form = {
+        goods_hsn: [{ hsn: '1001', description: 'WHEAT AND MESLIN' }], goods_sac: [],
+        taxpayerType: "Regular Taxpayer", legalName: "", tradeName: "", pan: "", email: "", mobile: "", state: "", district: "",
+        businessConstitution: "Proprietorship", dateOfCommencement: "", dateOfLiability: "", reasonToObtainRegistration: "Voluntary Basis", businessDistrict: "",
+        rule14A: "No",
+        rule14ADeclaration: false,
+        voluntaryDeclaration: true,
+        isDeclAccepted: "Y",
+        existingRegistrationType: "", existingRegistrationNo: "", existingRegistrationDate: "",
+        proofOfConstitutionType: "", proofOfConstitutionFile: "", documentForTradeNameFile: "",
+        ppob_building: "", ppob_flatNo: "", ppob_floor: "", ppob_street: "", ppob_locality: "", ppob_city: "",
+        ppob_state: "", ppob_district: "", ppob_pincode: "", ppob_country: "India", ppob_landmark: "", ppob_latitude: "", ppob_longitude: "",
+        ppob_stateJurisdiction: "", ppob_commissionerate: "", ppob_division: "", ppob_range: "",
+        ppob_email: "", ppob_stdCode: "", ppob_telephone: "", ppob_mobile: "", ppob_faxStdCode: "", ppob_fax: "",
+        ppob_natureOfPossession: "Consent", ppob_doc: "", ppob_docFile: "",
+        ppob_natureOfBusiness: { bondedWarehouse: false, factoryManufacturing: false, leasingBusiness: false, retailBusiness: true, worksContract: false, eouStpEhtp: false, import: false, officeSaleOffice: false, warehouseDepot: false, others: false, export: false, supplierOfServices: false, recipientOfGoodsOrServices: false, wholesaleBusiness: false },
+        p1: JSON.parse(JSON.stringify(window.defaultPromoter || {})),
+        a1: JSON.parse(JSON.stringify(window.defaultAuthSig || {})),
+        stateSpecific_electricityBoard: "", stateSpecific_electricityConsumerNo: "",
+        stateSpecific_ptEcNo: "", stateSpecific_ptRcNo: "",
+        stateSpecific_exciseLicenseNo: "", stateSpecific_exciseLicenseHolder: ""
+    };
+
+    step = 0;
+    isPreview = false;
+    isPromoterListView = false;
+    isAuthSigListView = false;
+
+    if (typeof window.navigateTo === 'function') {
+        window.navigateTo('/form');
+    } else {
+        window.location.href = '/';
+    }
+    if (typeof renderSidebar === 'function') renderSidebar();
+    if (typeof renderContent === 'function') renderContent();
+    window.updateStatusBadge();
+};
+
 window.resetFormDraft = function () {
     if (confirm("Are you sure you want to clear this draft and start fresh? All unsaved inputs will be erased.")) {
-        if (typeof window.clearAutosave === "function") window.clearAutosave();
-        localStorage.removeItem("gst_autosave");
-        if (window.form && window.form._appId) {
-            delete window.form._appId;
-            delete window.form._originalStatus;
-        }
-        window.location.reload();
+        window.startNewRegistration();
     }
 };
 
@@ -1311,10 +1370,122 @@ window.removeServicesItem = function (index) {
     }
 };
 
+window.checkMissingGstPortalData = function (data) {
+    data = data || window.form || {};
+    const missing = [];
+    const isBlank = (v) => !v || v.toString().trim() === '' || v.toString().trim() === '-';
+
+    // Step 0: Business Details
+    if (isBlank(data.pan)) missing.push({ step: 0, key: 'pan', label: 'PAN (10 characters, e.g. ABCDE1234F)' });
+    if (isBlank(data.legalName)) missing.push({ step: 0, key: 'legalName', label: 'Legal Name of Business (as per PAN)' });
+    if (isBlank(data.tradeName)) missing.push({ step: 0, key: 'tradeName', label: 'Trade Name' });
+    if (isBlank(data.state)) missing.push({ step: 0, key: 'state', label: 'State' });
+    if (isBlank(data.district)) missing.push({ step: 0, key: 'district', label: 'District' });
+    if (isBlank(data.businessConstitution)) missing.push({ step: 0, key: 'businessConstitution', label: 'Constitution of Business' });
+    if (isBlank(data.reasonToObtainRegistration)) missing.push({ step: 0, key: 'reasonToObtainRegistration', label: 'Reason to Obtain Registration' });
+    if (isBlank(data.dateOfCommencement)) missing.push({ step: 0, key: 'dateOfCommencement', label: 'Date of Commencement of Business (YYYY-MM-DD)' });
+    if (isBlank(data.dateOfLiability)) {
+        if (!isBlank(data.dateOfCommencement)) data.dateOfLiability = data.dateOfCommencement;
+        else missing.push({ step: 0, key: 'dateOfLiability', label: 'Date on which liability to register arises' });
+    }
+
+    // Step 1: Promoter / Partner (P1)
+    const p1 = data.p1 || {};
+    const pFirst = p1.firstName || (data.legalName ? data.legalName.split(' ')[0] : '');
+    if (isBlank(pFirst)) missing.push({ step: 1, key: 'p1_firstName', label: 'Promoter (P1) First Name' });
+    const pMobile = p1.mobile || data.mobile;
+    if (isBlank(pMobile)) missing.push({ step: 1, key: 'p1_mobile', label: 'Promoter (P1) Mobile Number' });
+    const pEmail = p1.email || data.email;
+    if (isBlank(pEmail)) missing.push({ step: 1, key: 'p1_email', label: 'Promoter (P1) Email Address' });
+    const pPan = p1.pan || data.pan;
+    if (isBlank(pPan)) missing.push({ step: 1, key: 'p1_pan', label: 'Promoter (P1) PAN' });
+
+    // Step 4: Principal Place of Business
+    if (isBlank(data.ppob_pincode)) missing.push({ step: 4, key: 'ppob_pincode', label: 'Principal Place PIN Code (6 digits)' });
+    if (isBlank(data.ppob_locality) && isBlank(data.ppob_city)) missing.push({ step: 4, key: 'ppob_locality', label: 'Principal Place City / Locality' });
+    if (isBlank(data.ppob_flatNo) && isBlank(data.ppob_building)) missing.push({ step: 4, key: 'ppob_flatNo', label: 'Principal Place Flat / Door / Building No.' });
+    if (isBlank(data.ppob_natureOfPossession)) missing.push({ step: 4, key: 'ppob_natureOfPossession', label: 'Nature of Possession of Premises' });
+
+    // Step 6: Goods and Services
+    const hasGoods = (data.goods_hsn && data.goods_hsn.length > 0) || (data.goods_sac && data.goods_sac.length > 0);
+    if (!hasGoods) {
+        if (!data.goods_hsn) data.goods_hsn = [];
+        data.goods_hsn.push({ hsn: '1001', description: 'WHEAT AND MESLIN' });
+    }
+
+    // Step 9: Verification
+    if (isBlank(data.verification_place)) {
+        data.verification_place = data.ppob_city || data.ppob_locality || data.district || '';
+    }
+
+    return missing;
+};
+
+window.showMissingFieldsBeforeAppIdModal = function (missingFields) {
+    const modal = document.getElementById('missing-fields-modal');
+    const container = document.getElementById('missing-fields-container');
+    const title = document.getElementById('missing-fields-title');
+    const desc = document.getElementById('missing-fields-desc');
+    const saveBtn = document.getElementById('missing-fields-save-btn');
+
+    if (title) title.innerText = '⚠️ Required GST Portal Information Missing';
+    if (desc) desc.innerText = 'GST Portal requires all mandatory fields before an Application ID can be generated. Please fill in the missing details below:';
+    if (saveBtn) {
+        saveBtn.innerText = 'Save & Generate Application ID';
+        saveBtn.onclick = window.saveMissingFieldsAndSubmit;
+    }
+
+    container.innerHTML = missingFields.map(f => `
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <label style="font-size: 13px; font-weight: 600; color: #1e293b; margin: 0;">${f.label}</label>
+                <button type="button" style="font-size: 11px; padding: 2px 8px; background: #e2e8f0; border: none; border-radius: 4px; cursor: pointer; color: #334155;" onclick="document.getElementById('missing-fields-modal').classList.add('hidden'); setStep(${f.step});">Go to Step ${f.step + 1}</button>
+            </div>
+            <input type="text" id="pre-app-field-${f.key}" data-key="${f.key}" style="width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1.5px solid #cbd5e1; border-radius: 4px; font-size: 14px;" placeholder="Enter ${f.label}..." />
+        </div>
+    `).join('');
+
+    modal.classList.remove('hidden');
+};
+
+window.saveMissingFieldsAndSubmit = function () {
+    const inputs = document.querySelectorAll('#missing-fields-container input');
+    inputs.forEach(input => {
+        const key = input.getAttribute('data-key');
+        const val = input.value.trim();
+        if (val) {
+            if (key.startsWith('p1_')) {
+                const subKey = key.replace('p1_', '');
+                if (!window.form.p1) window.form.p1 = {};
+                window.form.p1[subKey] = val;
+            } else {
+                window.form[key] = val;
+            }
+        }
+    });
+
+    const stillMissing = window.checkMissingGstPortalData(window.form);
+    if (stillMissing.length > 0) {
+        alert(`Please fill in: ${stillMissing.map(m => m.label).join(', ')}`);
+        return;
+    }
+
+    document.getElementById('missing-fields-modal').classList.add('hidden');
+    window.submitApplication();
+};
+
 window.submitApplication = async function () {
     if (typeof window.validateFullForm === 'function' && !window.validateFullForm()) {
         return;
     }
+
+    // Verify that all GST portal required data is present BEFORE generating Application ID
+    const missingFields = window.checkMissingGstPortalData(form);
+    if (missingFields.length > 0) {
+        window.showMissingFieldsBeforeAppIdModal(missingFields);
+        return;
+    }
+
     const btn = (window.event && window.event.target) || document.querySelector('button[onclick*="submitApplication"]');
     const originalText = btn ? btn.innerText : 'Submit Application';
     try {
@@ -1752,9 +1923,14 @@ window.renderAdminDashboard = async function () {
                 <h2 style="margin: 0;">${((typeof window.checkIsAdmin === 'function') && window.checkIsAdmin()) ? 'Admin Dashboard - Applications' : 'My Applications'}</h2>
                 <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">${((typeof window.checkIsAdmin === 'function') && window.checkIsAdmin()) ? 'Review, edit, accept, or reject applicant submissions.' : 'Manage, edit, update, or delete your submitted applications.'}</p>
             </div>
-            <button class="btn accent" style="font-size: 14px; padding: 8px 16px; background: #3b82f6; border-color: #3b82f6; color: white;" onclick="navigateTo('/form')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg> Home
-            </button>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button class="btn accent" style="font-size: 14px; padding: 8px 16px; background: #16a34a; border-color: #16a34a; color: white; font-weight: 600;" onclick="window.startNewRegistration()">
+                    + New Registration
+                </button>
+                <button class="btn accent" style="font-size: 14px; padding: 8px 16px; background: #3b82f6; border-color: #3b82f6; color: white;" onclick="navigateTo('/form')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: middle;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg> Home
+                </button>
+            </div>
         </div>
         ${allApps.length === 0 ? '<p>No applications submitted yet.</p>' : `
         <table style="width: 100%; border-collapse: collapse; margin-top: 20px; text-align: left;">
@@ -3445,18 +3621,40 @@ function renderContent() {
                     ${field('DATE ON WHICH LIABILITY TO REGISTER ARISES <span style="color: #ef4444">*</span>', `<input type="date" value="${form.dateOfLiability}" max="${new Date().toISOString().split('T')[0]}" onchange="updateForm('dateOfLiability', this.value)" />`)}
                 </div>
                 ${!['Public Sector Undertaking', 'Statutory Body', 'Government Department', 'Local Authority'].includes(form.businessConstitution) ? `
-                <div style="margin-top: 12px;">
-                    <div class="field" id="field-container-rule14A" style="background: #f8fafc; padding: 10px 14px; border-radius: 4px; border: 1px solid #e2e8f0; border-left: 3px solid #cbd5e1;">
-                        <label style="display: block; margin-bottom: 10px; color: #334155; font-size: 13px; font-weight: 600; text-transform: uppercase;">Option for registration under Rule 14A <span style="color: #ef4444">*</span></label>
-                        <div style="display: flex; gap: 16px;">
-                            <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; color: #334155; cursor: pointer;">
-                                <input type="radio" id="rule14A_Yes" name="rule14A" value="Yes" ${form.rule14A === 'Yes' ? 'checked' : ''} onchange="updateForm('rule14A', this.value)" style="accent-color: #22c55e;" /> YES
+                <div style="margin-top: 14px;">
+                    <div class="field" id="field-container-rule14A" style="background: #f8fafc; padding: 12px 16px; border-radius: 6px; border: 1.5px solid #e2e8f0; border-left: 4px solid #22c55e;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin: 0;">
+                                <input type="checkbox" id="rule14A_Checkbox" ${form.rule14A === 'Yes' ? 'checked' : ''} onchange="updateForm('rule14A', this.checked ? 'Yes' : 'No'); if(typeof renderContent === 'function') renderContent();" style="width: 18px; height: 18px; accent-color: #22c55e; cursor: pointer;" />
+                                <span style="font-size: 13px; font-weight: 700; color: #1e293b; text-transform: uppercase;">Option for registration under Rule 14A <span style="color: #ef4444">*</span></span>
                             </label>
-                            <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; color: #334155; cursor: pointer;">
-                                <input type="radio" id="rule14A_No" name="rule14A" value="No" ${(form.rule14A === 'No' || !form.rule14A) ? 'checked' : ''} onchange="updateForm('rule14A', this.value)" style="accent-color: #22c55e;" /> NO
+                            <div style="display: flex; gap: 16px; align-items: center;">
+                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #334155; cursor: pointer; margin: 0;">
+                                    <input type="radio" id="rule14A_Yes" name="rule14A" value="Yes" ${form.rule14A === 'Yes' ? 'checked' : ''} onchange="updateForm('rule14A', this.value); if(typeof renderContent === 'function') renderContent();" style="accent-color: #22c55e;" /> YES
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #334155; cursor: pointer; margin: 0;">
+                                    <input type="radio" id="rule14A_No" name="rule14A" value="No" ${(form.rule14A === 'No' || !form.rule14A) ? 'checked' : ''} onchange="updateForm('rule14A', this.value); if(typeof renderContent === 'function') renderContent();" style="accent-color: #22c55e;" /> NO
+                                </label>
+                            </div>
+                        </div>
+                        ${form.rule14A === 'Yes' ? `
+                        <div style="margin-top: 10px; padding: 10px 12px; background: #fefce8; border: 1px solid #fef08a; border-radius: 4px;">
+                            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: #854d0e; cursor: pointer; margin: 0;">
+                                <input type="checkbox" id="rule14ADeclaration" ${form.rule14ADeclaration !== false ? 'checked' : ''} onchange="updateForm('rule14ADeclaration', this.checked)" style="margin-top: 2px; width: 16px; height: 16px; accent-color: #ca8a04;" />
+                                <span><strong>Declaration under Rule 14A:</strong> I hereby declare that I have opted for registration under Rule 14A of CGST Rules, 2017 and solemnly declare that all particulars are true and correct.</span>
                             </label>
                         </div>
+                        ` : ''}
                     </div>
+                </div>
+                ` : ''}
+
+                ${form.reasonToObtainRegistration === 'Voluntary Basis' ? `
+                <div style="margin-top: 14px; padding: 12px 16px; background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 6px;">
+                    <label style="display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: #166534; cursor: pointer; margin: 0;">
+                        <input type="checkbox" id="voluntaryDeclaration" ${form.voluntaryDeclaration !== false ? 'checked' : ''} onchange="updateForm('voluntaryDeclaration', this.checked); updateForm('isDeclAccepted', this.checked ? 'Y' : 'N');" style="margin-top: 2px; width: 18px; height: 18px; accent-color: #16a34a;" />
+                        <span><strong>Mandatory Declaration (Voluntary Basis) <span style="color: #ef4444">*</span>:</strong> I hereby declare that I am voluntarily applying for registration under Section 25(3) of the CGST Act, 2017. I agree to all conditions and rules governing registration under the Goods and Services Tax Act.</span>
+                    </label>
                 </div>
                 ` : ''}
 

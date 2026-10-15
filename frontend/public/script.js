@@ -1652,23 +1652,20 @@ window.renderAdminDashboard = async function () {
 
         let actionButtons = '';
         if (isUserAdmin) {
-            actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-right: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
-                             <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-right: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>`;
+            actionButtons = `
+                <button class="btn accent" style="background: #16a34a; border-color: #16a34a; font-weight: 700;" onclick="registerApplication('${app.appId}')" title="Start Official Single-State GST Registration Automation">⚡ GST Registration</button>
+                <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
+                <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>
+                <button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>`;
             if (app.status === 'Pending') {
-                actionButtons += `<button class="btn accent" style="background: #22c55e; border-color: #22c55e;" onclick="updateAppStatus('${app.appId}', 'Accepted')">Accept</button>
-                         <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-left: 5px;" onclick="updateAppStatus('${app.appId}', 'Rejected')">Reject</button>`;
-            } else if (app.status === 'Accepted' || app.status === 'Registered') {
-                actionButtons = `<button class="btn accent" style="background: #3b82f6; border-color: #3b82f6;" onclick="registerApplication('${app.appId}')">Register Automatically</button>
-                         <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
-                         <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>
-                         <button class="btn accent" style="margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>`;
-            } else if (app.status === 'Rejected') {
-                actionButtons = `<button class="btn accent" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
-                         <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')">📋 Duplicate / Multi-State</button>`;
+                actionButtons += `
+                    <button class="btn accent" style="background: #22c55e; border-color: #22c55e; margin-left: 5px;" onclick="updateAppStatus('${app.appId}', 'Accepted')">Accept</button>
+                    <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-left: 5px;" onclick="updateAppStatus('${app.appId}', 'Rejected')">Reject</button>`;
             }
         } else {
             actionButtons = `
-                <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
+                <button class="btn accent" style="background: #16a34a; border-color: #16a34a; font-weight: 700;" onclick="registerApplication('${app.appId}')" title="Start Official Single-State GST Registration Automation">⚡ GST Registration</button>
+                <button class="btn accent" style="background: #0ea5e9; border-color: #0ea5e9; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')">🌐 Multi-State Registration</button>
                 <button class="btn accent" style="background: #8b5cf6; border-color: #8b5cf6; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate this application for Multi-State Registration">📋 Duplicate / Multi-State</button>
                 <button class="btn accent" style="background: #3b82f6; border-color: #3b82f6; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit Application</button>
                 <button class="btn" style="background: #ef4444; border-color: #ef4444; color: white; margin-left: 5px;" onclick="deleteApplication('${app.appId}')">🗑️ Delete Application</button>
@@ -1760,6 +1757,7 @@ window.renderAdminDashboard = async function () {
                         <td style="padding: 10px;"><span style="padding: 2px 6px; border-radius: 4px; font-size: 12px; background: ${app.status === 'Pending' ? '#fef08a' : app.status === 'Accepted' ? '#bbf7d0' : app.status === 'Registered' ? '#6ee7b7' : '#fecaca'};">${app.status}</span></td>
                         <td style="padding: 10px;">
                             <button class="btn" style="padding: 4px 10px; font-size: 13px;" onclick="previewApplication('${app.appId}')">Preview</button>
+                            <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #16a34a; border: none; font-weight: 600; margin-left: 5px;" onclick="registerApplication('${app.appId}')" title="Start Official Single-State GST Registration Automation">⚡ Register</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #0ea5e9; border: none; margin-left: 5px;" onclick="openMultiStateModal('${app.appId}')" title="Multi-State Registration Automation">🌐 Multi-State</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #8b5cf6; border: none; margin-left: 5px;" onclick="duplicateApplication('${app.appId}')" title="Duplicate application for Multi-State Registration">📋 Duplicate</button>
                             <button class="btn" style="padding: 4px 10px; font-size: 13px; color: white; background: #3b82f6; border: none; margin-left: 5px;" onclick="editApplication('${app.appId}')">✏️ Edit</button>

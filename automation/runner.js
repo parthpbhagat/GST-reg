@@ -1424,7 +1424,54 @@ async function run() {
         sendUpdate('Advancing through wizard steps to Verification tab...');
         let isOnVerification = false;
 
-        for (let tabStep = 0; tabStep < 12; tabStep++) {
+        // Helper to attempt jumping directly to the Verification tab
+        const jumpToVerificationTab = async () => {
+            try {
+                const vLoc = page.locator('button, a, li, span, div').filter({ hasText: /^(?:10\s*)?Verification$/i }).first();
+                if (await vLoc.count() > 0 && await vLoc.isVisible()) {
+                    await vLoc.click({ force: true }).catch(() => {});
+                    await page.waitForTimeout(800);
+                }
+            } catch (e) {}
+
+            await page.evaluate(() => {
+                const all = Array.from(document.querySelectorAll('button, a, li, span, div, p'));
+                const vEl = all.reverse().find(el => {
+                    const t = (el.innerText || el.textContent || '').trim();
+                    return /^(?:10\s*)?verification$/i.test(t) && !el.closest('.modal, .sweet-alert, footer, .alert');
+                });
+                if (vEl) {
+                    vEl.click();
+                    if (window.angular) {
+                        try {
+                            const sc = window.angular.element(vEl).scope();
+                            if (sc) {
+                                if (typeof sc.goToTab === 'function') sc.goToTab(9);
+                                if (typeof sc.goToStep === 'function') sc.goToStep(10);
+                                if (typeof sc.selectTab === 'function') sc.selectTab(9);
+                                if (!sc.$$phase) sc.$apply();
+                            }
+                        } catch (e) {}
+                    }
+                }
+            });
+
+            // Auto-confirm any modal dialogs (e.g. Aadhaar confirmation, Locality mismatch, Proceed, OK)
+            await page.evaluate(() => {
+                const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .sweet-alert'));
+                for (const d of dialogs) {
+                    const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn, a'));
+                    const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|close/i.test(b.innerText || b.value || b.textContent || ''));
+                    if (okBtn) okBtn.click();
+                }
+            });
+        };
+
+        // Try direct jump immediately (the draft JSON is already fully uploaded via Step 3 API)
+        await jumpToVerificationTab();
+        await page.waitForTimeout(1000);
+
+        for (let tabStep = 0; tabStep < 14; tabStep++) {
             // Check if we have already reached Verification screen
             isOnVerification = await page.evaluate(() => {
                 const text = (document.body.innerText || '').toLowerCase();
@@ -1483,7 +1530,7 @@ async function run() {
                 const hasPromoterHeader = bodyText.includes('Details of Promoter') || bodyText.includes('Promoter / Partner');
                 const hasPromoterInputs = !!document.querySelector('input[placeholder*="First Name" i], #fnm');
                 const hasSavePromoterBtn = Array.from(document.querySelectorAll('button, input[type="button"]')).some(b => /save promoter/i.test(b.innerText || b.value || ''));
-                const isPromoter = (hasPromoterHeader && hasPromoterInputs) || hasSavePromoterBtn || !!document.querySelector('#fnm');
+                const isPromoter = (hasPromoterHeader && hasPromoterInputs) || hasSavePromoterBtn || !!document.querySelector('#fnm') || tabText.toLowerCase().includes('promoter');
                 const isPromoterTable = hasPromoterHeader && Array.from(document.querySelectorAll('table tr')).length > 1;
 
                 return {
@@ -1509,7 +1556,7 @@ async function run() {
                             if (parts.length === 3) {
                                 return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]), 12, 0, 0);
                             }
-                        } catch(e) {}
+                        } catch (e) {}
                         return new Date();
                     };
                     const commDateObj = parseDateObj(commVal);
@@ -1648,10 +1695,26 @@ async function run() {
                             });
                         }
                     }
-                } catch(e) {}
+                } catch (e) {}
             }
 
-            // If on Promoter tab and form is shown, fill it
+            // If on Promoter tab: check if saved promoter table is accessible via "Show list"
+            if (screenInfo.isPromoterTab) {
+                try {
+                    const showListLoc = page.locator('button, input[type="button"], a.btn, a').filter({ hasText: /show\s*list/i }).first();
+                    if (await showListLoc.count() > 0 && await showListLoc.isVisible()) {
+                        sendUpdate('Draft promoter exists. Clicking "Show list" to display saved promoter table...');
+                        await showListLoc.click({ force: true }).catch(() => {});
+                        await page.waitForTimeout(1000);
+                    }
+                } catch (e) {}
+                const hasSavedTable = await page.evaluate(() => Array.from(document.querySelectorAll('table tr')).length > 1);
+                if (hasSavedTable) {
+                    screenInfo.isPromoterAlreadySaved = true;
+                }
+            }
+
+            // If on Promoter tab and no saved list is displayed, populate and save
             if (screenInfo.isPromoterTab && !screenInfo.isPromoterAlreadySaved) {
                 sendUpdate('Populating Promoter / Partner (P1) details...');
                 const p = (data && data.p1) || {};
@@ -1672,7 +1735,7 @@ async function run() {
                 const pRoad = (p.res_road || data.ppob_street || '9 giriraj vibhag 2').trim();
                 const pBno = (p.res_buildingNo || data.ppob_flatNo || '29').trim();
 
-                // 1. Playwright native typing for Email & Mobile to guarantee browser event loop & validation
+                // 1. Playwright native typing for Email & Mobile
                 try {
                     const emLoc = page.locator('#em, #pd_email, #email, input[name="em"], input[placeholder*="Email" i], input[type="email"], input[ng-model*="em" i]').first();
                     if (await emLoc.count() > 0 && await emLoc.isVisible()) {
@@ -1682,7 +1745,7 @@ async function run() {
                     if (await mbLoc.count() > 0 && await mbLoc.isVisible()) {
                         await mbLoc.fill(pMobile).catch(() => {});
                     }
-                } catch(e) {}
+                } catch (e) {}
 
                 // 2. DOM evaluate to set all Promoter fields with complete AngularJS scope & ngModel binding
                 await page.evaluate(({ f, m, l, ff, fm, fl, dob, mob, em, dg, pan, pin, city, road, bno }) => {
@@ -1775,13 +1838,13 @@ async function run() {
                                 }
                                 if (!sc.$$phase) sc.$apply();
                             }
-                        } catch(e) {}
+                        } catch (e) {}
                     }
                 }, { f: pFirst, m: pMiddle, l: pLast, ff: pFatherFirst, fm: pFatherMiddle, fl: pFatherLast, dob: pDob, mob: pMobile, em: pEmail, dg: pDg, pan: pPan, pin: pPin, city: pCity, road: pRoad, bno: pBno });
 
                 await page.waitForTimeout(1000);
 
-                // Upload Photograph
+                // Upload Photograph if available
                 try {
                     const photoData = p.promoterPhotoFile || '';
                     if (photoData && photoData.startsWith('data:image')) {
@@ -1796,7 +1859,7 @@ async function run() {
                             sendUpdate('Promoter photograph uploaded.');
                         }
                     }
-                } catch(photoErr) {
+                } catch (photoErr) {
                     sendUpdate(`Photo note: ${photoErr.message}`);
                 }
 
@@ -1804,16 +1867,16 @@ async function run() {
 
                 // Click Save Promoter & Show list
                 await page.evaluate(() => {
-                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
-                    const savePromoter = btns.find(b => /save promoter/i.test(b.innerText || b.value || ''));
+                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn, a'));
+                    const savePromoter = btns.find(b => /save promoter/i.test(b.innerText || b.value || b.textContent || ''));
                     if (savePromoter && !savePromoter.disabled) {
                         savePromoter.click();
                     }
                 });
                 sendUpdate('Saved Promoter details.');
-                await page.waitForTimeout(3000);
+                await page.waitForTimeout(2500);
 
-                // Auto-confirm any confirmation modal immediately (e.g. Aadhaar Auth warning, Confirm, OK)
+                // Auto-confirm any confirmation modal immediately
                 try {
                     const modalProceedBtn = page.locator('.modal.in button, .modal.show button, div[role="dialog"] button, .sweet-alert button').filter({ hasText: /proceed|continue|yes|confirm|ok|close/i }).first();
                     if (await modalProceedBtn.count() > 0 && await modalProceedBtn.isVisible()) {
@@ -1823,8 +1886,8 @@ async function run() {
                 await page.evaluate(() => {
                     const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .sweet-alert'));
                     for (const d of dialogs) {
-                        const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn'));
-                        const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|close/i.test(b.innerText || b.value || ''));
+                        const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn, a'));
+                        const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|close/i.test(b.innerText || b.value || b.textContent || ''));
                         if (okBtn) okBtn.click();
                     }
                 });
@@ -1860,7 +1923,7 @@ async function run() {
                     if (await pMbLoc.count() > 0 && await pMbLoc.isVisible()) {
                         await pMbLoc.fill(ppobMob).catch(() => {});
                     }
-                } catch(e) {}
+                } catch (e) {}
 
                 await page.evaluate(({ possessionVal, em, mob }) => {
                     const setVal = (selectors, val) => {
@@ -1884,7 +1947,7 @@ async function run() {
                                             ngModel.$setValidity('required', true);
                                             ngModel.$commitViewValue();
                                         }
-                                    } catch(e) {}
+                                    } catch (e) {}
                                 }
                                 break;
                             }
@@ -1915,6 +1978,47 @@ async function run() {
                 await page.waitForTimeout(1000);
             }
 
+            // If on Goods and Services tab, ensure HSN code exists
+            if (currentTabTitle.toLowerCase().includes('goods and services') || currentTabTitle.toLowerCase().includes('goods & services') || screenInfo.hasHsnInput) {
+                sendUpdate('Confirming Goods & Services (HSN Code)...');
+                await page.evaluate(() => {
+                    const hsnRows = Array.from(document.querySelectorAll('table tbody tr'));
+                    if (hsnRows.length === 0) {
+                        const hsnInput = document.querySelector('#gs_hsn_value, input[placeholder*="HSN" i], input[name*="hsn" i]');
+                        if (hsnInput && (!hsnInput.value || hsnInput.value.trim().length === 0)) {
+                            hsnInput.value = '1003';
+                            hsnInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            hsnInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }
+                });
+                await page.waitForTimeout(600);
+                try {
+                    const sugLoc = page.locator('.typeahead-popup li, .dropdown-menu li, ul[role="listbox"] li, .uib-typeahead-match').first();
+                    if (await sugLoc.count() > 0 && await sugLoc.isVisible()) {
+                        await sugLoc.click({ force: true }).catch(() => {});
+                    }
+                } catch (e) {}
+            }
+
+            // If on Aadhaar Authentication tab, ensure "Yes" is selected
+            if (currentTabTitle.toLowerCase().includes('aadhaar')) {
+                sendUpdate('Confirming Aadhaar Authentication...');
+                await page.evaluate(() => {
+                    const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                    const yesR = radios.find(r => {
+                        const t = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || r.value || '').toLowerCase();
+                        return t.includes('yes') || r.value === 'Y' || r.value === 'Yes';
+                    });
+                    if (yesR && !yesR.checked) {
+                        yesR.click();
+                        yesR.checked = true;
+                        yesR.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+                await page.waitForTimeout(600);
+            }
+
             // Auto-confirm any confirmation or warning dialogs (e.g. Locality mismatch, Proceed, OK)
             try {
                 const modalProceedBtn = page.locator('.modal.in button, .modal.show button, div[role="dialog"] button, .sweet-alert button').filter({ hasText: /proceed|continue|yes|confirm|ok|close/i }).first();
@@ -1925,34 +2029,21 @@ async function run() {
             await page.evaluate(() => {
                 const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .sweet-alert'));
                 for (const d of dialogs) {
-                    const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn'));
-                    const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|close/i.test(b.innerText || b.value || ''));
+                    const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn, a'));
+                    const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|close/i.test(b.innerText || b.value || b.textContent || ''));
                     if (okBtn) okBtn.click();
                 }
             });
 
-            // Try clicking the Verification tab header if available and not disabled (using only valid registration wizard step tabs)
-            await page.evaluate(() => {
-                const REG_STEPS = [
-                    'business details', 'promoter', 'authorized signatory', 'authorized representative',
-                    'principal place', 'additional places', 'goods and services', 'state specific',
-                    'aadhaar', 'verification'
-                ];
-                const wizardTabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) li a, .wizard-step a, .step-wizard a, .wizard a, .steps a')).filter(a => {
-                    const txt = (a.innerText || '').toLowerCase();
-                    return REG_STEPS.some(s => txt.includes(s)) && !a.closest('.navbar-nav, header, .navbar-header');
-                });
-                const vTab = wizardTabs.find(a => (a.innerText || '').toLowerCase().includes('verification'));
-                if (vTab && (!vTab.parentElement || !vTab.parentElement.classList.contains('disabled'))) {
-                    vTab.click();
-                }
-            });
-
+            // Try direct jump to Verification tab header if unlocked
+            await jumpToVerificationTab();
             await page.waitForTimeout(600);
 
             // Click Save & Continue or Next button using Playwright locator and native click
             try {
-                const saveBtnLoc = page.locator('button, input[type="button"], a.btn').filter({ hasText: /^save\s*&\s*continue$|^continue$|^save\s*&\s*next$|^next$/i }).last();
+                const saveBtnLoc = page.locator('button, input[type="button"], input[type="submit"], a.btn, a').filter({
+                    hasText: /save\s*&\s*continue|continue|save\s*&\s*next|\bnext\b/i
+                }).last();
                 if (await saveBtnLoc.count() > 0 && await saveBtnLoc.isVisible()) {
                     await saveBtnLoc.scrollIntoViewIfNeeded().catch(() => {});
                     await saveBtnLoc.click({ force: true }).catch(() => {});
@@ -1960,14 +2051,17 @@ async function run() {
                 } else {
                     const clickedBtn = await page.evaluate(() => {
                         window.scrollTo(0, document.body.scrollHeight);
-                        const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
+                        const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a.btn, a'));
                         const btn = btns.reverse().find(b => {
-                            const t = (b.innerText || b.value || b.getAttribute('title') || '').trim().toLowerCase();
-                            return (t.includes('save') && t.includes('continue')) || t === 'next' || t === 'continue' || t === 'save & next';
+                            const t = (b.innerText || b.value || b.textContent || '').trim().toLowerCase();
+                            return (t.includes('save') && t.includes('continue')) ||
+                                   (t.includes('save') && t.includes('next')) ||
+                                   /\bnext\b/i.test(t) ||
+                                   /\bcontinue\b/i.test(t);
                         });
                         if (btn && !btn.disabled && btn.offsetParent !== null) {
                             btn.click();
-                            return (btn.innerText || btn.value || '').trim();
+                            return (btn.innerText || btn.value || btn.textContent || '').trim();
                         }
                         return null;
                     });
@@ -1982,19 +2076,7 @@ async function run() {
 
         // Verify that the portal is genuinely on the Verification screen before attempting submission
         if (!isOnVerification) {
-            await page.evaluate(() => {
-                const REG_STEPS = [
-                    'business details', 'promoter', 'authorized signatory', 'authorized representative',
-                    'principal place', 'additional places', 'goods and services', 'state specific',
-                    'aadhaar', 'verification'
-                ];
-                const tabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) li a, .wizard-step a, .step-wizard a, .wizard a, .steps a')).filter(a => {
-                    const txt = (a.innerText || '').toLowerCase();
-                    return REG_STEPS.some(s => txt.includes(s)) && !a.closest('.navbar-nav, header, .navbar-header');
-                });
-                const vTab = tabs.find(a => (a.innerText || '').toLowerCase().includes('verification'));
-                if (vTab) vTab.click();
-            });
+            await jumpToVerificationTab();
             await page.waitForTimeout(2000);
             isOnVerification = await page.evaluate(() => {
                 const text = (document.body.innerText || '').toLowerCase();
@@ -2005,13 +2087,20 @@ async function run() {
         }
 
         if (!isOnVerification) {
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                await page.screenshot({ path: path.join(__dirname, 'debug_verification_stall.png'), fullPage: true }).catch(() => {});
+            } catch (e) {}
             const screenErrors = await page.evaluate(() => {
                 const errs = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"], .err, .error'));
                 return errs.map(e => (e.innerText || '').trim()).filter(t => t.length > 2);
             });
             const currentTab = await page.evaluate(() => {
-                const active = document.querySelector('ul.nav-tabs li.active, .step-wizard .active');
-                return active ? active.innerText.trim() : 'Active Form Tab';
+                const active = document.querySelector('ul.nav-tabs li.active, .step-wizard .active, .step.active, .wizard-step.active, li.active');
+                if (active) return active.innerText.trim();
+                const panel = document.querySelector('.panel-title, .card-title, h2, h3, h4');
+                return panel ? panel.innerText.trim() : 'Active Form Tab';
             });
             const msg = `GST Portal is still on "${currentTab}". Validation blocked: ${screenErrors.join(' | ') || 'Required fields missing or incomplete'}`;
             sendUpdate(`⚠️ ${msg}`);

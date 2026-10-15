@@ -5147,8 +5147,13 @@ window.calculateProgress = function () {
     check(f.dateOfCommencement);
     check(f.dateOfLiability);
     check(f.reasonToObtainRegistration);
-    check(f.proofOfConstitutionType);
-    check(f.proofOfConstitutionFile);
+
+    // Proof of Constitution is only required for non-Proprietorship entities (Partnership, Company, LLP, etc.)
+    const isProprietorship = (f.businessConstitution || '').toLowerCase().includes('proprietor') || (f.businessConstitution || '').toUpperCase() === 'PRO';
+    if (!isProprietorship) {
+        check(f.proofOfConstitutionType);
+        check(f.proofOfConstitutionFile);
+    }
 
     // 2. Promoter / Partners (Step 1)
     const promoterKeys = Object.keys(f).filter(k => k.match(/^p\d+$/));
@@ -5156,25 +5161,25 @@ window.calculateProgress = function () {
     for (const pKey of pKeysToCheck) {
         const p = f[pKey] || {};
         check(p.firstName);
-        check(p.middleName || p.lastName);
+        check(p.middleName || p.lastName || p.firstName);
         check(p.fatherFirstName);
         check(p.dob);
         check(p.gender);
-        check(p.mobile);
-        check(p.email);
+        check(p.mobile || f.mobile);
+        check(p.email || f.email);
         check(p.designation);
-        check(p.pan);
-        check(p.res_pincode);
-        check(p.res_state);
-        check(p.res_district);
-        check(p.res_city);
-        check(p.res_road);
-        check(p.res_buildingNo);
-        check(p.promoterPhotoFile);
+        check(p.pan || f.pan);
+        check(p.res_pincode || f.ppob_pincode);
+        check(p.res_state || f.ppob_state || f.state);
+        check(p.res_district || f.ppob_district || f.district);
+        check(p.res_city || f.ppob_city);
+        check(p.res_road || f.ppob_street || f.ppob_road);
+        check(p.res_buildingNo || f.ppob_building || f.ppob_flatNo);
+        check(p.promoterPhotoFile || f.promoterPhotoFile);
     }
 
     // 3. Authorized Signatory (Step 2)
-    const hasPromoterAuthSig = promoterKeys.some(k => f[k] && f[k].alsoAuthorizedSignatory);
+    const hasPromoterAuthSig = promoterKeys.some(k => f[k] && f[k].alsoAuthorizedSignatory) || f.authSigSameAsPromoter;
     if (hasPromoterAuthSig) {
         total += 2;
         filled += 2;
@@ -5184,10 +5189,10 @@ window.calculateProgress = function () {
         for (const aKey of aKeysToCheck) {
             const a = f[aKey] || {};
             check(a.firstName);
-            check(a.mobile);
-            check(a.email);
+            check(a.mobile || f.mobile);
+            check(a.email || f.email);
             check(a.designation);
-            check(a.pan);
+            check(a.pan || f.pan);
             check(a.authSigProofFile);
             check(a.authSigPhotoFile);
         }
@@ -5197,11 +5202,11 @@ window.calculateProgress = function () {
     check(f.ppob_building || f.ppob_buildingName || f.ppob_flatNo || f.ppob_floor);
     check(f.ppob_street || f.ppob_road);
     check(f.ppob_city);
-    check(f.ppob_district);
-    check(f.ppob_state);
+    check(f.ppob_district || f.district);
+    check(f.ppob_state || f.state);
     check(f.ppob_pincode);
-    check(f.ppob_email);
-    check(f.ppob_mobile);
+    check(f.ppob_email || f.email);
+    check(f.ppob_mobile || f.mobile);
     check(f.ppob_natureOfPossession);
     check(f.ppob_docFile);
     
@@ -5212,13 +5217,17 @@ window.calculateProgress = function () {
 
     // 5. Goods and Services (Step 6)
     total++;
-    if ((Array.isArray(f.goods_hsn) && f.goods_hsn.length > 0) || (Array.isArray(f.goods_sac) && f.goods_sac.length > 0)) {
+    const hasHsn = (Array.isArray(f.goods_hsn) && f.goods_hsn.length > 0) ||
+                   (Array.isArray(f.goods_sac) && f.goods_sac.length > 0) ||
+                   (typeof f.goods_hsn === 'string' && f.goods_hsn.trim().length > 0) ||
+                   (typeof f.hsn === 'string' && f.hsn.trim().length > 0);
+    if (hasHsn) {
         filled++;
     }
 
     // 6. Verification (Step 9)
-    check(f.verification_signatory || (f.p1 && f.p1.firstName));
-    check(f.verification_place || f.ppob_city || f.district);
+    check(f.verification_signatory || (f.p1 && f.p1.firstName) || f.legalName);
+    check(f.verification_place || f.ppob_city || f.district || f.state);
 
     let percentage = 0;
     if (total > 0) {

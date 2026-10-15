@@ -99,6 +99,8 @@ function formatDDMMYYYY(dateStr) {
     return dateStr;
 }
 
+const fs = require('fs');
+
 function computeFileHash(fileData) {
     if (!fileData) return '';
     try {
@@ -106,6 +108,8 @@ function computeFileHash(fileData) {
         if (typeof fileData === 'string' && fileData.startsWith('data:')) {
             const base64 = fileData.replace(/^data:.*?;base64,/, '');
             buffer = Buffer.from(base64, 'base64');
+        } else if (typeof fileData === 'string' && fs.existsSync(fileData)) {
+            buffer = fs.readFileSync(fileData);
         } else if (typeof fileData === 'string') {
             buffer = Buffer.from(fileData, 'utf-8');
         } else if (Buffer.isBuffer(fileData)) {

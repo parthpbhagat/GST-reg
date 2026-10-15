@@ -65,6 +65,7 @@ app.get('/api/gst-endpoints', (req, res) => {
         hsn_l1: process.env.GST_API_HSN_L1 || 'https://reg.gst.gov.in/master/hsn/l1/{chapter}',
 
         // 3. Authenticated Session & Application Draft
+        appdraftnewreg: process.env.GST_API_APP_DRAFT || 'https://reg.gst.gov.in/registration/auth/api/appdraftnewreg',
         save_appdraftnewreg: process.env.GST_API_SAVE_APP_DRAFT || 'https://reg.gst.gov.in/registration/auth/api/save/appdraftnewreg',
         eb_dtls: process.env.GST_API_EB_DTLS || 'https://reg.gst.gov.in/registration/auth/api/eb-dtls?stCd={state_cd}',
         applicationdata: process.env.GST_API_APPLICATION_DATA || 'https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId={draftId}',

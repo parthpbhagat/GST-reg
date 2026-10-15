@@ -3621,30 +3621,29 @@ function renderContent() {
                     ${field('DATE ON WHICH LIABILITY TO REGISTER ARISES <span style="color: #ef4444">*</span>', `<input type="date" value="${form.dateOfLiability}" max="${new Date().toISOString().split('T')[0]}" onchange="updateForm('dateOfLiability', this.value)" />`)}
                 </div>
                 ${!['Public Sector Undertaking', 'Statutory Body', 'Government Department', 'Local Authority'].includes(form.businessConstitution) ? `
-                <div style="margin-top: 14px;">
-                    <div class="field" id="field-container-rule14A" style="background: #f8fafc; padding: 12px 16px; border-radius: 6px; border: 1.5px solid #e2e8f0; border-left: 4px solid #22c55e;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin: 0;">
-                                <input type="checkbox" id="rule14A_Checkbox" ${form.rule14A === 'Yes' ? 'checked' : ''} onchange="updateForm('rule14A', this.checked ? 'Yes' : 'No'); if(typeof renderContent === 'function') renderContent();" style="width: 18px; height: 18px; accent-color: #22c55e; cursor: pointer;" />
-                                <span style="font-size: 13px; font-weight: 700; color: #1e293b; text-transform: uppercase;">Option for registration under Rule 14A <span style="color: #ef4444">*</span></span>
-                            </label>
-                            <div style="display: flex; gap: 16px; align-items: center;">
-                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #334155; cursor: pointer; margin: 0;">
-                                    <input type="radio" id="rule14A_Yes" name="rule14A" value="Yes" ${form.rule14A === 'Yes' ? 'checked' : ''} onchange="updateForm('rule14A', this.value); if(typeof renderContent === 'function') renderContent();" style="accent-color: #22c55e;" /> YES
-                                </label>
-                                <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #334155; cursor: pointer; margin: 0;">
-                                    <input type="radio" id="rule14A_No" name="rule14A" value="No" ${(form.rule14A === 'No' || !form.rule14A) ? 'checked' : ''} onchange="updateForm('rule14A', this.value); if(typeof renderContent === 'function') renderContent();" style="accent-color: #22c55e;" /> NO
-                                </label>
-                            </div>
-                        </div>
-                        ${form.rule14A === 'Yes' ? `
-                        <div style="margin-top: 10px; padding: 10px 12px; background: #fefce8; border: 1px solid #fef08a; border-radius: 4px;">
-                            <label style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: #854d0e; cursor: pointer; margin: 0;">
-                                <input type="checkbox" id="rule14ADeclaration" ${form.rule14ADeclaration !== false ? 'checked' : ''} onchange="updateForm('rule14ADeclaration', this.checked)" style="margin-top: 2px; width: 16px; height: 16px; accent-color: #ca8a04;" />
-                                <span><strong>Declaration under Rule 14A:</strong> I hereby declare that I have opted for registration under Rule 14A of CGST Rules, 2017 and solemnly declare that all particulars are true and correct.</span>
-                            </label>
-                        </div>
-                        ` : ''}
+                <div style="margin-top: 16px; background: #fafafa; border: 1px solid #e5e7eb; border-radius: 4px; padding: 14px 18px;">
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #1f2937; margin-bottom: 8px;">Option for registration under Rule 14A <span style="color: #ef4444;">*</span></label>
+                    <div style="display: flex; gap: 24px; align-items: center; margin-bottom: 12px;">
+                        <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: #374151; cursor: pointer; margin: 0;">
+                            <input type="radio" id="rule14A_Yes" name="rule14A" value="Yes" ${form.rule14A === 'Yes' ? 'checked' : ''} onchange="updateForm('rule14A', this.value); if(typeof renderContent === 'function') renderContent();" style="accent-color: #16a34a; width: 16px; height: 16px;" /> Yes
+                        </label>
+                        <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: #374151; cursor: pointer; margin: 0;">
+                            <input type="radio" id="rule14A_No" name="rule14A" value="No" ${(form.rule14A === 'No' || !form.rule14A) ? 'checked' : ''} onchange="updateForm('rule14A', this.value); if(typeof renderContent === 'function') renderContent();" style="accent-color: #16a34a; width: 16px; height: 16px;" /> No
+                        </label>
+                    </div>
+
+                    ${form.rule14A === 'Yes' ? `
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: #1f2937; line-height: 1.5; cursor: pointer; margin: 0;">
+                            <input type="checkbox" id="rule14ADeclaration" ${form.rule14ADeclaration !== false ? 'checked' : ''} onchange="updateForm('rule14ADeclaration', this.checked)" style="width: 18px; height: 18px; accent-color: #16a34a; margin-top: 2px; flex-shrink: 0;" />
+                            <span>I hereby declare that aforesaid business shall abide by the conditions and restrictions specified in the Act or the rules for opting to register under Rule 14A.</span>
+                        </label>
+                    </div>
+                    ` : ''}
+
+                    <div style="display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: #1f2937; line-height: 1.5; margin-top: 8px;">
+                        <span style="font-size: 14px; color: #1f2937; flex-shrink: 0;">ℹ</span>
+                        <span>You may avail option under Rule 14A if the ITC to be passed on is less than or equal to 2.5 lakhs per month, otherwise please click on 'No'. Further, to avail said option, Aadhaar Authentication is mandatory. Please note that by filing this application under Rule 14A, you are also declaring that the aforesaid business shall abide by the conditions and restrictions specified in the Act or the rules for opting to register under rule 14A.</span>
                     </div>
                 </div>
                 ` : ''}
@@ -4507,12 +4506,160 @@ function renderContent() {
         </div>
         </section>`;
     } else if (step === 9) {
-        html = `<section class="card"><h2>Review</h2>
-        <button class="btn accent" onclick="showPreview();">Complete Application</button>
-        </section>`;
+        // Collect primary authorized signatories for dropdown
+        const sigList = [];
+        for (let i = 1; i <= 10; i++) {
+            const p = form['p' + i];
+            if (p && (p.firstName || p.lastName)) {
+                const fullName = [p.firstName, p.middleName, p.lastName].filter(Boolean).join(' ').trim();
+                const panStr = (p.pan || form.pan || '').toUpperCase().trim();
+                sigList.push({
+                    name: fullName || form.legalName || 'Authorized Person',
+                    pan: panStr,
+                    designation: p.designation || 'Proprietor',
+                    val: `${fullName || form.legalName}[${panStr}]`
+                });
+            }
+        }
+        if (sigList.length === 0) {
+            const fullName = form.legalName || 'Authorized Signatory';
+            const panStr = (form.pan || '').toUpperCase().trim();
+            sigList.push({
+                name: fullName,
+                pan: panStr,
+                designation: 'Proprietor',
+                val: `${fullName}[${panStr}]`
+            });
+        }
+
+        if (!form.verification_signatory && sigList.length > 0) {
+            form.verification_signatory = sigList[0].val;
+        }
+
+        const selectedSig = sigList.find(s => s.val === form.verification_signatory) || sigList[0];
+        const selectedDesignation = selectedSig ? selectedSig.designation : 'Proprietor';
+
+        const todayFormatted = (() => {
+            const now = new Date();
+            const d = String(now.getDate()).padStart(2, '0');
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const y = now.getFullYear();
+            return `${d}/${m}/${y}`;
+        })();
+
+        const dueDateFormatted = (() => {
+            if (form.dateOfLiability) {
+                const d = new Date(form.dateOfLiability);
+                if (!isNaN(d.getTime())) {
+                    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                }
+            }
+            return todayFormatted;
+        })();
+
+        const isDeclChecked = form.verification_declaration !== false;
+        const placeVal = form.verification_place || form.ppob_city || form.district || '';
+        const canSubmit = isDeclChecked && placeVal.trim().length > 0;
+
+        html = `
+        <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden;">
+            <!-- Top Yellow Summary Bar matching Screenshot 2 -->
+            <div style="background: #fef08a; padding: 14px 24px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; border-bottom: 1px solid #fde047;">
+                <div>
+                    <div style="font-size: 13px; color: #475569; font-weight: 500;">Application Type</div>
+                    <div style="font-size: 16px; font-weight: 700; color: #0f172a; margin-top: 4px;">New Registration</div>
+                </div>
+                <div>
+                    <div style="font-size: 13px; color: #475569; font-weight: 500;">Due Date to Complete</div>
+                    <div style="font-size: 16px; font-weight: 700; color: #0f172a; margin-top: 4px;">${dueDateFormatted}</div>
+                </div>
+                <div>
+                    <div style="font-size: 13px; color: #475569; font-weight: 500;">Last Modified</div>
+                    <div style="font-size: 16px; font-weight: 700; color: #0f172a; margin-top: 4px;">${todayFormatted}</div>
+                </div>
+                <div>
+                    <div style="font-size: 13px; color: #475569; font-weight: 500;">Profile</div>
+                    <div style="font-size: 16px; font-weight: 700; color: #0f172a; margin-top: 4px;">100%</div>
+                </div>
+            </div>
+
+            <div style="padding: 24px 28px;">
+                <!-- Section Header -->
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 20px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="#1e3a8a"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+                        <h2 style="font-size: 18px; color: #1e3a8a; margin: 0; font-weight: 700;">Verification</h2>
+                    </div>
+                    <div style="font-size: 13px; color: #dc2626; font-weight: 600;">* indicates mandatory fields</div>
+                </div>
+
+                <!-- Solemn Affirmation Checkbox -->
+                <div style="margin-bottom: 24px;">
+                    <label style="display: flex; align-items: flex-start; gap: 12px; font-size: 14px; color: #1e293b; line-height: 1.5; cursor: pointer; margin: 0;">
+                        <input type="checkbox" id="chkVerification" ${isDeclChecked ? 'checked' : ''} onchange="updateForm('verification_declaration', this.checked); renderContent();" style="width: 20px; height: 20px; accent-color: #16a34a; margin-top: 2px; flex-shrink: 0;" />
+                        <span>I hereby solemnly affirm and declare that the information given herein above is true and correct to the best of my knowledge and belief and nothing has been concealed therefrom.</span>
+                    </label>
+                </div>
+
+                <!-- 2-Column Grid matching Screenshot 2 -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+                    <!-- Left Column -->
+                    <div style="display: flex; flex-direction: column; gap: 18px;">
+                        <div class="field">
+                            <label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">Name of Authorized Signatory <span style="color: #ef4444;">*</span></label>
+                            <select id="verification_signatory" onchange="updateForm('verification_signatory', this.value); renderContent();" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 14px; background: white;">
+                                ${sigList.map(s => `<option value="${s.val}" ${form.verification_signatory === s.val ? 'selected' : ''}>${s.val}</option>`).join('')}
+                            </select>
+                        </div>
+
+                        <div class="field">
+                            <label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">Designation / Status <span style="color: #ef4444;">*</span></label>
+                            <div style="padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 14px; color: #0f172a; font-weight: 500;">
+                                ${selectedDesignation}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column -->
+                    <div style="display: flex; flex-direction: column; gap: 18px;">
+                        <div class="field">
+                            <label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">Place <span style="color: #ef4444;">*</span></label>
+                            <input type="text" id="verification_place" value="${placeVal}" placeholder="Enter place (e.g. Ahmedabad, Warud)..." onchange="updateForm('verification_place', this.value); renderContent();" style="width: 100%; padding: 8px 12px; border: 1.5px solid #3b82f6; border-radius: 4px; font-size: 14px; box-sizing: border-box;" />
+                        </div>
+
+                        <div class="field">
+                            <label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">Date <span style="color: #ef4444;">*</span></label>
+                            <div style="padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 14px; color: #0f172a; font-weight: 500;">
+                                ${todayFormatted}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DSC Info Link -->
+                <div style="margin-bottom: 20px;">
+                    <a href="javascript:void(0)" style="font-size: 13px; color: #0284c7; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-weight: 500;">
+                        <span>ℹ</span> Facing problem using DSC? Click here for help
+                    </a>
+                </div>
+
+                <!-- Warning Notice Box matching Screenshot 2 -->
+                <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 12px 18px; margin-bottom: 24px; color: #92400e; font-size: 13px; line-height: 1.5;">
+                    Submit buttons will get enabled only after all mandatory fields are filled. Please check that you have filled all mandatory fields in the Form.
+                </div>
+
+                <!-- Action Buttons matching Screenshot 2 -->
+                <div style="display: flex; justify-content: flex-end; align-items: center; gap: 12px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
+                    <button type="button" class="btn ghost" onclick="setStep(8)" style="font-size: 13px; padding: 8px 20px; font-weight: 600; text-transform: uppercase;">BACK</button>
+                    <button type="button" class="btn ghost" onclick="showPreview()" style="font-size: 13px; padding: 8px 16px; border: 1px solid #94a3b8; color: #475569; font-weight: 600;">PREVIEW APPLICATION</button>
+                    <button type="button" style="background: #cbd5e1; color: #64748b; border: none; padding: 8px 20px; border-radius: 4px; font-size: 13px; font-weight: 700; cursor: not-allowed; text-transform: uppercase;" title="DSC signing available via USB token">SUBMIT WITH DSC</button>
+                    <button type="button" class="btn accent" style="background: #2563eb; border-color: #2563eb; color: white; padding: 8px 24px; font-size: 13px; font-weight: 700; text-transform: uppercase; ${canSubmit ? '' : 'opacity: 0.6; cursor: not-allowed;'}" onclick="submitApplication()">SUBMIT WITH EVC</button>
+                </div>
+            </div>
+        </div>`;
     }
 
-    const hasInternalActionButtons = (step === 1 && !isPromoterListView) || (step === 2 && !isAuthSigListView);
+    const hasInternalActionButtons = (step === 1 && !isPromoterListView) || (step === 2 && !isAuthSigListView) || (step === 9);
     if (!hasInternalActionButtons) {
         html += `
         <div class="nav" style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">

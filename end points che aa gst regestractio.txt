@@ -49,7 +49,8 @@ https://reg.gst.gov.in/master/hsn/l1/100                                        
 
 
 
-https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92818437        "application data API"
-https://reg.gst.gov.in/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=75028658    "final form JSON verification endpoint"
-https://reg.gst.gov.in/registration/auth/api/verify/otp                                                               "EVC OTP send and validate API"
+https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92818437        "application data GET API"
+https://reg.gst.gov.in/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=75028658    "final form JSON verification GET API"
+https://reg.gst.gov.in/registration/auth/api/evc/otp                                                               "EVC OTP send POST API"
+https://reg.gst.gov.in/registration/auth/api/verify/otp                                                               "EVC OTP verify/validate POST API"
 

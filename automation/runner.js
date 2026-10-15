@@ -579,9 +579,10 @@ async function run() {
                 try {
                     const scope = window.angular.element(btn).scope();
                     if (scope) {
-                        const item = scope.x || (scope.savedAppList && scope.savedAppList[0]);
+                        const list = scope.savedAppList || (scope.$parent && scope.$parent.savedAppList);
+                        const item = scope.x || (list && list[0]);
                         if (item) {
-                            const id = item.draftId || item.applnId || item.aplCd || item.id || item.appId || item.refNo;
+                            const id = item.draft_id || item.draftId || item.applnId || item.aplCd || item.id || item.appId || item.refNo;
                             if (id) return String(id);
                         }
                     }
@@ -697,6 +698,9 @@ async function run() {
                     headers
                 }).catch(e => ({ error: e.message }));
                 report.appDataStatus = resApp.status || (resApp.error ? 'err: ' + resApp.error : 'ok');
+                if (resApp.ok || resApp.status === 200) {
+                    try { report.appData = await resApp.json(); } catch (e) {}
+                }
 
                 // 2. GET /registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId={draftId}
                 // Generates the official final form JSON with ApoB on the GST portal
@@ -705,6 +709,9 @@ async function run() {
                     headers
                 }).catch(e => ({ error: e.message }));
                 report.finalFormStatus = resFinal.status || (resFinal.error ? 'err: ' + resFinal.error : 'ok');
+                if (resFinal.ok || resFinal.status === 200) {
+                    try { report.finalFormData = await resFinal.json(); } catch (e) {}
+                }
 
                 return { success: (resApp.ok || resFinal.ok || resApp.status === 200 || resFinal.status === 200), report };
             } catch (e) {
@@ -714,6 +721,29 @@ async function run() {
 
         if (syncResult && syncResult.report) {
             sendUpdate(`GST Portal API sync report: ApplicationData(GET)=${syncResult.report.appDataStatus}, GenerateFinalForm(GET)=${syncResult.report.finalFormStatus}`);
+            
+            // If live application data was received from the portal, save and log it
+            if (syncResult.report.appData) {
+                try {
+                    const legalName = (data && data.legalName) || appId;
+                    const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                    const liveDataPath = path.join(__dirname, '..', 'backend', 'data', safeLegalName, 'gst_portal_applicationdata_get.json');
+                    fs.writeFileSync(liveDataPath, JSON.stringify(syncResult.report.appData, null, 2), 'utf-8');
+                    const bz = syncResult.report.appData.bzdtls && syncResult.report.appData.bzdtls.bzdtlsbz;
+                    const liveLgnm = (bz && bz.lgnmbzpan) || '';
+                    const livePan = (bz && bz.pan && bz.pan.num) || '';
+                    sendUpdate(`✅ GST Portal Live Data Verified: Legal Name: "${liveLgnm}", PAN: "${livePan}", Draft ID: ${syncResult.report.appData.aplCd || capturedDraftId}`);
+                } catch (e) {}
+            }
+
+            if (syncResult.report.finalFormData) {
+                try {
+                    const legalName = (data && data.legalName) || appId;
+                    const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                    const finalDataPath = path.join(__dirname, '..', 'backend', 'data', safeLegalName, 'gst_portal_finalform_get.json');
+                    fs.writeFileSync(finalDataPath, JSON.stringify(syncResult.report.finalFormData, null, 2), 'utf-8');
+                } catch (e) {}
+            }
         }
         sendUpdate('✅ Official GST Portal data and final JSON synchronized successfully.');
 

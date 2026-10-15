@@ -10,3 +10,4 @@ frontend/dist/
 *.sqlite
 .env
 .DS_Store
+automation/temp_*

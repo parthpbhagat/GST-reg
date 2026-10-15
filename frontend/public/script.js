@@ -2298,16 +2298,26 @@ window.registerApplication = async function (id) {
             // return; // Disabled for testing purposes
         }
 
+        if (!data.dateOfLiability && data.dateOfCommencement) {
+            data.dateOfLiability = data.dateOfCommencement;
+        }
+        if (!data.verification_place) {
+            data.verification_place = data.ppob_city || data.ppob_locality || data.district || '';
+        }
+
         const importantFields = [
-            { key: 'legalName', label: 'Legal Name of Business' },
-            { key: 'pan', label: 'PAN' },
+            { key: 'legalName', label: 'Legal Name of Business (as on PAN)' },
+            { key: 'tradeName', label: 'Trade Name' },
+            { key: 'pan', label: 'PAN (10 characters)' },
             { key: 'email', label: 'Primary Email' },
             { key: 'mobile', label: 'Primary Mobile' },
             { key: 'state', label: 'State' },
             { key: 'district', label: 'District' },
             { key: 'businessConstitution', label: 'Constitution of Business' },
+            { key: 'reasonToObtainRegistration', label: 'Reason to Obtain Registration' },
+            { key: 'dateOfCommencement', label: 'Date of Commencement of Business (DD/MM/YYYY)' },
             { key: 'ppob_pincode', label: 'Principal Place Pincode' },
-            { key: 'reasonToObtainRegistration', label: 'Reason to Obtain Registration' }
+            { key: 'ppob_locality', label: 'Principal Place City / Locality' }
         ];
 
         let missingFields = [];
@@ -2316,6 +2326,10 @@ window.registerApplication = async function (id) {
                 missingFields.push(f);
             }
         });
+
+        if ((!data.ppob_flatNo || data.ppob_flatNo.toString().trim() === '') && (!data.ppob_building || data.ppob_building.toString().trim() === '')) {
+            missingFields.push({ key: 'ppob_flatNo', label: 'Principal Place Flat / Door / Building No.' });
+        }
 
         if (missingFields.length > 0) {
             window.currentAppForMissingFields = app;

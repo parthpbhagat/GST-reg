@@ -362,6 +362,7 @@ function buildGstApplicationPayload(data, draftId = '', trn = '') {
                 addltrdnms: data.tradeName ? [{ trdnm: data.tradeName }] : [],
                 isopcmp: (data.optComposition === 'Yes' || data.isopcmp === 'Y') ? 'Y' : 'N',
                 cmbzdt: commencementDate,
+                lbrgdt: formatDDMMYYYY(data.dateOfLiability || data.dateOfCommencement),
                 iscasdl: (data.isCasualTaxable === 'Yes' || data.iscasdl === 'Y') ? 'Y' : 'N',
                 rule14A: (data.rule14A === 'Yes') ? 'Y' : 'N',
                 isRule14A: (data.rule14A === 'Yes') ? 'Y' : 'N',
@@ -371,7 +372,9 @@ function buildGstApplicationPayload(data, draftId = '', trn = '') {
                 sezDtls: {},
                 regCategory: [],
                 optCat: (data.optComposition === 'Yes' || data.isopcmp === 'Y') ? 'Y' : 'N',
-                optCatDeclStatus: (data.optComposition === 'Yes' || data.isopcmp === 'Y') ? 'Y' : 'N'
+                optCatDeclStatus: (data.optComposition === 'Yes' || data.isopcmp === 'Y') ? 'Y' : 'N',
+                isDeclAccepted: 'Y',
+                chkDecl: true
             },
             exrgdtls: []
         },

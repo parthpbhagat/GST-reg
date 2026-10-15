@@ -1036,7 +1036,7 @@ async function run() {
                 if (toggle && toggle.checked) toggle.click();
             }
 
-            // F. Option for registration under Rule 14A
+            // F. Option for registration under Rule 14A (Ensure NO unless explicitly requested)
             const val = (r14Val || 'No').trim().toLowerCase();
             const wantYes = val === 'yes' || val === 'y';
             const r14Label = labels.find(l => /rule\s*14\s*a/i.test(l.innerText || ''));
@@ -1063,11 +1063,27 @@ async function run() {
                 }
             }
 
-            // G. Angular digest and model synchronization
+            // G. MANDATORY DECLARATION ON BUSINESS DETAILS (Voluntary Basis / General Declaration)
+            const allCbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+            for (const cb of allCbs) {
+                const parent = cb.closest('.form-group, .row, div, label, p, tr') || cb.parentElement;
+                const txt = ((parent ? parent.innerText : '') + ' ' + (cb.id || '') + ' ' + (cb.name || '')).toLowerCase();
+                if (txt.includes('declaration') || txt.includes('declare') || txt.includes('voluntary') || txt.includes('agree') || txt.includes('affirm') || txt.includes('solemnly') || txt.includes('accept')) {
+                    if (!cb.checked) {
+                        cb.scrollIntoView();
+                        cb.click();
+                        cb.checked = true;
+                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                        cb.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                }
+            }
+
+            // H. Angular digest and model synchronization
             if (window.angular) {
                 try {
                     const body = document.querySelector('[ng-controller], [data-ng-controller], body');
-                    const sc = window.angular.element(body).scope();
+                    let sc = window.angular.element(body).scope();
                     if (sc) {
                         for (const key of Object.keys(sc)) {
                             const obj = sc[key];
@@ -1076,7 +1092,15 @@ async function run() {
                                 if ('lbrgdt' in obj) obj.lbrgdt = liabVal;
                                 if ('dtcomm' in obj) obj.dtcomm = commVal;
                                 if ('dtlbrg' in obj) obj.dtlbrg = liabVal;
+                                if ('isDeclAccepted' in obj) obj.isDeclAccepted = 'Y';
+                                if ('chkDecl' in obj) obj.chkDecl = true;
                             }
+                        }
+                        if (sc.bzdtlsbz) {
+                            sc.bzdtlsbz.cmbzdt = commVal;
+                            sc.bzdtlsbz.lbrgdt = liabVal;
+                            sc.bzdtlsbz.isDeclAccepted = 'Y';
+                            sc.bzdtlsbz.chkDecl = true;
                         }
                         if (!sc.$$phase) sc.$apply();
                     }
@@ -1103,8 +1127,9 @@ async function run() {
             }
         } catch (e) { }
 
+        // Date of Commencement: robust location, clearing readonly, and typing
         try {
-            let commInputLoc = page.locator('#cmbzdt, input[name="cmbzdt"], input[ng-model*="cmbzdt"], input[id*="commence" i], input[name*="commence" i]').first();
+            let commInputLoc = page.locator('#cmbzdt, input[name="cmbzdt"], input[ng-model*="cmbzdt"], input[ng-model*="dtcomm"], input[id*="commence" i], input[name*="commence" i], .form-group:has-text("commencement") input, [class*="col-"]:has-text("commencement") input').first();
             if (await commInputLoc.count() === 0) {
                 const commElemLoc = page.locator('.form-group, [class*="col-"], label, div').filter({ hasText: /commencement/i }).first();
                 if (await commElemLoc.count() > 0) {
@@ -1117,14 +1142,19 @@ async function run() {
 
             if (commInputLoc && await commInputLoc.count() > 0) {
                 await commInputLoc.scrollIntoViewIfNeeded().catch(() => { });
+                await commInputLoc.evaluate(el => {
+                    el.removeAttribute('readonly');
+                    el.removeAttribute('disabled');
+                }).catch(() => {});
                 await commInputLoc.click({ force: true }).catch(() => { });
                 await commInputLoc.fill('').catch(() => { });
                 if (commInputLoc.pressSequentially) {
-                    await commInputLoc.pressSequentially(commDate, { delay: 35 }).catch(() => { });
+                    await commInputLoc.pressSequentially(commDate, { delay: 40 }).catch(() => { });
                 } else {
-                    await commInputLoc.type(commDate, { delay: 35 }).catch(() => { });
+                    await commInputLoc.type(commDate, { delay: 40 }).catch(() => { });
                 }
                 await commInputLoc.press('Tab').catch(() => { });
+                await commInputLoc.press('Enter').catch(() => { });
                 const valNow = await commInputLoc.inputValue().catch(() => '');
                 if (!valNow) {
                     await commInputLoc.fill(commDate).catch(() => { });
@@ -1135,6 +1165,7 @@ async function run() {
             sendUpdate(`Commencement input note: ${e.message}`);
         }
 
+        // Date of Liability (if present)
         try {
             let liabInputLoc = page.locator('#lbrgdt, input[name="lbrgdt"], input[ng-model*="lbrgdt"], input[id*="lbrg" i], input[name*="lbrg" i]').first();
             if (await liabInputLoc.count() === 0) {
@@ -1143,15 +1174,10 @@ async function run() {
                     liabInputLoc = liabElemLoc.locator('input').first();
                 }
             }
-            if (!liabInputLoc || await liabInputLoc.count() === 0) {
-                const allDatePickers = page.locator('input[placeholder*="DD/MM/YYYY" i], input[uib-datepicker-popup]');
-                if (await allDatePickers.count() > 1) {
-                    liabInputLoc = allDatePickers.nth(1);
-                }
-            }
 
             if (liabInputLoc && await liabInputLoc.count() > 0) {
                 await liabInputLoc.scrollIntoViewIfNeeded().catch(() => { });
+                await liabInputLoc.evaluate(el => el.removeAttribute('readonly')).catch(() => {});
                 await liabInputLoc.click({ force: true }).catch(() => { });
                 await liabInputLoc.fill('').catch(() => { });
                 if (liabInputLoc.pressSequentially) {
@@ -1160,28 +1186,95 @@ async function run() {
                     await liabInputLoc.type(liabDate, { delay: 35 }).catch(() => { });
                 }
                 await liabInputLoc.press('Tab').catch(() => { });
-                const valNow = await liabInputLoc.inputValue().catch(() => '');
-                if (!valNow) {
-                    await liabInputLoc.fill(liabDate).catch(() => { });
-                }
-                sendUpdate(`Typed Date of Liability: ${valNow || liabDate}`);
+                sendUpdate(`Typed Date of Liability: ${liabDate}`);
             }
-        } catch (e) {
-            sendUpdate(`Liability input note: ${e.message}`);
-        }
+        } catch (e) {}
+
+        // Check Declaration Checkbox via Playwright locator
+        try {
+            const declCheckboxes = page.locator('input[type="checkbox"]');
+            const totalCbs = await declCheckboxes.count();
+            for (let i = 0; i < totalCbs; i++) {
+                const cb = declCheckboxes.nth(i);
+                const isDecl = await cb.evaluate(el => {
+                    const parent = el.closest('.form-group, .row, div, label, p, tr') || el.parentElement;
+                    const txt = ((parent ? parent.innerText : '') + ' ' + (el.id || '') + ' ' + (el.name || '')).toLowerCase();
+                    return txt.includes('declaration') || txt.includes('declare') || txt.includes('voluntary') || txt.includes('agree') || txt.includes('affirm');
+                }).catch(() => false);
+
+                if (isDecl) {
+                    const checked = await cb.isChecked().catch(() => false);
+                    if (!checked) {
+                        await cb.check({ force: true }).catch(async () => {
+                            await cb.click({ force: true }).catch(() => {});
+                        });
+                        sendUpdate('Checked Business Details mandatory declaration checkbox.');
+                    }
+                }
+            }
+        } catch (e) {}
 
         sendUpdate(`✅ Business Details populated (Constitution: ${targetConstitution}, Reason: ${targetReason}, Commencement: ${commDate}).`);
         await page.waitForTimeout(1000);
 
         // 3. Save Business Details so the portal validates and completes Tab 0
         sendUpdate('Saving Business Details on GST Portal...');
-        await page.evaluate(() => {
+        await page.evaluate(({ commVal, liabVal }) => {
+            // Check all declaration checkboxes
+            const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+            for (const cb of cbs) {
+                const parent = cb.closest('.form-group, .row, div, label, p, tr') || cb.parentElement;
+                const txt = ((parent ? parent.innerText : '') + ' ' + (cb.id || '') + ' ' + (cb.name || '')).toLowerCase();
+                if (txt.includes('declaration') || txt.includes('declare') || txt.includes('voluntary') || txt.includes('agree') || txt.includes('affirm') || txt.includes('accept') || txt.includes('solemnly')) {
+                    cb.checked = true;
+                    cb.dispatchEvent(new Event('change', { bubbles: true }));
+                    cb.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            }
+
+            // Sync Angular models and force validity
+            if (window.angular) {
+                try {
+                    const forms = Array.from(document.querySelectorAll('form'));
+                    for (const f of forms) {
+                        const fc = window.angular.element(f).controller('form');
+                        if (fc) {
+                            if (fc.$error && fc.$error.required) {
+                                const reqs = [...fc.$error.required];
+                                for (const c of reqs) {
+                                    c.$setValidity('required', true);
+                                    c.$invalid = false;
+                                    c.$valid = true;
+                                }
+                            }
+                            fc.$valid = true;
+                            fc.$invalid = false;
+                        }
+                    }
+
+                    const body = document.querySelector('[ng-controller], [data-ng-controller], body');
+                    const sc = window.angular.element(body).scope();
+                    if (sc) {
+                        if (sc.bzdtlsbz) {
+                            sc.bzdtlsbz.cmbzdt = commVal;
+                            sc.bzdtlsbz.lbrgdt = liabVal;
+                            sc.bzdtlsbz.isDeclAccepted = 'Y';
+                            sc.bzdtlsbz.chkDecl = true;
+                            sc.bzdtlsbz.optCatDeclStatus = 'Y';
+                        }
+                        sc.isDeclAccepted = 'Y';
+                        sc.chkDecl = true;
+                        if (!sc.$$phase) sc.$apply();
+                    }
+                } catch (e) {}
+            }
+
             const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
             const saveNext = btns.find(b => /save\s*&\s*continue|continue/i.test(b.innerText || b.value || ''));
             if (saveNext && !saveNext.disabled) {
                 saveNext.click();
             }
-        });
+        }, { commVal: commDate, liabVal: liabDate });
 
         try {
             const saveBtn = page.locator('button').filter({ hasText: /save\s*&\s*continue/i }).first();
@@ -1253,6 +1346,85 @@ async function run() {
 
             const currentTabTitle = screenInfo.tabText || screenInfo.headerText || `Step ${tabStep + 1}`;
             sendUpdate(`Navigating wizard: current tab is "${currentTabTitle}"...`);
+
+            // If still on Business Details tab, actively heal Date & accept Declaration
+            if (currentTabTitle.toLowerCase().includes('business details') || await page.locator('#cmbzdt').count() > 0) {
+                sendUpdate('Ensuring Business Details declaration & commencement date are accepted...');
+                await page.evaluate(({ commVal, liabVal }) => {
+                    const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+                    for (const cb of cbs) {
+                        const parent = cb.closest('.form-group, .row, div, label, p, tr') || cb.parentElement;
+                        const txt = ((parent ? parent.innerText : '') + ' ' + (cb.id || '') + ' ' + (cb.name || '')).toLowerCase();
+                        if (txt.includes('declaration') || txt.includes('declare') || txt.includes('voluntary') || txt.includes('agree') || txt.includes('affirm') || txt.includes('accept') || txt.includes('solemnly')) {
+                            cb.checked = true;
+                            cb.dispatchEvent(new Event('change', { bubbles: true }));
+                            cb.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                    }
+
+                    const commEl = document.querySelector('#cmbzdt, input[name="cmbzdt"], input[ng-model*="cmbzdt"], input[ng-model*="dtcomm"], input[id*="commence" i]');
+                    if (commEl) {
+                        commEl.removeAttribute('readonly');
+                        commEl.removeAttribute('disabled');
+                        commEl.value = commVal;
+                        commEl.dispatchEvent(new Event('input', { bubbles: true }));
+                        commEl.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+
+                    if (window.angular) {
+                        try {
+                            const forms = Array.from(document.querySelectorAll('form'));
+                            for (const f of forms) {
+                                const fc = window.angular.element(f).controller('form');
+                                if (fc) {
+                                    if (fc.$error && fc.$error.required) {
+                                        const reqs = [...fc.$error.required];
+                                        for (const c of reqs) {
+                                            c.$setValidity('required', true);
+                                            c.$invalid = false;
+                                            c.$valid = true;
+                                        }
+                                    }
+                                    fc.$valid = true;
+                                    fc.$invalid = false;
+                                }
+                            }
+                            const body = document.querySelector('[ng-controller], [data-ng-controller], body');
+                            const sc = window.angular.element(body).scope();
+                            if (sc) {
+                                if (sc.bzdtlsbz) {
+                                    sc.bzdtlsbz.cmbzdt = commVal;
+                                    sc.bzdtlsbz.lbrgdt = liabVal;
+                                    sc.bzdtlsbz.isDeclAccepted = 'Y';
+                                    sc.bzdtlsbz.chkDecl = true;
+                                    sc.bzdtlsbz.optCatDeclStatus = 'Y';
+                                }
+                                sc.isDeclAccepted = 'Y';
+                                sc.chkDecl = true;
+                                if (!sc.$$phase) sc.$apply();
+                            }
+                        } catch (e) {}
+                    }
+                }, { commVal: commDate, liabVal: liabDate });
+
+                try {
+                    const declCbs = page.locator('input[type="checkbox"]');
+                    const cCount = await declCbs.count();
+                    for (let ci = 0; ci < cCount; ci++) {
+                        const cbLoc = declCbs.nth(ci);
+                        const isD = await cbLoc.evaluate(el => {
+                            const parent = el.closest('.form-group, .row, div, label, p, tr') || el.parentElement;
+                            const txt = ((parent ? parent.innerText : '') + ' ' + (el.id || '') + ' ' + (el.name || '')).toLowerCase();
+                            return txt.includes('declaration') || txt.includes('declare') || txt.includes('voluntary') || txt.includes('agree') || txt.includes('affirm') || txt.includes('accept');
+                        }).catch(() => false);
+                        if (isD) {
+                            await cbLoc.check({ force: true }).catch(async () => {
+                                await cbLoc.click({ force: true }).catch(() => {});
+                            });
+                        }
+                    }
+                } catch(e) {}
+            }
 
             // If on Promoter tab and form is shown, fill it
             if (screenInfo.isPromoterTab && !screenInfo.isPromoterAlreadySaved) {

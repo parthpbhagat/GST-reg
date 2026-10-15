@@ -1459,9 +1459,26 @@ async function run() {
 
             // Inspect active tab / current screen
             const screenInfo = await page.evaluate(() => {
+                const REG_STEPS = [
+                    'business details', 'promoter', 'authorized signatory', 'authorized representative',
+                    'principal place', 'additional places', 'goods and services', 'state specific',
+                    'aadhaar', 'verification'
+                ];
                 const wizardUl = document.querySelector('.nav-tabs:not(.navbar-nav), ul.step-wizard, .tabs, .wizard-steps');
                 const activeLi = wizardUl ? wizardUl.querySelector('li.active, .active') : document.querySelector('ul.nav-tabs:not(.navbar-nav) li.active, .step-wizard .active');
-                const header = document.querySelector('h1, h2, h3, .panel-title');
+                let tabText = activeLi ? activeLi.innerText.trim() : '';
+
+                if (!tabText || !REG_STEPS.some(s => tabText.toLowerCase().includes(s))) {
+                    const activeLink = Array.from(document.querySelectorAll('a.active, li.active a, .step.active, .wizard-step.active, .steps li.active a')).find(el => {
+                        const t = (el.innerText || '').toLowerCase();
+                        return REG_STEPS.some(s => t.includes(s)) && !el.closest('.navbar-nav, header, .navbar-header');
+                    });
+                    if (activeLink) tabText = activeLink.innerText.trim();
+                }
+
+                const formHeading = document.querySelector('.panel-title, .card-title, .form-title, [ng-view] h2, [ng-view] h3, [ng-view] h4');
+                const headerText = (formHeading && !formHeading.closest('.navbar, header, .navbar-header')) ? formHeading.innerText.trim() : '';
+
                 const bodyText = (document.body.innerText || '');
                 const hasPromoterHeader = bodyText.includes('Details of Promoter') || bodyText.includes('Promoter / Partner');
                 const hasPromoterInputs = !!document.querySelector('input[placeholder*="First Name" i], #fnm');
@@ -1470,8 +1487,8 @@ async function run() {
                 const isPromoterTable = hasPromoterHeader && Array.from(document.querySelectorAll('table tr')).length > 1;
 
                 return {
-                    tabText: activeLi ? activeLi.innerText.trim() : '',
-                    headerText: header ? header.innerText.trim() : '',
+                    tabText: tabText,
+                    headerText: headerText,
                     isPromoterTab: isPromoter,
                     isPromoterAlreadySaved: isPromoterTable,
                     hasPpobInputs: !!document.querySelector('#pncd, input[name*="pincode" i], input[placeholder*="pincode" i]'),
@@ -1647,7 +1664,7 @@ async function run() {
                 const pFatherLast = (p.fatherLastName || 'Bhagat').trim();
                 const pDob = formatDDMMYYYY(p.dob || '29/01/1997');
                 const pMobile = (p.mobile || data.mobile || '9011494385').trim();
-                const pEmail = (p.email || data.email || 'parthpbhagat@gmail.com').trim();
+                const pEmail = (p.email || data.email || 'parthpbhagat@gmail.com').trim().toLowerCase();
                 const pDg = (p.designation || 'Proprietor').trim();
                 const pPan = (p.pan || data.pan || 'AAQFH0648P').trim();
                 const pPin = (p.res_pincode || data.ppob_pincode || '444906').trim();
@@ -1655,26 +1672,64 @@ async function run() {
                 const pRoad = (p.res_road || data.ppob_street || '9 giriraj vibhag 2').trim();
                 const pBno = (p.res_buildingNo || data.ppob_flatNo || '29').trim();
 
+                // 1. Playwright native typing for Email & Mobile to guarantee browser event loop & validation
+                try {
+                    const emLoc = page.locator('#em, #pd_email, #email, input[name="em"], input[placeholder*="Email" i], input[type="email"], input[ng-model*="em" i]').first();
+                    if (await emLoc.count() > 0 && await emLoc.isVisible()) {
+                        await emLoc.fill(pEmail).catch(() => {});
+                    }
+                    const mbLoc = page.locator('#mbno, #pd_mbno, input[name="mbno"], input[placeholder*="Mobile" i], input[ng-model*="mbno" i]').first();
+                    if (await mbLoc.count() > 0 && await mbLoc.isVisible()) {
+                        await mbLoc.fill(pMobile).catch(() => {});
+                    }
+                } catch(e) {}
+
+                // 2. DOM evaluate to set all Promoter fields with complete AngularJS scope & ngModel binding
                 await page.evaluate(({ f, m, l, ff, fm, fl, dob, mob, em, dg, pan, pin, city, road, bno }) => {
-                    const setVal = (sel, val) => {
-                        const el = document.querySelector(sel);
-                        if (el && val) {
+                    const setVal = (selectors, val) => {
+                        if (!val) return;
+                        const selArr = Array.isArray(selectors) ? selectors : selectors.split(',').map(s => s.trim());
+                        let el = null;
+                        for (const s of selArr) {
+                            el = document.querySelector(s);
+                            if (el) break;
+                        }
+                        if (el) {
+                            el.removeAttribute('disabled');
+                            el.removeAttribute('readonly');
                             el.value = val;
                             el.dispatchEvent(new Event('input', { bubbles: true }));
                             el.dispatchEvent(new Event('change', { bubbles: true }));
+                            el.dispatchEvent(new Event('blur', { bubbles: true }));
+                            if (window.angular) {
+                                try {
+                                    const ngEl = window.angular.element(el);
+                                    const ngModel = ngEl.controller('ngModel');
+                                    if (ngModel) {
+                                        ngModel.$setViewValue(val);
+                                        ngModel.$modelValue = val;
+                                        ngModel.$setValidity('required', true);
+                                        ngModel.$setValidity('email', true);
+                                        ngModel.$setValidity('pattern', true);
+                                        ngModel.$render();
+                                        ngModel.$commitViewValue();
+                                    }
+                                } catch (e) {}
+                            }
                         }
                     };
-                    setVal('#fnm', f);
-                    setVal('#pd_mname', m);
-                    setVal('#pd_lname', l);
-                    setVal('#ffname', ff);
-                    setVal('#pd_fmname', fm);
-                    setVal('#pd_flname', fl);
-                    setVal('#dob', dob);
-                    setVal('#mbno', mob);
-                    setVal('#pd_email', em);
-                    setVal('#dg', dg);
-                    setVal('#pan', pan);
+
+                    setVal(['#fnm', 'input[placeholder*="First Name" i]'], f);
+                    setVal(['#pd_mname', '#mname', 'input[placeholder*="Middle Name" i]'], m);
+                    setVal(['#pd_lname', '#lname', 'input[placeholder*="Last Name" i]'], l);
+                    setVal(['#ffname'], ff);
+                    setVal(['#pd_fmname'], fm);
+                    setVal(['#pd_flname'], fl);
+                    setVal(['#dob', 'input[placeholder*="dd/mm/yyyy" i]', 'input[placeholder*="mm/dd/yyyy" i]'], dob);
+                    setVal(['#mbno', '#pd_mbno', 'input[name="mbno"]', 'input[placeholder*="Mobile" i]', 'input[ng-model*="mbno" i]'], mob);
+                    setVal(['#em', '#pd_email', '#email', 'input[name="em"]', 'input[name="email"]', 'input[placeholder*="Email" i]', 'input[type="email"]', 'input[ng-model*="em" i]', 'input[ng-model*="email" i]'], em);
+                    setVal(['#dg', 'input[placeholder*="Designation" i]'], dg);
+                    setVal(['#pan', 'input[placeholder*="PAN" i]'], pan);
 
                     // Gender: Male
                     const maleR = document.querySelector('#radiomale, input[type="radio"][value="M"], input[type="radio"][value="Male"]');
@@ -1685,11 +1740,11 @@ async function run() {
                     }
 
                     // Address
-                    setVal('#pncd', pin);
-                    setVal('#pd_locality', city);
-                    setVal('#pd_road', road);
-                    setVal('#pd_bdname', bno);
-                    setVal('#pd_bno', bno);
+                    setVal(['#pncd', 'input[placeholder*="PIN" i]'], pin);
+                    setVal(['#pd_locality', 'input[placeholder*="Locality" i]', 'input[placeholder*="Village" i]'], city);
+                    setVal(['#pd_road', 'input[placeholder*="Road" i]', 'input[placeholder*="Street" i]'], road);
+                    setVal(['#pd_bdname', 'input[placeholder*="Premises" i]', 'input[placeholder*="Building" i]'], bno);
+                    setVal(['#pd_bno', 'input[placeholder*="Building No" i]', 'input[placeholder*="Flat" i]'], bno);
 
                     // Also Authorized Signatory switch
                     const labels = Array.from(document.querySelectorAll('label, div, p, span'));
@@ -1712,7 +1767,14 @@ async function run() {
                     if (window.angular) {
                         try {
                             const sc = window.angular.element(document.querySelector('#fnm') || document.body).scope();
-                            if (sc && !sc.$$phase) sc.$apply();
+                            if (sc) {
+                                if (sc.pd) {
+                                    sc.pd.em = em;
+                                    sc.pd.email = em;
+                                    sc.pd.mbno = mob;
+                                }
+                                if (!sc.$$phase) sc.$apply();
+                            }
                         } catch(e) {}
                     }
                 }, { f: pFirst, m: pMiddle, l: pLast, ff: pFatherFirst, fm: pFatherMiddle, fl: pFatherLast, dob: pDob, mob: pMobile, em: pEmail, dg: pDg, pan: pPan, pin: pPin, city: pCity, road: pRoad, bno: pBno });
@@ -1768,10 +1830,70 @@ async function run() {
                 });
             }
 
-            // If on Principal Place of Business, ensure possession and business activity are chosen
-            if (screenInfo.tabText.toLowerCase().includes('principal place') || screenInfo.headerText.toLowerCase().includes('principal place')) {
+            // If on Authorized Signatory tab, ensure primary signatory checkbox is checked
+            if (currentTabTitle.toLowerCase().includes('authorized signatory')) {
+                sendUpdate('Confirming Authorized Signatory details...');
+                await page.evaluate(({ em, mob }) => {
+                    const chk = document.querySelector('input[type="checkbox"][id*="asg" i], input[type="checkbox"][id*="primary" i], input[type="checkbox"][ng-model*="isasg" i], input[type="checkbox"][ng-model*="ispas" i]');
+                    if (chk && !chk.checked) {
+                        chk.click();
+                        chk.checked = true;
+                        chk.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }, { em: (data.email || 'parthpbhagat@gmail.com').trim().toLowerCase(), mob: (data.mobile || '9011494385').trim() });
+                await page.waitForTimeout(1000);
+            }
+
+            // If on Principal Place of Business, ensure possession, business activity, and contact details are filled
+            if (screenInfo.tabText.toLowerCase().includes('principal place') || screenInfo.headerText.toLowerCase().includes('principal place') || currentTabTitle.toLowerCase().includes('principal place')) {
                 sendUpdate('Confirming Principal Place of Business details...');
-                await page.evaluate((possessionVal) => {
+                
+                // Native Playwright fill for PPOB Email & Mobile
+                const ppobEm = (data.email || 'parthpbhagat@gmail.com').trim().toLowerCase();
+                const ppobMob = (data.mobile || '9011494385').trim();
+                try {
+                    const pEmLoc = page.locator('#em, #pp_email, input[name="em"], input[ng-model*="contdtls.em" i], input[placeholder*="Email" i]').first();
+                    if (await pEmLoc.count() > 0 && await pEmLoc.isVisible()) {
+                        await pEmLoc.fill(ppobEm).catch(() => {});
+                    }
+                    const pMbLoc = page.locator('#mbno, #pp_mbno, input[name="mbno"], input[ng-model*="contdtls.mbno" i], input[placeholder*="Mobile" i]').first();
+                    if (await pMbLoc.count() > 0 && await pMbLoc.isVisible()) {
+                        await pMbLoc.fill(ppobMob).catch(() => {});
+                    }
+                } catch(e) {}
+
+                await page.evaluate(({ possessionVal, em, mob }) => {
+                    const setVal = (selectors, val) => {
+                        if (!val) return;
+                        const selArr = Array.isArray(selectors) ? selectors : selectors.split(',').map(s => s.trim());
+                        for (const s of selArr) {
+                            const el = document.querySelector(s);
+                            if (el && (!el.value || el.value.trim().length === 0)) {
+                                el.removeAttribute('disabled');
+                                el.removeAttribute('readonly');
+                                el.value = val;
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                el.dispatchEvent(new Event('blur', { bubbles: true }));
+                                if (window.angular) {
+                                    try {
+                                        const ngModel = window.angular.element(el).controller('ngModel');
+                                        if (ngModel) {
+                                            ngModel.$setViewValue(val);
+                                            ngModel.$modelValue = val;
+                                            ngModel.$setValidity('required', true);
+                                            ngModel.$commitViewValue();
+                                        }
+                                    } catch(e) {}
+                                }
+                                break;
+                            }
+                        }
+                    };
+
+                    setVal(['#em', '#pp_email', 'input[name="em"]', 'input[ng-model*="contdtls.em" i]', 'input[placeholder*="Email" i]'], em);
+                    setVal(['#mbno', '#pp_mbno', 'input[name="mbno"]', 'input[ng-model*="contdtls.mbno" i]', 'input[placeholder*="Mobile" i]'], mob);
+
                     const selects = Array.from(document.querySelectorAll('select'));
                     const posSelect = selects.find(s => Array.from(s.options || []).some(o => /consent|own|rent|lease/i.test(o.text || '')));
                     if (posSelect && posSelect.selectedIndex <= 0) {
@@ -1789,7 +1911,7 @@ async function run() {
                         whCb.checked = true;
                         whCb.dispatchEvent(new Event('change', { bubbles: true }));
                     }
-                }, data.ppob_natureOfPossession || 'Consent');
+                }, { possessionVal: data.ppob_natureOfPossession || 'Consent', em: ppobEm, mob: ppobMob });
                 await page.waitForTimeout(1000);
             }
 
@@ -1809,30 +1931,32 @@ async function run() {
                 }
             });
 
-            // Try clicking the Verification tab header if available and not disabled
-            await page.evaluate((tStep) => {
-                const tabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) li a, .wizard-step a, .step-wizard a, li a'));
-                const vTab = tabs.find(a => (a.innerText || '').toLowerCase().includes('verification'));
+            // Try clicking the Verification tab header if available and not disabled (using only valid registration wizard step tabs)
+            await page.evaluate(() => {
+                const REG_STEPS = [
+                    'business details', 'promoter', 'authorized signatory', 'authorized representative',
+                    'principal place', 'additional places', 'goods and services', 'state specific',
+                    'aadhaar', 'verification'
+                ];
+                const wizardTabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) li a, .wizard-step a, .step-wizard a, .wizard a, .steps a')).filter(a => {
+                    const txt = (a.innerText || '').toLowerCase();
+                    return REG_STEPS.some(s => txt.includes(s)) && !a.closest('.navbar-nav, header, .navbar-header');
+                });
+                const vTab = wizardTabs.find(a => (a.innerText || '').toLowerCase().includes('verification'));
                 if (vTab && (!vTab.parentElement || !vTab.parentElement.classList.contains('disabled'))) {
                     vTab.click();
-                    return;
                 }
-                // Try clicking next unlocked tab
-                const nextTab = tabs[tStep + 1];
-                if (nextTab && (!nextTab.parentElement || !nextTab.parentElement.classList.contains('disabled'))) {
-                    nextTab.click();
-                }
-            }, tabStep);
+            });
 
             await page.waitForTimeout(600);
 
             // Click Save & Continue or Next button using Playwright locator and native click
             try {
-                const saveBtnLoc = page.locator('button, input[type="button"], a.btn').filter({ hasText: /save\s*&\s*continue|continue|save\s*&\s*next|next/i }).last();
-                if (await saveBtnLoc.count() > 0) {
+                const saveBtnLoc = page.locator('button, input[type="button"], a.btn').filter({ hasText: /^save\s*&\s*continue$|^continue$|^save\s*&\s*next$|^next$/i }).last();
+                if (await saveBtnLoc.count() > 0 && await saveBtnLoc.isVisible()) {
                     await saveBtnLoc.scrollIntoViewIfNeeded().catch(() => {});
                     await saveBtnLoc.click({ force: true }).catch(() => {});
-                    sendUpdate('Clicked "SAVE & CONTINUE" to advance wizard.');
+                    sendUpdate('Clicked "Save & Continue" / "Next" to advance wizard.');
                 } else {
                     const clickedBtn = await page.evaluate(() => {
                         window.scrollTo(0, document.body.scrollHeight);
@@ -1841,7 +1965,7 @@ async function run() {
                             const t = (b.innerText || b.value || b.getAttribute('title') || '').trim().toLowerCase();
                             return (t.includes('save') && t.includes('continue')) || t === 'next' || t === 'continue' || t === 'save & next';
                         });
-                        if (btn && !btn.disabled) {
+                        if (btn && !btn.disabled && btn.offsetParent !== null) {
                             btn.click();
                             return (btn.innerText || btn.value || '').trim();
                         }
@@ -1859,7 +1983,15 @@ async function run() {
         // Verify that the portal is genuinely on the Verification screen before attempting submission
         if (!isOnVerification) {
             await page.evaluate(() => {
-                const tabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) li a, .wizard-step a, .step-wizard a, li a'));
+                const REG_STEPS = [
+                    'business details', 'promoter', 'authorized signatory', 'authorized representative',
+                    'principal place', 'additional places', 'goods and services', 'state specific',
+                    'aadhaar', 'verification'
+                ];
+                const tabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) li a, .wizard-step a, .step-wizard a, .wizard a, .steps a')).filter(a => {
+                    const txt = (a.innerText || '').toLowerCase();
+                    return REG_STEPS.some(s => txt.includes(s)) && !a.closest('.navbar-nav, header, .navbar-header');
+                });
                 const vTab = tabs.find(a => (a.innerText || '').toLowerCase().includes('verification'));
                 if (vTab) vTab.click();
             });

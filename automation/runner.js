@@ -1804,21 +1804,48 @@ async function run() {
             // Step 2: Promoter / Partner tab
             if (screenInfo.isPromoterTab || currentTabTitle.toLowerCase().includes('promoter') || currentTabTitle.toLowerCase().includes('partner')) {
                 sendUpdate('[પગલું ૨: Promoter / Partner] વિગતો કન્ફર્મ કરી રહ્યા છીએ...');
-                // Check if "Show list" is available to reveal already-saved promoter table
-                try {
-                    const showListLoc = page.locator('button, input[type="button"], a.btn, a').filter({ hasText: /show\s*list/i }).first();
-                    if (await showListLoc.count() > 0 && await showListLoc.isVisible()) {
-                        await showListLoc.click({ force: true }).catch(() => {});
-                        await page.waitForTimeout(1000);
-                    }
-                } catch (e) {}
-                const hasSavedTable = await page.evaluate(() => Array.from(document.querySelectorAll('table tr')).length > 1);
+
+                // Check if table already has saved rows
+                const hasSavedTable = await page.evaluate(() => {
+                    const rows = Array.from(document.querySelectorAll('table tr'));
+                    return rows.length > 1;
+                });
+
                 if (hasSavedTable) {
                     screenInfo.isPromoterAlreadySaved = true;
-                }
+                    sendUpdate('Promoter already present in table. Advancing to Authorized Signatory via "CONTINUE"...');
+                    try {
+                        const contBtn = page.locator('button, input[type="button"], a.btn').filter({ hasText: /^continue$/i }).first();
+                        if (await contBtn.count() > 0 && await contBtn.isVisible()) {
+                            await contBtn.click({ force: true }).catch(() => {});
+                            await page.waitForTimeout(2000);
+                        }
+                    } catch (e) {}
+                } else {
+                    // Check if promoter form is open. If not, click "ADD NEW" to open it
+                    const isFormOpen = await page.evaluate(() => {
+                        const el = document.querySelector('#fnm, input[placeholder*="First Name" i]');
+                        return el && el.offsetParent !== null;
+                    });
 
-                // If on Promoter tab and no saved list is displayed, populate and save
-                if (!screenInfo.isPromoterAlreadySaved) {
+                    if (!isFormOpen) {
+                        sendUpdate('Promoter list empty. Clicking "ADD NEW" to open form...');
+                        try {
+                            const addNewBtn = page.locator('button, input[type="button"], a.btn, a').filter({ hasText: /add\s*new/i }).first();
+                            if (await addNewBtn.count() > 0 && await addNewBtn.isVisible()) {
+                                await addNewBtn.click({ force: true }).catch(() => {});
+                                await page.waitForTimeout(2000);
+                            } else {
+                                await page.evaluate(() => {
+                                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn, a'));
+                                    const b = btns.find(x => /add\s*new/i.test(x.innerText || x.value || ''));
+                                    if (b) b.click();
+                                });
+                                await page.waitForTimeout(2000);
+                            }
+                        } catch (e) {}
+                    }
+
                     sendUpdate('Populating Promoter / Partner (P1) details...');
                     const p = (data && data.p1) || {};
                     const nameParts = ((data && data.legalName) || 'Parth Purushottam Bhagat').split(' ');
@@ -2030,14 +2057,14 @@ async function run() {
 
                     // Also Playwright click on save promoter button
                     try {
-                        const pSaveBtn = page.locator('button[data-ng-click*="savePromoter"], button[ng-click*="savePromoter"], button:has-text("Save Promoter")').first();
+                        const pSaveBtn = page.locator('button[data-ng-click*="savePromoter"], button[ng-click*="savePromoter"], button:has-text("Save Promoter"), button:has-text("Save")').first();
                         if (await pSaveBtn.count() > 0 && await pSaveBtn.isVisible()) {
                             await pSaveBtn.click({ force: true }).catch(() => {});
                         }
                     } catch (e) {}
 
                     sendUpdate('Saved Promoter details.');
-                    await page.waitForTimeout(2000);
+                    await page.waitForTimeout(2500);
 
                     // Check if table is now revealed or click "Show list"
                     try {
@@ -2051,6 +2078,16 @@ async function run() {
                     if (hasTableNow) {
                         screenInfo.isPromoterAlreadySaved = true;
                     }
+
+                    // Click CONTINUE to move to Step 3 (Authorized Signatory)
+                    try {
+                        const contBtn = page.locator('button, input[type="button"], a.btn').filter({ hasText: /^continue$/i }).first();
+                        if (await contBtn.count() > 0 && await contBtn.isVisible()) {
+                            await contBtn.click({ force: true }).catch(() => {});
+                            sendUpdate('Clicked "CONTINUE" on Promoter tab to proceed to Authorized Signatory.');
+                            await page.waitForTimeout(2500);
+                        }
+                    } catch (e) {}
                 }
             }
 

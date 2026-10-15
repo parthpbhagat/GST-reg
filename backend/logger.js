@@ -106,7 +106,12 @@ const logger = {
             typeBadge = `${colors.green}${colors.bold}[${type}]${colors.reset}`;
         }
 
-        const line = `${colors.gray}[${time}]${colors.reset} ${appLabel} ${typeBadge} ${msg}`;
+        let safeMsg = typeof msg === 'string' ? msg : JSON.stringify(msg || '');
+        if (safeMsg.length > 300 || /^[A-Za-z0-9+/=]{80,}$/.test(safeMsg) || safeMsg.includes('data:image') || safeMsg.includes('/9j/')) {
+            safeMsg = safeMsg.slice(0, 120) + '... [binary content truncated]';
+        }
+
+        const line = `${colors.gray}[${time}]${colors.reset} ${appLabel} ${typeBadge} ${safeMsg}`;
         if (type.includes('ERROR')) {
             console.error(line);
         } else {

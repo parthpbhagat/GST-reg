@@ -670,8 +670,11 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
     const child = spawn('node', spawnArgs, { cwd: runnerDir });
     activeAutomations.set(appId, child);
 
+    let stdoutBuffer = '';
     child.stdout.on('data', (data) => {
-        const lines = data.toString().split('\n');
+        stdoutBuffer += data.toString();
+        const lines = stdoutBuffer.split('\n');
+        stdoutBuffer = lines.pop(); // keep partial chunk for next data event
         for (let line of lines) {
             line = line.trim();
             if (!line) continue;
@@ -708,6 +711,10 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
                 logger.runner(appId, 'WARNING', 'Waiting for address warning response');
                 io.to(appId).emit('automation_warning');
             } else {
+                // Safeguard: Never print raw base64 or long image/binary lines to terminal
+                if (line.length > 250 || /^[A-Za-z0-9+/=]{80,}$/.test(line) || line.includes('data:image') || line.includes('/9j/') || line.includes('iVBORw0KGgo')) {
+                    continue;
+                }
                 logger.runner(appId, 'LOG', line);
             }
         }

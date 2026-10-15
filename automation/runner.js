@@ -225,6 +225,7 @@ async function run() {
     });
     const page = await context.newPage();
     globalPage = page;
+    let keepaliveTimer = null;
 
     try {
         let trnText = (appData.trn || data.trn || '').trim();
@@ -565,6 +566,21 @@ async function run() {
                 throw new Error("Timeout waiting for TRN OTP verification to proceed.");
             }
         }
+
+        // Start background session keepalive to prevent GST portal session timeout
+        if (keepaliveTimer) clearInterval(keepaliveTimer);
+        keepaliveTimer = setInterval(async () => {
+            try {
+                if (page && !page.isClosed()) {
+                    await page.evaluate(() => {
+                        fetch('/registration/auth/api/keepalive', {
+                            method: 'GET',
+                            headers: { 'Accept': 'application/json, text/plain, */*' }
+                        }).catch(() => {});
+                    }).catch(() => {});
+                }
+            } catch (e) {}
+        }, 25000);
 
         sendUpdate('Navigating to Dashboard (My Saved Applications)...');
 
@@ -1873,6 +1889,10 @@ async function run() {
         console.error(`[Runner Error Stack]:\n${e.stack || e.message}`);
     } finally {
         isExiting = true;
+        if (keepaliveTimer) {
+            clearInterval(keepaliveTimer);
+            keepaliveTimer = null;
+        }
         try {
             if (browser && browser.isConnected() && page && !page.isClosed()) {
                 sendUpdate('Browser will remain open for 15 minutes for inspection.');

@@ -801,10 +801,34 @@ window.form = {
     stateSpecific_exciseLicenseNo: "", stateSpecific_exciseLicenseHolder: ""
 };
 
-// ---------------- FORM AUTO-SAVE ENGINE ----------------
+// ---------------- ROBUST FORM AUTO-SAVE ENGINE ----------------
+window.syncActiveDomToForm = function () {
+    try {
+        if (!window.form) return;
+        const activeInputs = document.querySelectorAll('#content input, #content select, #content textarea');
+        activeInputs.forEach(el => {
+            const k = el.id || el.name;
+            if (!k) return;
+            let v = undefined;
+            if (el.type === 'checkbox') {
+                v = el.checked;
+            } else if (el.type === 'radio') {
+                if (el.checked) v = el.value;
+            } else {
+                v = el.value;
+            }
+            if (v !== undefined && typeof window.updateForm === 'function') {
+                window.updateForm(k, v);
+            }
+        });
+    } catch (e) {}
+};
+
 window.saveAutosave = function () {
     try {
         if (!window.form) return;
+        window.syncActiveDomToForm();
+
         const stateToSave = {
             form: window.form,
             step: typeof step === 'number' ? step : 0,
@@ -812,14 +836,39 @@ window.saveAutosave = function () {
         };
         localStorage.setItem('gst_autosave', JSON.stringify(stateToSave));
 
-        const indicator = document.getElementById('autosave-indicator');
+        // Visual indicator
+        let indicator = document.getElementById('autosave-indicator');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'autosave-indicator';
+            indicator.style.cssText = 'position: fixed; bottom: 20px; right: 20px; background: rgba(15, 23, 42, 0.85); color: #22c55e; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999; backdrop-filter: blur(4px); transition: opacity 0.3s ease; pointer-events: none;';
+            document.body.appendChild(indicator);
+        }
         if (indicator) {
-            indicator.innerText = 'Auto-saved ✓';
+            indicator.innerHTML = '● Auto-saved ✓';
             indicator.style.opacity = '1';
             clearTimeout(window._autosaveTimer);
             window._autosaveTimer = setTimeout(() => {
-                if (indicator) indicator.style.opacity = '0.6';
+                if (indicator) indicator.style.opacity = '0.3';
             }, 2500);
+        }
+
+        // If an existing application is open, auto-sync draft to database (debounced)
+        if (window.form._appId && typeof fetch === 'function') {
+            clearTimeout(window._dbAutosaveDebounce);
+            window._dbAutosaveDebounce = setTimeout(async () => {
+                try {
+                    const token = localStorage.getItem('token') || (typeof currentToken !== 'undefined' ? currentToken : '');
+                    await fetch(`/api/applications/${window.form._appId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                        },
+                        body: JSON.stringify({ data: window.form })
+                    }).catch(() => {});
+                } catch (e) {}
+            }, 3000);
         }
     } catch (e) {
         console.warn('Autosave error:', e);
@@ -837,7 +886,7 @@ window.loadAutosave = function () {
             if (typeof parsed.step === 'number' && parsed.step >= 0 && parsed.step < STEPS.length) {
                 step = parsed.step;
             }
-            console.log('Autosaved form restored successfully.');
+            console.log('Autosaved form restored successfully from localStorage.');
             if (typeof renderSidebar === 'function') renderSidebar();
             if (typeof renderContent === 'function') renderContent();
             if (typeof window.calculateProgress === 'function') window.calculateProgress();
@@ -850,6 +899,8 @@ window.loadAutosave = function () {
 window.clearAutosave = function () {
     try {
         localStorage.removeItem('gst_autosave');
+        const indicator = document.getElementById('autosave-indicator');
+        if (indicator) indicator.remove();
     } catch (e) { }
 };
 
@@ -862,14 +913,20 @@ setInterval(window.saveAutosave, 2500);
 // Auto-save and progress calculation on any keystroke or change anywhere in the document
 if (!window._autosaveListenerAttached) {
     window._autosaveListenerAttached = true;
-    document.addEventListener('input', () => {
+    const handleFieldInput = (e) => {
+        const el = e.target;
+        if (el && window.form && typeof window.updateForm === 'function') {
+            const k = el.id || el.name;
+            if (k) {
+                const v = el.type === 'checkbox' ? el.checked : (el.type === 'radio' ? (el.checked ? el.value : undefined) : el.value);
+                if (v !== undefined) window.updateForm(k, v);
+            }
+        }
         if (window.saveAutosave) window.saveAutosave();
         if (typeof window.calculateProgress === 'function') window.calculateProgress();
-    }, true);
-    document.addEventListener('change', () => {
-        if (window.saveAutosave) window.saveAutosave();
-        if (typeof window.calculateProgress === 'function') window.calculateProgress();
-    }, true);
+    };
+    document.addEventListener('input', handleFieldInput, true);
+    document.addEventListener('change', handleFieldInput, true);
 }
 
 function renderSidebar() {

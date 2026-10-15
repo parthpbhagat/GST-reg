@@ -35,6 +35,7 @@ https://reg.gst.gov.in/registration/auth/api/doc-legibility/config            "d
 https://reg.gst.gov.in/registration/auth/mmiapi/gettoken?regen=Y              "map API token (MapMyIndia)"
 https://reg.gst.gov.in/registration/auth/api/applicationdata?applnId=92980126 "application data GET API (draftId dynamic)"
 https://reg.gst.gov.in/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=92980126  "final form JSON verification GET API"
+https://reg.gst.gov.in/registration/auth/api/keepalive                        "session keepalive GET API (prevent session timeout)"
 
 
 # 4. Document Upload & Status APIs

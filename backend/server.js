@@ -72,6 +72,7 @@ app.get('/api/gst-endpoints', (req, res) => {
         ca_number_enabled: process.env.GST_API_CA_NUMBER_ENABLED || 'https://reg.gst.gov.in/registration/auth/api/ca-number-enabled?stCd={state_cd}',
         doc_legibility_config: process.env.GST_API_DOC_LEGIBILITY_CONFIG || 'https://reg.gst.gov.in/registration/auth/api/doc-legibility/config',
         gettoken_mmi: process.env.GST_API_GET_TOKEN_MMI || 'https://reg.gst.gov.in/registration/auth/mmiapi/gettoken?regen=Y',
+        keepalive: process.env.GST_API_KEEPALIVE || 'https://reg.gst.gov.in/registration/auth/api/keepalive',
 
         // 4. Document Upload & Status
         document_b64: process.env.GST_API_DOCUMENT_B64 || 'https://reg.gst.gov.in/document/b64',

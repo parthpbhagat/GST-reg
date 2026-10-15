@@ -642,19 +642,68 @@ async function run() {
         }
 
         sendUpdate('Clicking Edit Application to acquire authenticated portal session...');
-        try {
-            const editBtnLoc = page.locator(editButtonSelector).first();
-            if (await editBtnLoc.count() > 0) {
-                await editBtnLoc.click({ force: true });
-            }
-        } catch (clickErr) {
-            await page.evaluate(() => {
-                const btn = document.querySelector('button[data-ng-click*="editSavedapp"], button[ng-click*="editSavedapp"], a[data-ng-click*="editSavedapp"], a[ng-click*="editSavedapp"], [title*="Edit" i]');
-                if (btn) btn.click();
+        let hasNavigatedToForm = false;
+
+        for (let attempt = 0; attempt < 5; attempt++) {
+            // Check if already in registration form
+            hasNavigatedToForm = await page.evaluate(() => {
+                const u = window.location.href;
+                const hasForm = !!document.querySelector('.nav-tabs, #cmbzdt, select[name*="cobz"], [ng-model*="bzdtls"]');
+                return !u.includes('dashboard') && hasForm;
             });
+            if (hasNavigatedToForm) break;
+
+            // 1. Invoke Angular scope function or click table action cell directly
+            await page.evaluate(() => {
+                if (window.angular) {
+                    try {
+                        const tr = document.querySelector('table tbody tr');
+                        if (tr) {
+                            const sc = window.angular.element(tr).scope();
+                            if (sc && typeof sc.editSavedapp === 'function') {
+                                const item = sc.x || sc.app || (sc.savedAppList && sc.savedAppList[0]);
+                                sc.editSavedapp(item);
+                                if (!sc.$$phase) sc.$apply();
+                                return;
+                            }
+                        }
+                    } catch(e) {}
+                }
+
+                const table = document.querySelector('table');
+                if (table) {
+                    const row = table.querySelector('tbody tr') || table.querySelector('tr:nth-child(2)');
+                    if (row) {
+                        const actionCell = row.cells[row.cells.length - 1];
+                        if (actionCell) {
+                            const btn = actionCell.querySelector('a, button, i, span') || actionCell;
+                            btn.click();
+                            return;
+                        }
+                    }
+                }
+
+                const el = document.querySelector('button[data-ng-click*="edit"], a[data-ng-click*="edit"], [ng-click*="edit"], .fa-pencil, [title*="Edit" i]');
+                if (el) el.click();
+            });
+
+            // 2. Playwright locator click on table action cell
+            try {
+                const actionBtn = page.locator('table tbody tr:first-child td:last-child a, table tbody tr:first-child td:last-child button, table tbody tr:first-child td:last-child i, .fa-pencil, [title*="Edit" i]').first();
+                if (await actionBtn.count() > 0) {
+                    await actionBtn.click({ force: true }).catch(() => {});
+                }
+            } catch(e) {}
+
+            await page.waitForTimeout(3000);
         }
 
-        await page.waitForTimeout(5000);
+        // Ensure portal has loaded into registration wizard
+        try {
+            await page.waitForFunction(() => {
+                return !window.location.href.includes('dashboard') || !!document.querySelector('.nav-tabs, #cmbzdt, input[name*="lgnmbzpan"]');
+            }, { timeout: 15000 });
+        } catch(e) {}
 
         // 2. Fallback extraction from URL, Angular rootScope, and storage
         if (!capturedDraftId) {

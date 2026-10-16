@@ -786,9 +786,32 @@ const STATES = STATE_DATA.map(s => s.state);
 
 function getDistricts(stateName) {
     if (!stateName) return [];
-    if (window.fetchedDistricts && window.fetchedDistricts[stateName]) {
-        return window.fetchedDistricts[stateName];
+    const clean = String(stateName).trim().toLowerCase();
+
+    // 1. Check dynamically fetched districts
+    if (window.fetchedDistricts) {
+        if (window.fetchedDistricts[stateName] && window.fetchedDistricts[stateName].length > 0) {
+            return window.fetchedDistricts[stateName];
+        }
+        for (const k in window.fetchedDistricts) {
+            if (k.toLowerCase() === clean && window.fetchedDistricts[k].length > 0) {
+                return window.fetchedDistricts[k];
+            }
+        }
     }
+
+    // 2. Comprehensive STATE_DATA fallback
+    if (typeof STATE_DATA !== 'undefined' && Array.isArray(STATE_DATA)) {
+        const found = STATE_DATA.find(s => s.state && s.state.toLowerCase() === clean);
+        if (found && Array.isArray(found.districts) && found.districts.length > 0) {
+            return found.districts;
+        }
+        const partial = STATE_DATA.find(s => s.state && (s.state.toLowerCase().includes(clean) || clean.includes(s.state.toLowerCase())));
+        if (partial && Array.isArray(partial.districts) && partial.districts.length > 0) {
+            return partial.districts;
+        }
+    }
+
     return [];
 }
 
@@ -1220,7 +1243,15 @@ function textInput(key, val, extra = '') {
 
 function select(key, val, options, placeholder = '') {
     let opts = placeholder ? `<option value="">${placeholder}</option>` : '';
-    opts += options.map(o => `<option value="${o}" ${val === o ? 'selected' : ''}>${o}</option>`).join('');
+    const safeOpts = Array.isArray(options) ? options : [];
+    let hasVal = false;
+    opts += safeOpts.map(o => {
+        if (val === o) hasVal = true;
+        return `<option value="${o}" ${val === o ? 'selected' : ''}>${o}</option>`;
+    }).join('');
+    if (val && !hasVal) {
+        opts = `<option value="${val}" selected>${val}</option>` + opts;
+    }
     return `<select id="${key}" onchange="updateForm('${key}', this.value)">${opts}</select>`;
 }
 
@@ -3185,6 +3216,11 @@ window.editApplication = function (id, showAlert = true) {
     };
     const loadedData = JSON.parse(JSON.stringify(app.data || {}));
     window.form = Object.assign({}, defaultForm, loadedData);
+    if (loadedData.district) window.form.district = loadedData.district;
+    if (loadedData.businessDistrict) window.form.businessDistrict = loadedData.businessDistrict;
+    if (loadedData.state) {
+        if (window.fetchAndSetDistricts) window.fetchAndSetDistricts(loadedData.state);
+    }
     window.form.rule14A = (loadedData.rule14A && loadedData.rule14A.trim()) ? loadedData.rule14A : 'No';
     if (loadedData.p1) window.form.p1 = Object.assign({}, defaultForm.p1, loadedData.p1);
     if (loadedData.a1) window.form.a1 = Object.assign({}, defaultForm.a1, loadedData.a1);
@@ -4943,9 +4979,16 @@ window.selectAddressSuggestion = async function (lat, lon) {
     }
 };
 // Fetch initial states/districts for the State / UT dropdown
-window.fetchedStates = [];
+window.fetchedStates = (typeof STATES !== 'undefined' && STATES.length > 0) ? [...STATES] : (typeof STATE_DATA !== 'undefined' ? STATE_DATA.map(s => s.state) : []);
 window.fetchedStatesMap = {};
 window.fetchedDistricts = {};
+if (typeof STATE_DATA !== 'undefined' && Array.isArray(STATE_DATA)) {
+    for (const item of STATE_DATA) {
+        if (item && item.state) {
+            window.fetchedDistricts[item.state] = item.districts || [];
+        }
+    }
+}
 
 window.fetchAndSetDistricts = function (stateName, callback) {
     if (!stateName || window.fetchedDistricts[stateName]) {

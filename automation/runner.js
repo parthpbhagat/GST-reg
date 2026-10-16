@@ -1607,26 +1607,52 @@ async function run() {
                 throw new Error(`GST Portal validation blocked: ${portalError}`);
             }
 
-            // Common helper: dismiss and auto-confirm any open modal/dialog
-            const dismissAndConfirmModals = async () => {
-                for (let attempt = 0; attempt < 4; attempt++) {
-                    const confirmed = await page.evaluate(() => {
+            // Common helper: dismiss and auto-confirm any open modal/dialog intelligently
+            const dismissAndConfirmModals = async (contextLabel = '') => {
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    const result = await page.evaluate(() => {
                         const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .sweet-alert, .ui-dialog')).filter(d => d.offsetParent !== null || window.getComputedStyle(d).display !== 'none');
                         for (const d of dialogs) {
                             const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn, a')).filter(b => b.offsetParent !== null || window.getComputedStyle(b).display !== 'none');
-                            const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|close|save|i agree/i.test(b.innerText || b.value || b.textContent || ''));
+                            const dText = ((d.innerText || d.textContent || '') + ' ' + (d.querySelector('.modal-title, h4, h3, p')?.innerText || '')).replace(/\s+/g, ' ').trim().toLowerCase();
+
+                            // 1. Check if the portal asks: "Do you want to add details of other Promoter/Partner?"
+                            // In a Sole Proprietorship (or when we are done adding promoters), we MUST click NO!
+                            // If we click YES, the portal stays on Tab 2 in an infinite loop!
+                            if (dText.includes('add') && (dText.includes('other') || dText.includes('more') || dText.includes('promoter') || dText.includes('partner') || dText.includes('director'))) {
+                                const noBtn = btns.find(b => /^\s*no\s*$/i.test((b.innerText || b.value || '').trim()) || /\bno\b/i.test(b.innerText || b.value || ''));
+                                if (noBtn) {
+                                    noBtn.removeAttribute('disabled');
+                                    noBtn.disabled = false;
+                                    noBtn.click();
+                                    return { action: 'clicked_no', text: 'NO (No more promoters to add)', raw: dText.slice(0, 120) };
+                                }
+                            }
+
+                            // 2. Check if this is an error alert modal
+                            if (dText.includes('error') || dText.includes('mandatory') || dText.includes('invalid') || dText.includes('required') || dText.includes('cannot') || dText.includes('failed')) {
+                                const closeBtn = btns.find(b => /close|ok/i.test(b.innerText || b.value || ''));
+                                const errSummary = dText.replace(/\s+/g, ' ').slice(0, 150);
+                                if (closeBtn) {
+                                    closeBtn.click();
+                                }
+                                return { action: 'error_alert', text: `ERROR_MODAL: ${errSummary}`, raw: dText };
+                            }
+
+                            // 3. Normal confirmation modal (geocoding warning, save confirmation, proceed, have you entered all promoters, etc.):
+                            const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|save|i agree/i.test(b.innerText || b.value || b.textContent || ''));
                             if (okBtn) {
                                 okBtn.removeAttribute('disabled');
                                 okBtn.disabled = false;
                                 okBtn.click();
-                                return (okBtn.innerText || okBtn.value || '').trim();
+                                return { action: 'confirmed', text: (okBtn.innerText || okBtn.value || '').trim(), raw: dText.slice(0, 120) };
                             }
                         }
                         return null;
                     });
-                    if (confirmed) {
-                        sendUpdate(`Auto-confirmed prompt: "${confirmed}"`);
-                        await page.waitForTimeout(600);
+                    if (result) {
+                        sendUpdate(`Modal prompt handled: [${result.text}] (Dialog: "${result.raw}")`);
+                        await page.waitForTimeout(800);
                     } else {
                         break;
                     }
@@ -1663,28 +1689,8 @@ async function run() {
                     sendUpdate(`Triggered "Save & Continue" on ${stepLabel}.`);
                 }
 
-                // Auto-confirm any prompt or modal (e.g., geocoding warning, promoter confirmation)
-                for (let attempt = 0; attempt < 5; attempt++) {
-                    await page.waitForTimeout(600);
-                    const confirmed = await page.evaluate(() => {
-                        const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .sweet-alert, .ui-dialog')).filter(d => d.offsetParent !== null || window.getComputedStyle(d).display !== 'none');
-                        for (const d of dialogs) {
-                            const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn, a')).filter(b => b.offsetParent !== null || window.getComputedStyle(b).display !== 'none');
-                            const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|close|save|i agree/i.test(b.innerText || b.value || b.textContent || ''));
-                            if (okBtn) {
-                                okBtn.removeAttribute('disabled');
-                                okBtn.disabled = false;
-                                okBtn.click();
-                                return (okBtn.innerText || okBtn.value || '').trim();
-                            }
-                        }
-                        return null;
-                    });
-                    if (confirmed) {
-                        sendUpdate(`Auto-confirmed prompt: "${confirmed}"`);
-                        await page.waitForTimeout(800);
-                    }
-                }
+                // Auto-confirm prompts smartly
+                await dismissAndConfirmModals(stepLabel);
                 await page.waitForTimeout(2000);
             };
 
@@ -1993,46 +1999,46 @@ async function run() {
                         // Row 1: Person Name
                         if (await fnInputs.count() > 0) {
                             const val = await fnInputs.first().inputValue().catch(() => '');
-                            if (!val) await fnInputs.first().fill(pFirst).catch(() => {});
+                            if (!val) await fnInputs.first().fill(pFirst, { timeout: 2000 }).catch(() => {});
                         }
                         if (await mnInputs.count() > 0) {
                             const val = await mnInputs.first().inputValue().catch(() => '');
-                            if (!val) await mnInputs.first().fill(pMiddle).catch(() => {});
+                            if (!val) await mnInputs.first().fill(pMiddle, { timeout: 2000 }).catch(() => {});
                         }
                         if (await lnInputs.count() > 0) {
                             const val = await lnInputs.first().inputValue().catch(() => '');
-                            if (!val) await lnInputs.first().fill(pLast).catch(() => {});
+                            if (!val) await lnInputs.first().fill(pLast, { timeout: 2000 }).catch(() => {});
                         }
 
                         // Row 2: Father's Name (2nd row of name inputs)
                         if (await fnInputs.count() > 1) {
                             await fnInputs.nth(1).scrollIntoViewIfNeeded().catch(() => {});
-                            await fnInputs.nth(1).fill(pFatherFirst).catch(() => {});
+                            await fnInputs.nth(1).fill(pFatherFirst, { timeout: 2000 }).catch(() => {});
                         } else {
                             const fLoc = page.locator('input[name*="fhfn" i], input[ng-model*="fhfn" i], #fhfn, #ffname').first();
-                            if (await fLoc.count() > 0) await fLoc.fill(pFatherFirst).catch(() => {});
+                            if (await fLoc.count() > 0) await fLoc.fill(pFatherFirst, { timeout: 2000 }).catch(() => {});
                         }
 
                         if (await mnInputs.count() > 1) {
-                            await mnInputs.nth(1).fill(pFatherMiddle).catch(() => {});
+                            await mnInputs.nth(1).fill(pFatherMiddle, { timeout: 2000 }).catch(() => {});
                         } else {
                             const mLoc = page.locator('input[name*="fhmn" i], input[ng-model*="fhmn" i], #fhmn, #pd_fmname').first();
-                            if (await mLoc.count() > 0) await mLoc.fill(pFatherMiddle).catch(() => {});
+                            if (await mLoc.count() > 0) await mLoc.fill(pFatherMiddle, { timeout: 2000 }).catch(() => {});
                         }
 
                         if (await lnInputs.count() > 1) {
-                            await lnInputs.nth(1).fill(pFatherLast).catch(() => {});
+                            await lnInputs.nth(1).fill(pFatherLast, { timeout: 2000 }).catch(() => {});
                         } else {
                             const lLoc = page.locator('input[name*="fhln" i], input[ng-model*="fhln" i], #fhln, #pd_flname').first();
-                            if (await lLoc.count() > 0) await lLoc.fill(pFatherLast).catch(() => {});
+                            if (await lLoc.count() > 0) await lLoc.fill(pFatherLast, { timeout: 2000 }).catch(() => {});
                         }
 
                         // Date of Birth
                         const dobLoc = page.locator('input[placeholder*="DD/MM/YYYY" i], input[placeholder*="MM/DD/YYYY" i], input[id*="dob" i], input[name*="dob" i]').first();
                         if (await dobLoc.count() > 0) {
                             await dobLoc.scrollIntoViewIfNeeded().catch(() => {});
-                            await dobLoc.click({ force: true }).catch(() => {});
-                            await dobLoc.fill(pDob).catch(() => {});
+                            await dobLoc.click({ force: true, timeout: 2000 }).catch(() => {});
+                            await dobLoc.fill(pDob, { timeout: 2000 }).catch(() => {});
                             await dobLoc.press('Tab').catch(() => {});
                         }
 
@@ -2040,7 +2046,7 @@ async function run() {
                         const mbLoc = page.locator('input[placeholder*="Mobile" i], input[name*="mbno" i], #mbno, #pd_mbno').first();
                         if (await mbLoc.count() > 0) {
                             await mbLoc.scrollIntoViewIfNeeded().catch(() => {});
-                            await mbLoc.fill(pMobile).catch(() => {});
+                            await mbLoc.fill(pMobile, { timeout: 2000 }).catch(() => {});
                             await mbLoc.press('Tab').catch(() => {});
                         }
 
@@ -2048,7 +2054,7 @@ async function run() {
                         const emLoc = page.locator('input[placeholder*="Email" i], input[type="email"], input[name*="em" i], #em, #pd_email').first();
                         if (await emLoc.count() > 0) {
                             await emLoc.scrollIntoViewIfNeeded().catch(() => {});
-                            await emLoc.fill(pEmail).catch(() => {});
+                            await emLoc.fill(pEmail, { timeout: 2000 }).catch(() => {});
                             await emLoc.press('Tab').catch(() => {});
                         }
 
@@ -2058,14 +2064,14 @@ async function run() {
                             : 'label:has-text("Male"), input[type="radio"][value="M"], input[name="gender"][value="M"]';
                         const gLoc = page.locator(genderSelector).first();
                         if (await gLoc.count() > 0) {
-                            await gLoc.click({ force: true }).catch(() => {});
+                            await gLoc.click({ force: true, timeout: 2000 }).catch(() => {});
                         }
 
                         // Designation
                         const dgLoc = page.locator('input[placeholder*="Designation" i], input[name*="dg" i], #dg').first();
                         if (await dgLoc.count() > 0) {
                             await dgLoc.scrollIntoViewIfNeeded().catch(() => {});
-                            await dgLoc.fill(pDg || 'Proprietor').catch(() => {});
+                            await dgLoc.fill(pDg || 'Proprietor', { timeout: 2000 }).catch(() => {});
                             await dgLoc.press('Tab').catch(() => {});
                         }
 
@@ -2073,45 +2079,45 @@ async function run() {
                         const panLoc = page.locator('input[placeholder*="PAN" i], input[name*="pan" i], #pan').first();
                         if (await panLoc.count() > 0) {
                             const pVal = await panLoc.inputValue().catch(() => '');
-                            if (!pVal) await panLoc.fill(pPan).catch(() => {});
+                            if (!pVal) await panLoc.fill(pPan, { timeout: 2000 }).catch(() => {});
                         }
 
                         // Residential Address Fields
                         const pinLoc = page.locator('input[placeholder*="PIN Code" i], input[placeholder*="PIN" i], #pncd').first();
                         if (await pinLoc.count() > 0) {
                             await pinLoc.scrollIntoViewIfNeeded().catch(() => {});
-                            await pinLoc.fill(pPin).catch(() => {});
+                            await pinLoc.fill(pPin, { timeout: 2000 }).catch(() => {});
                             await pinLoc.press('Tab').catch(() => {});
                         }
 
                         const stateLoc = page.locator('input[placeholder*="State" i]').first();
                         if (await stateLoc.count() > 0) {
-                            await stateLoc.fill(pState).catch(() => {});
+                            await stateLoc.fill(pState, { timeout: 2000 }).catch(() => {});
                         }
 
                         const distLoc = page.locator('input[placeholder*="District" i]').first();
                         if (await distLoc.count() > 0) {
-                            await distLoc.fill(pDist).catch(() => {});
+                            await distLoc.fill(pDist, { timeout: 2000 }).catch(() => {});
                         }
 
                         const cityLoc = page.locator('input[placeholder*="City" i], input[placeholder*="Village" i]').first();
                         if (await cityLoc.count() > 0) {
-                            await cityLoc.fill(pCity).catch(() => {});
+                            await cityLoc.fill(pCity, { timeout: 2000 }).catch(() => {});
                         }
 
                         const roadLoc = page.locator('input[placeholder*="Road" i], input[placeholder*="Street" i]').first();
                         if (await roadLoc.count() > 0) {
-                            await roadLoc.fill(pRoad).catch(() => {});
+                            await roadLoc.fill(pRoad, { timeout: 2000 }).catch(() => {});
                         }
 
                         const bnmLoc = page.locator('input[placeholder*="Premises" i], input[placeholder*="Building Name" i]').first();
                         if (await bnmLoc.count() > 0) {
-                            await bnmLoc.fill(pBnm).catch(() => {});
+                            await bnmLoc.fill(pBnm, { timeout: 2000 }).catch(() => {});
                         }
 
                         const bnoLoc = page.locator('input[placeholder*="Building No" i], input[placeholder*="Flat No" i], input[placeholder*="Door No" i]').first();
                         if (await bnoLoc.count() > 0) {
-                            await bnoLoc.fill(pBno).catch(() => {});
+                            await bnoLoc.fill(pBno, { timeout: 2000 }).catch(() => {});
                         }
 
                         // Toggle "Also Authorized Signatory"
@@ -2119,7 +2125,7 @@ async function run() {
                         if (await asContainers.count() > 0) {
                             const asSwitch = asContainers.last().locator('.switch, label.switch, input[type="checkbox"], span.slider, div.toggle').first();
                             if (await asSwitch.count() > 0) {
-                                await asSwitch.click({ force: true }).catch(() => {});
+                                await asSwitch.click({ force: true, timeout: 2000 }).catch(() => {});
                             }
                         }
                     } catch (e) {}

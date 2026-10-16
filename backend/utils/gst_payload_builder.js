@@ -337,6 +337,17 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
         });
     }
 
+    // GST portal requires at least one commodity or service in gdssvcdtls
+    if (bzgddtls.length === 0 && bzsdtls.length === 0) {
+        const defaultHsn = (data.hsn || data.hsnCode || data.commodityHsn || '1001').trim();
+        const defaultDesc = (data.hsnDescription || data.commodityDesc || 'WHEAT AND MESLIN').trim();
+        bzgddtls.push({
+            eid: 1,
+            hsncd: defaultHsn,
+            gdes: defaultDesc
+        });
+    }
+
     // PPOB Nature of Business array
     const ntbz = [];
     if (data.ppob_natureOfBusiness && typeof data.ppob_natureOfBusiness === 'object') {

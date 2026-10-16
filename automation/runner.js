@@ -3067,25 +3067,112 @@ async function run() {
             // Step 7: Goods and Services tab
             if (screenInfo.stepKey === 'goods and services') {
                 sendUpdate('[પગલું ૭: Goods and Services] HSN કોડ કન્ફર્મ કરી રહ્યા છીએ...');
-                await page.evaluate(() => {
-                    const hsnRows = Array.from(document.querySelectorAll('table tbody tr'));
-                    if (hsnRows.length === 0) {
-                        const hsnInput = document.querySelector('#gs_hsn_value, input[placeholder*="HSN" i], input[name*="hsn" i]');
-                        if (hsnInput && (!hsnInput.value || hsnInput.value.trim().length === 0)) {
-                            hsnInput.value = '1003';
-                            hsnInput.dispatchEvent(new Event('input', { bubbles: true }));
-                            hsnInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+                // 1. Check if goods or services are already populated in the table
+                let hasItems = await page.evaluate(() => {
+                    const rows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => {
+                        const t = (r.innerText || '').trim().toLowerCase();
+                        return t.length > 5 && !t.includes('no record') && !t.includes('no data') && !t.includes('no commodities');
+                    });
+                    return rows.length > 0;
+                });
+
+                if (!hasItems) {
+                    sendUpdate('Searching and adding HSN Code 1001 (WHEAT AND MESLIN)...');
+                    const hsnTargetCode = (data.hsn || data.hsnCode || '1001').trim();
+
+                    // Locate the HSN Search input field
+                    const hsnInput = page.locator('input[placeholder*="Search HSN" i], input[placeholder*="Chapter" i], input[placeholder*="Code" i], #gs_hsn_value, input[ng-model*="hsn" i]').first();
+                    if (await hsnInput.count() > 0) {
+                        await hsnInput.scrollIntoViewIfNeeded().catch(() => {});
+                        await hsnInput.click({ force: true, timeout: 2000 }).catch(() => {});
+                        await hsnInput.fill('').catch(() => {});
+                        await page.waitForTimeout(300);
+
+                        // Type character-by-character to trigger UI-Bootstrap typeahead event
+                        await hsnInput.pressSequentially(hsnTargetCode, { delay: 150 });
+                        await page.waitForTimeout(1500);
+
+                        // Method A: Press ArrowDown and Enter to select first typeahead suggestion
+                        await hsnInput.press('ArrowDown').catch(() => {});
+                        await page.waitForTimeout(400);
+                        await hsnInput.press('Enter').catch(() => {});
+                        await page.waitForTimeout(800);
+
+                        // Method B: Click visible suggestion dropdown item if present
+                        try {
+                            const sugLoc = page.locator('.typeahead-popup li a, .dropdown-menu li:not(.disabled) a, ul[role="listbox"] li, .uib-typeahead-match a, li[id*="typeahead"] a').first();
+                            if (await sugLoc.count() > 0 && await sugLoc.isVisible()) {
+                                await sugLoc.click({ force: true, timeout: 2000 }).catch(() => {});
+                                sendUpdate('✅ Selected HSN suggestion from dropdown.');
+                                await page.waitForTimeout(1000);
+                            }
+                        } catch (e) {}
+                    }
+
+                    // Check again if item was added
+                    hasItems = await page.evaluate(() => {
+                        const rows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => {
+                            const t = (r.innerText || '').trim().toLowerCase();
+                            return t.length > 5 && !t.includes('no record') && !t.includes('no data');
+                        });
+                        return rows.length > 0;
+                    });
+
+                    // Fallback to Services tab if Goods did not register
+                    if (!hasItems) {
+                        sendUpdate('Attempting Services tab fallback (SAC 998314)...');
+                        const servicesTab = page.locator('a:has-text("Services"), li:has-text("Services") a, button:has-text("Services")').first();
+                        if (await servicesTab.count() > 0) {
+                            await servicesTab.click({ force: true }).catch(() => {});
+                            await page.waitForTimeout(1000);
+
+                            const sacInput = page.locator('input[placeholder*="SAC" i], input[placeholder*="Search" i], input[placeholder*="Service" i], #gs_sac_value, input[ng-model*="sac" i]').first();
+                            if (await sacInput.count() > 0) {
+                                await sacInput.click({ force: true }).catch(() => {});
+                                await sacInput.fill('').catch(() => {});
+                                await sacInput.pressSequentially('998314', { delay: 150 });
+                                await page.waitForTimeout(1500);
+                                await sacInput.press('ArrowDown').catch(() => {});
+                                await sacInput.press('Enter').catch(() => {});
+                                await page.waitForTimeout(800);
+                                const sacSug = page.locator('.typeahead-popup li a, .dropdown-menu li a, .uib-typeahead-match a').first();
+                                if (await sacSug.count() > 0 && await sacSug.isVisible()) {
+                                    await sacSug.click({ force: true }).catch(() => {});
+                                }
+                            }
                         }
                     }
-                });
-                await page.waitForTimeout(600);
-                try {
-                    const sugLoc = page.locator('.typeahead-popup li, .dropdown-menu li, ul[role="listbox"] li, .uib-typeahead-match').first();
-                    if (await sugLoc.count() > 0 && await sugLoc.isVisible()) {
-                        await sugLoc.click({ force: true }).catch(() => {});
-                    }
-                } catch (e) {}
-                await page.waitForTimeout(600);
+
+                    // Direct AngularJS Scope injection fallback
+                    await page.evaluate(() => {
+                        if (window.angular) {
+                            try {
+                                const scopes = Array.from(document.querySelectorAll('.tab-pane.active, [ng-controller], form, body')).map(e => window.angular.element(e).scope()).filter(Boolean);
+                                for (const sc of scopes) {
+                                    const gItem = { eid: 1, hsncd: '1001', gdes: 'WHEAT AND MESLIN', hsnDesc: 'WHEAT AND MESLIN', desc: 'WHEAT AND MESLIN', cd: '1001' };
+                                    const sItem = { eid: 1, saccd: '998314', sdes: 'IT consulting and support services', sacDesc: 'IT consulting and support services', cd: '998314' };
+                                    if (sc.bzgddtls && Array.isArray(sc.bzgddtls) && sc.bzgddtls.length === 0) sc.bzgddtls.push(gItem);
+                                    if (sc.bzsdtls && Array.isArray(sc.bzsdtls) && sc.bzsdtls.length === 0) sc.bzsdtls.push(sItem);
+                                    if (sc.gdssvcdtls) {
+                                        if (sc.gdssvcdtls.bzgddtls && sc.gdssvcdtls.bzgddtls.length === 0) sc.gdssvcdtls.bzgddtls.push(gItem);
+                                        if (sc.gdssvcdtls.bzsdtls && sc.gdssvcdtls.bzsdtls.length === 0) sc.gdssvcdtls.bzsdtls.push(sItem);
+                                    }
+                                    if (sc.gdsList && Array.isArray(sc.gdsList) && sc.gdsList.length === 0) sc.gdsList.push(gItem);
+                                    if (sc.commodityList && Array.isArray(sc.commodityList) && sc.commodityList.length === 0) sc.commodityList.push(gItem);
+                                    if (typeof sc.addCommodity === 'function') { try { sc.addCommodity(gItem); } catch (e) {} }
+                                    if (typeof sc.addHsn === 'function') { try { sc.addHsn(gItem); } catch (e) {} }
+                                    if (!sc.$$phase) sc.$apply();
+                                }
+                            } catch (e) {}
+                        }
+                    });
+                } else {
+                    sendUpdate('✅ HSN Goods/Services already present in table.');
+                }
+
+                await page.waitForTimeout(800);
+                await dismissAndConfirmModals('Goods and Services');
                 await saveAndAdvanceTab('Goods and Services');
                 continue;
             }
@@ -3112,8 +3199,19 @@ async function run() {
                         yesR.checked = true;
                         yesR.dispatchEvent(new Event('change', { bubbles: true }));
                     }
+
+                    // Check any promoter/signatory selection checkbox in Aadhaar table
+                    const checkboxes = Array.from(document.querySelectorAll('table tbody tr input[type="checkbox"], input[type="checkbox"][id*="aadhaar" i], input[type="checkbox"][id*="adhr" i]'));
+                    for (const cb of checkboxes) {
+                        if (!cb.checked) {
+                            cb.click();
+                            cb.checked = true;
+                            cb.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }
                 });
-                await page.waitForTimeout(600);
+                await page.waitForTimeout(800);
+                await dismissAndConfirmModals('Aadhaar Authentication');
                 await saveAndAdvanceTab('Aadhaar Authentication');
                 continue;
             }

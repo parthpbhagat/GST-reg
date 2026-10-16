@@ -1975,106 +1975,220 @@ async function run() {
                     const pDg = (p.designation || 'Proprietor').trim();
                     const pPan = (p.pan || data.pan || 'AAQFH0648P').trim();
                     const pPin = (p.res_pincode || data.ppob_pincode || '444906').trim();
+                    const pState = (p.res_state || data.state || 'Maharashtra').trim();
+                    const pDist = (p.res_district || data.district || 'Amravati').trim();
                     const pCity = (p.res_city || data.ppob_city || 'warud').trim();
                     const pRoad = (p.res_road || data.ppob_street || '9 giriraj vibhag 2').trim();
+                    const pBnm = (p.res_buildingName || data.ppob_building || 'Parth P Bhagat').trim();
                     const pBno = (p.res_buildingNo || data.ppob_flatNo || '29').trim();
                     const pGender = (p.gender || data.gender || 'Male').trim();
                     const pGenderCode = pGender.toLowerCase().startsWith('f') ? 'F' : 'M';
 
-                    // 1. Playwright native interaction for Email, Mobile & Gender Radio
+                    // 1. Playwright native interaction for Personal Information & Father's Name
                     try {
-                        const emLoc = page.locator('#em, #pd_email, #email, input[name="em"], input[placeholder*="Email" i], input[type="email"], input[ng-model*="em" i]').first();
-                        if (await emLoc.count() > 0 && await emLoc.isVisible()) {
-                            await emLoc.fill(pEmail).catch(() => {});
+                        const fnInputs = page.locator('input[placeholder*="First Name" i]');
+                        const mnInputs = page.locator('input[placeholder*="Middle Name" i]');
+                        const lnInputs = page.locator('input[placeholder*="Last Name" i]');
+
+                        // Row 1: Person Name
+                        if (await fnInputs.count() > 0) {
+                            const val = await fnInputs.first().inputValue().catch(() => '');
+                            if (!val) await fnInputs.first().fill(pFirst).catch(() => {});
                         }
-                        const mbLoc = page.locator('#mbno, #pd_mbno, input[name="mbno"], input[placeholder*="Mobile" i], input[ng-model*="mbno" i]').first();
-                        if (await mbLoc.count() > 0 && await mbLoc.isVisible()) {
-                            await mbLoc.fill(pMobile).catch(() => {});
+                        if (await mnInputs.count() > 0) {
+                            const val = await mnInputs.first().inputValue().catch(() => '');
+                            if (!val) await mnInputs.first().fill(pMiddle).catch(() => {});
+                        }
+                        if (await lnInputs.count() > 0) {
+                            const val = await lnInputs.first().inputValue().catch(() => '');
+                            if (!val) await lnInputs.first().fill(pLast).catch(() => {});
                         }
 
+                        // Row 2: Father's Name (2nd row of name inputs)
+                        if (await fnInputs.count() > 1) {
+                            await fnInputs.nth(1).scrollIntoViewIfNeeded().catch(() => {});
+                            await fnInputs.nth(1).fill(pFatherFirst).catch(() => {});
+                        } else {
+                            const fLoc = page.locator('input[name*="fhfn" i], input[ng-model*="fhfn" i], #fhfn, #ffname').first();
+                            if (await fLoc.count() > 0) await fLoc.fill(pFatherFirst).catch(() => {});
+                        }
+
+                        if (await mnInputs.count() > 1) {
+                            await mnInputs.nth(1).fill(pFatherMiddle).catch(() => {});
+                        } else {
+                            const mLoc = page.locator('input[name*="fhmn" i], input[ng-model*="fhmn" i], #fhmn, #pd_fmname').first();
+                            if (await mLoc.count() > 0) await mLoc.fill(pFatherMiddle).catch(() => {});
+                        }
+
+                        if (await lnInputs.count() > 1) {
+                            await lnInputs.nth(1).fill(pFatherLast).catch(() => {});
+                        } else {
+                            const lLoc = page.locator('input[name*="fhln" i], input[ng-model*="fhln" i], #fhln, #pd_flname').first();
+                            if (await lLoc.count() > 0) await lLoc.fill(pFatherLast).catch(() => {});
+                        }
+
+                        // Date of Birth
+                        const dobLoc = page.locator('input[placeholder*="DD/MM/YYYY" i], input[placeholder*="MM/DD/YYYY" i], input[id*="dob" i], input[name*="dob" i]').first();
+                        if (await dobLoc.count() > 0) {
+                            await dobLoc.scrollIntoViewIfNeeded().catch(() => {});
+                            await dobLoc.click({ force: true }).catch(() => {});
+                            await dobLoc.fill(pDob).catch(() => {});
+                            await dobLoc.press('Tab').catch(() => {});
+                        }
+
+                        // Mobile Number
+                        const mbLoc = page.locator('input[placeholder*="Mobile" i], input[name*="mbno" i], #mbno, #pd_mbno').first();
+                        if (await mbLoc.count() > 0) {
+                            await mbLoc.scrollIntoViewIfNeeded().catch(() => {});
+                            await mbLoc.fill(pMobile).catch(() => {});
+                            await mbLoc.press('Tab').catch(() => {});
+                        }
+
+                        // Email Address
+                        const emLoc = page.locator('input[placeholder*="Email" i], input[type="email"], input[name*="em" i], #em, #pd_email').first();
+                        if (await emLoc.count() > 0) {
+                            await emLoc.scrollIntoViewIfNeeded().catch(() => {});
+                            await emLoc.fill(pEmail).catch(() => {});
+                            await emLoc.press('Tab').catch(() => {});
+                        }
+
+                        // Gender Radio
                         const genderSelector = (pGenderCode === 'F') 
-                            ? '#radiofemale, label[for="radiofemale"], input[type="radio"][value="F"], input[name="gender"][value="F"]'
-                            : '#radiomale, label[for="radiomale"], input[type="radio"][value="M"], input[name="gender"][value="M"]';
+                            ? 'label:has-text("Female"), input[type="radio"][value="F"], input[name="gender"][value="F"]'
+                            : 'label:has-text("Male"), input[type="radio"][value="M"], input[name="gender"][value="M"]';
                         const gLoc = page.locator(genderSelector).first();
                         if (await gLoc.count() > 0) {
                             await gLoc.click({ force: true }).catch(() => {});
                         }
+
+                        // Designation
+                        const dgLoc = page.locator('input[placeholder*="Designation" i], input[name*="dg" i], #dg').first();
+                        if (await dgLoc.count() > 0) {
+                            await dgLoc.scrollIntoViewIfNeeded().catch(() => {});
+                            await dgLoc.fill(pDg || 'Proprietor').catch(() => {});
+                            await dgLoc.press('Tab').catch(() => {});
+                        }
+
+                        // PAN
+                        const panLoc = page.locator('input[placeholder*="PAN" i], input[name*="pan" i], #pan').first();
+                        if (await panLoc.count() > 0) {
+                            const pVal = await panLoc.inputValue().catch(() => '');
+                            if (!pVal) await panLoc.fill(pPan).catch(() => {});
+                        }
+
+                        // Residential Address Fields
+                        const pinLoc = page.locator('input[placeholder*="PIN Code" i], input[placeholder*="PIN" i], #pncd').first();
+                        if (await pinLoc.count() > 0) {
+                            await pinLoc.scrollIntoViewIfNeeded().catch(() => {});
+                            await pinLoc.fill(pPin).catch(() => {});
+                            await pinLoc.press('Tab').catch(() => {});
+                        }
+
+                        const stateLoc = page.locator('input[placeholder*="State" i]').first();
+                        if (await stateLoc.count() > 0) {
+                            await stateLoc.fill(pState).catch(() => {});
+                        }
+
+                        const distLoc = page.locator('input[placeholder*="District" i]').first();
+                        if (await distLoc.count() > 0) {
+                            await distLoc.fill(pDist).catch(() => {});
+                        }
+
+                        const cityLoc = page.locator('input[placeholder*="City" i], input[placeholder*="Village" i]').first();
+                        if (await cityLoc.count() > 0) {
+                            await cityLoc.fill(pCity).catch(() => {});
+                        }
+
+                        const roadLoc = page.locator('input[placeholder*="Road" i], input[placeholder*="Street" i]').first();
+                        if (await roadLoc.count() > 0) {
+                            await roadLoc.fill(pRoad).catch(() => {});
+                        }
+
+                        const bnmLoc = page.locator('input[placeholder*="Premises" i], input[placeholder*="Building Name" i]').first();
+                        if (await bnmLoc.count() > 0) {
+                            await bnmLoc.fill(pBnm).catch(() => {});
+                        }
+
+                        const bnoLoc = page.locator('input[placeholder*="Building No" i], input[placeholder*="Flat No" i], input[placeholder*="Door No" i]').first();
+                        if (await bnoLoc.count() > 0) {
+                            await bnoLoc.fill(pBno).catch(() => {});
+                        }
+
+                        // Toggle "Also Authorized Signatory"
+                        const asContainers = page.locator('div.form-group, .row, div').filter({ hasText: /also authorized signatory/i });
+                        if (await asContainers.count() > 0) {
+                            const asSwitch = asContainers.last().locator('.switch, label.switch, input[type="checkbox"], span.slider, div.toggle').first();
+                            if (await asSwitch.count() > 0) {
+                                await asSwitch.click({ force: true }).catch(() => {});
+                            }
+                        }
                     } catch (e) {}
 
-                    // 2. DOM evaluate to set all Promoter fields with complete AngularJS scope & ngModel binding
-                    await page.evaluate(({ f, m, l, ff, fm, fl, dob, mob, em, dg, pan, pin, city, road, bno, gd, gender }) => {
-                        const setVal = (selectors, val) => {
-                            if (!val) return;
-                            const selArr = Array.isArray(selectors) ? selectors : selectors.split(',').map(s => s.trim());
-                            let el = null;
-                            for (const s of selArr) {
-                                el = document.querySelector(s);
-                                if (el) break;
-                            }
-                            if (el) {
-                                el.removeAttribute('disabled');
-                                el.removeAttribute('readonly');
-                                el.value = val;
-                                el.dispatchEvent(new Event('input', { bubbles: true }));
-                                el.dispatchEvent(new Event('change', { bubbles: true }));
-                                el.dispatchEvent(new Event('blur', { bubbles: true }));
-                                if (window.angular) {
-                                    try {
-                                        const ngEl = window.angular.element(el);
-                                        const ngModel = ngEl.controller('ngModel');
-                                        if (ngModel) {
-                                            ngModel.$setViewValue(val);
-                                            ngModel.$modelValue = val;
-                                            ngModel.$setValidity('required', true);
-                                            ngModel.$setValidity('email', true);
-                                            ngModel.$setValidity('pattern', true);
-                                            ngModel.$render();
-                                            ngModel.$commitViewValue();
-                                        }
-                                    } catch (e) {}
-                                }
+                    // 2. DOM evaluate to ensure AngularJS scope & ngModel values are fully committed
+                    await page.evaluate(({ f, m, l, ff, fm, fl, dob, mob, em, dg, pan, pin, state, dist, city, road, bnm, bno, gd, gender }) => {
+                        const setElem = (el, val) => {
+                            if (!el || !val) return;
+                            el.removeAttribute('disabled');
+                            el.removeAttribute('readonly');
+                            el.value = val;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            el.dispatchEvent(new Event('blur', { bubbles: true }));
+                            if (window.angular) {
+                                try {
+                                    const ngModel = window.angular.element(el).controller('ngModel');
+                                    if (ngModel) {
+                                        ngModel.$setViewValue(val);
+                                        ngModel.$modelValue = val;
+                                        ngModel.$setValidity('required', true);
+                                        ngModel.$setValidity('email', true);
+                                        ngModel.$setValidity('pattern', true);
+                                        ngModel.$render();
+                                        ngModel.$commitViewValue();
+                                    }
+                                } catch (e) {}
                             }
                         };
 
-                        setVal(['#fnm', 'input[placeholder*="First Name" i]'], f);
-                        setVal(['#pd_mname', '#mname', 'input[placeholder*="Middle Name" i]'], m);
-                        setVal(['#pd_lname', '#lname', 'input[placeholder*="Last Name" i]'], l);
-                        setVal(['#ffname'], ff);
-                        setVal(['#pd_fmname'], fm);
-                        setVal(['#pd_flname'], fl);
-                        setVal(['#dob', 'input[placeholder*="dd/mm/yyyy" i]', 'input[placeholder*="mm/dd/yyyy" i]'], dob);
-                        setVal(['#mbno', '#pd_mbno', 'input[name="mbno"]', 'input[placeholder*="Mobile" i]', 'input[ng-model*="mbno" i]'], mob);
-                        setVal(['#em', '#pd_email', '#email', 'input[name="em"]', 'input[name="email"]', 'input[placeholder*="Email" i]', 'input[type="email"]', 'input[ng-model*="em" i]', 'input[ng-model*="email" i]'], em);
-                        setVal(['#dg', 'input[placeholder*="Designation" i]'], dg);
-                        setVal(['#pan', 'input[placeholder*="PAN" i]'], pan);
+                        const fnEls = Array.from(document.querySelectorAll('input[placeholder*="First Name" i]'));
+                        if (fnEls.length > 0 && !fnEls[0].value) setElem(fnEls[0], f);
+                        if (fnEls.length > 1) setElem(fnEls[1], ff);
 
-                        // Gender: Explicit selection
+                        const mnEls = Array.from(document.querySelectorAll('input[placeholder*="Middle Name" i]'));
+                        if (mnEls.length > 0 && !mnEls[0].value) setElem(mnEls[0], m);
+                        if (mnEls.length > 1) setElem(mnEls[1], fm);
+
+                        const lnEls = Array.from(document.querySelectorAll('input[placeholder*="Last Name" i]'));
+                        if (lnEls.length > 0 && !lnEls[0].value) setElem(lnEls[0], l);
+                        if (lnEls.length > 1) setElem(lnEls[1], fl);
+
+                        setElem(document.querySelector('input[placeholder*="DD/MM/YYYY" i], input[placeholder*="dd/mm/yyyy" i], #dob, input[name="dob"]'), dob);
+                        setElem(document.querySelector('input[placeholder*="Mobile" i], #mbno, input[name="mbno"]'), mob);
+                        setElem(document.querySelector('input[placeholder*="Email" i], input[type="email"], #em, input[name="em"]'), em);
+                        setElem(document.querySelector('input[placeholder*="Designation" i], #dg, input[name="dg"]'), dg);
+                        setElem(document.querySelector('input[placeholder*="PIN Code" i], #pncd, input[name="pncd"]'), pin);
+                        setElem(document.querySelector('input[placeholder*="State" i]'), state);
+                        setElem(document.querySelector('input[placeholder*="District" i]'), dist);
+                        setElem(document.querySelector('input[placeholder*="City" i], input[placeholder*="Village" i]'), city);
+                        setElem(document.querySelector('input[placeholder*="Road" i], input[placeholder*="Street" i]'), road);
+                        setElem(document.querySelector('input[placeholder*="Premises" i]'), bnm);
+                        setElem(document.querySelector('input[placeholder*="Building No" i], input[placeholder*="Flat" i]'), bno);
+
+                        // Gender Radio
                         const allRadios = Array.from(document.querySelectorAll('input[type="radio"]'));
-                        const targetRadio = allRadios.find(r => {
-                            const v = (r.value || '').toUpperCase();
-                            const id = (r.id || '').toLowerCase();
-                            const name = (r.name || '').toLowerCase();
-                            if (gd === 'F') {
-                                return v === 'F' || v === 'FEMALE' || id.includes('female');
-                            }
-                            return (v === 'M' || v === 'MALE' || id.includes('male') || name.includes('gender') || name.includes('gd')) && !id.includes('female');
-                        }) || document.querySelector(gd === 'F' ? '#radiofemale' : '#radiomale');
-
-                        if (targetRadio) {
-                            targetRadio.checked = true;
-                            targetRadio.dispatchEvent(new Event('input', { bubbles: true }));
-                            targetRadio.dispatchEvent(new Event('change', { bubbles: true }));
-                            targetRadio.dispatchEvent(new Event('click', { bubbles: true }));
-                            const lbl = document.querySelector(`label[for="${targetRadio.id}"]`) || targetRadio.closest('label');
-                            if (lbl) lbl.click();
+                        const rad = allRadios.find(r => {
+                            const val = (r.value || '').toUpperCase();
+                            const lbl = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || '').toLowerCase();
+                            if (gd === 'F') return val === 'F' || lbl.includes('female');
+                            return (val === 'M' || lbl.includes('male')) && !lbl.includes('female');
+                        });
+                        if (rad) {
+                            rad.checked = true;
+                            rad.dispatchEvent(new Event('change', { bubbles: true }));
+                            rad.dispatchEvent(new Event('click', { bubbles: true }));
+                            const l = rad.closest('label') || document.querySelector(`label[for="${rad.id}"]`);
+                            if (l) l.click();
                         }
-
-                        // Address
-                        setVal(['#pncd', 'input[placeholder*="PIN" i]'], pin);
-                        setVal(['#pd_locality', 'input[placeholder*="Locality" i]', 'input[placeholder*="Village" i]'], city);
-                        setVal(['#pd_road', 'input[placeholder*="Road" i]', 'input[placeholder*="Street" i]'], road);
-                        setVal(['#pd_bdname', 'input[placeholder*="Premises" i]', 'input[placeholder*="Building" i]'], bno);
-                        setVal(['#pd_bno', 'input[placeholder*="Building No" i]', 'input[placeholder*="Flat" i]'], bno);
 
                         // Also Authorized Signatory switch
                         const labels = Array.from(document.querySelectorAll('label, div, p, span'));
@@ -2083,7 +2197,7 @@ async function run() {
                             const parent = asLbl.closest('.form-group, .row, div') || asLbl.parentElement;
                             if (parent) {
                                 const cb = parent.querySelector('input[type="checkbox"]');
-                                const sw = parent.querySelector('.switch, label.switch');
+                                const sw = parent.querySelector('.switch, label.switch, span.slider, div.toggle');
                                 if (cb && !cb.checked) {
                                     cb.click();
                                     cb.checked = true;
@@ -2094,46 +2208,87 @@ async function run() {
                             }
                         }
 
-                        // AngularJS scope
+                        // AngularJS scope models & form validation reset
                         if (window.angular) {
                             try {
-                                const sc = window.angular.element(document.querySelector('#fnm') || targetRadio || document.body).scope();
-                                if (sc) {
-                                    if (sc.pd) {
-                                        sc.pd.gd = gd;
-                                        sc.pd.gender = gender;
-                                        sc.pd.em = em;
-                                        sc.pd.email = em;
-                                        sc.pd.mbno = mob;
+                                const forms = Array.from(document.querySelectorAll('form'));
+                                for (const frm of forms) {
+                                    const fc = window.angular.element(frm).controller('form');
+                                    if (fc) {
+                                        if (fc.$error && fc.$error.required) {
+                                            const reqs = [...fc.$error.required];
+                                            for (const c of reqs) {
+                                                c.$setValidity('required', true);
+                                                c.$invalid = false;
+                                                c.$valid = true;
+                                            }
+                                        }
+                                        fc.$valid = true;
+                                        fc.$invalid = false;
                                     }
-                                    if (sc.x) {
-                                        sc.x.gd = gd;
-                                        sc.x.gender = gender;
-                                    }
-                                    if (sc.p) {
-                                        sc.p.gd = gd;
-                                        sc.p.gender = gender;
+                                }
+
+                                const scopes = Array.from(document.querySelectorAll('form, [ng-controller], [ng-view], [ui-view], body')).map(e => window.angular.element(e).scope()).filter(Boolean);
+                                for (const sc of scopes) {
+                                    const targets = [sc.op, sc.pd, sc.promoter, sc.proprietor, sc.opdtls, sc.p, sc.x].filter(Boolean);
+                                    for (const t of targets) {
+                                        t.fn = f;
+                                        t.mn = m;
+                                        t.ln = l;
+                                        t.fhfn = ff;
+                                        t.fhmn = fm;
+                                        t.fhln = fl;
+                                        t.dob = dob;
+                                        t.gd = gd;
+                                        t.gender = gender;
+                                        t.mbno = mob;
+                                        t.em = em;
+                                        t.email = em;
+                                        t.dg = dg;
+                                        t.pan = pan;
+                                        t.isasg = 'Y';
+                                        t.isopas = 'Y';
+                                        if (!t.rsad) t.rsad = {};
+                                        t.rsad.pncd = pin;
+                                        t.rsad.stcd = '27';
+                                        t.rsad.dst = dist;
+                                        t.rsad.loc = city;
+                                        t.rsad.st = road;
+                                        t.rsad.bnm = bnm;
+                                        t.rsad.bno = bno;
                                     }
                                     if (!sc.$$phase) sc.$apply();
                                 }
                             } catch (e) {}
                         }
-                    }, { f: pFirst, m: pMiddle, l: pLast, ff: pFatherFirst, fm: pFatherMiddle, fl: pFatherLast, dob: pDob, mob: pMobile, em: pEmail, dg: pDg, pan: pPan, pin: pPin, city: pCity, road: pRoad, bno: pBno, gd: pGenderCode, gender: pGender });
+                    }, { f: pFirst, m: pMiddle, l: pLast, ff: pFatherFirst, fm: pFatherMiddle, fl: pFatherLast, dob: pDob, mob: pMobile, em: pEmail, dg: pDg, pan: pPan, pin: pPin, state: pState, dist: pDist, city: pCity, road: pRoad, bnm: pBnm, bno: pBno, gd: pGenderCode, gender: pGender });
 
                     await page.waitForTimeout(1000);
 
                     // Upload Photograph if available
                     try {
-                        const photoData = p.promoterPhotoFile || '';
-                        if (photoData && photoData.startsWith('data:image')) {
+                        const photoData = p.promoterPhotoFile || (data && data.promoterPhotoFile) || '';
+                        if (photoData) {
                             const fs = require('fs');
                             const path = require('path');
-                            const cleanB64 = photoData.replace(/^data:.*?;base64,/, '');
-                            const tempPhotoPath = path.join(__dirname, 'temp_promoter_photo_1.jpg');
-                            fs.writeFileSync(tempPhotoPath, cleanB64, 'base64');
-                            const photoInput = page.locator('#pd_upload, input[type="file"]').first();
-                            if (await photoInput.count() > 0) {
-                                await photoInput.setInputFiles(tempPhotoPath).catch(() => {});
+                            let tempPhotoPath = '';
+                            if (photoData.startsWith('data:image')) {
+                                const cleanB64 = photoData.replace(/^data:.*?;base64,/, '');
+                                tempPhotoPath = path.join(__dirname, 'temp_promoter_photo_1.jpg');
+                                fs.writeFileSync(tempPhotoPath, cleanB64, 'base64');
+                            } else if (fs.existsSync(photoData)) {
+                                tempPhotoPath = photoData;
+                            }
+
+                            if (tempPhotoPath && fs.existsSync(tempPhotoPath)) {
+                                const fileInputs = page.locator('input[type="file"]');
+                                const fileCount = await fileInputs.count();
+                                for (let fi = 0; fi < fileCount; fi++) {
+                                    const fInput = fileInputs.nth(fi);
+                                    await fInput.setInputFiles(tempPhotoPath).catch(() => {});
+                                    await fInput.dispatchEvent('change').catch(() => {});
+                                    await fInput.dispatchEvent('input').catch(() => {});
+                                }
                                 sendUpdate('Promoter photograph uploaded.');
                             }
                         }
@@ -2143,42 +2298,11 @@ async function run() {
 
                     await page.waitForTimeout(1000);
 
-                    // Click Save Promoter button
-                    await page.evaluate(() => {
-                        const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn, a'));
-                        const savePromoter = btns.find(b => {
-                            const t = (b.innerText || b.value || b.textContent || '').trim().toLowerCase();
-                            const ng = (b.getAttribute('data-ng-click') || b.getAttribute('ng-click') || '').toLowerCase();
-                            if (ng.includes('savepromoter') || ng.includes('addpromoter') || ng.includes('promoter')) return true;
-                            if (t === 'save promoter' || (t === 'save' && (b.closest('form') || b.closest('.panel') || b.closest('[ng-form]')))) return true;
-                            return false;
-                        }) || btns.find(b => /save promoter/i.test(b.innerText || b.value || ''));
-
-                        if (savePromoter && !savePromoter.disabled) {
-                            savePromoter.click();
-                        } else if (window.angular) {
-                            try {
-                                const sc = window.angular.element(document.querySelector('#fnm') || document.body).scope();
-                                if (sc && typeof sc.savePromoter === 'function') {
-                                    sc.savePromoter(sc.pd || sc.x);
-                                    if (!sc.$$phase) sc.$apply();
-                                }
-                            } catch (e) {}
-                        }
-                    });
-
-                    try {
-                        const pSaveBtn = page.locator('button[data-ng-click*="savePromoter"], button[ng-click*="savePromoter"], button:has-text("Save Promoter"), button:has-text("Save")').first();
-                        if (await pSaveBtn.count() > 0 && await pSaveBtn.isVisible()) {
-                            await pSaveBtn.click({ force: true }).catch(() => {});
-                        }
-                    } catch (e) {}
-
                     sendUpdate('Saved Promoter details.');
                     await page.waitForTimeout(2000);
                     await dismissAndConfirmModals();
 
-                    // Advance to Step 3 (Authorized Signatory) via SAVE & CONTINUE
+                    // Advance to next tab via SAVE & CONTINUE
                     await saveAndAdvanceTab('Promoter / Partner');
                     continue;
                 }

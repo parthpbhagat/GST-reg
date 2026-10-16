@@ -2144,17 +2144,105 @@ async function run() {
                 const ppobPossession = (data.ppob_natureOfPossession || 'Consent').trim();
                 const ppobDocType = (data.ppob_doc || 'Electricity Bill').trim();
 
-                // 1. Fill PIN Code via native Playwright so GST portal auto-detects State/District
+                // 1. PIN Code: Native Playwright type + click suggestion popup
                 try {
                     const pinLoc = page.locator('#pncd, input[name="pncd"], input[placeholder*="Enter PIN Code" i], input[placeholder*="PIN" i]').first();
                     if (await pinLoc.count() > 0 && await pinLoc.isVisible()) {
-                        await pinLoc.fill(ppobPin).catch(() => {});
-                        await pinLoc.dispatchEvent('change').catch(() => {});
-                        await pinLoc.dispatchEvent('blur').catch(() => {});
+                        await pinLoc.click();
+                        await pinLoc.fill('');
+                        await pinLoc.type(ppobPin, { delay: 80 });
+                        await page.waitForTimeout(1000);
+
+                        // Click the typeahead suggestion popup item
+                        const pinSug = page.locator('.typeahead-popup li, .dropdown-menu li, .uib-typeahead-match, li[id*="typeahead"]').filter({ hasText: ppobPin }).first();
+                        if (await pinSug.count() > 0 && await pinSug.isVisible()) {
+                            await pinSug.click({ force: true }).catch(() => {});
+                            sendUpdate(`Selected PIN suggestion: ${ppobPin}`);
+                            await page.waitForTimeout(1000);
+                        } else {
+                            const anySug = page.locator('.typeahead-popup li, .dropdown-menu li, .uib-typeahead-match').first();
+                            if (await anySug.count() > 0 && await anySug.isVisible()) {
+                                await anySug.click({ force: true }).catch(() => {});
+                                await page.waitForTimeout(1000);
+                            }
+                        }
                     }
                 } catch (e) {}
 
-                // 2. Fill Address & Contact fields via DOM & Angular
+                // 2. City / Town / Village: Native Playwright type + click suggestion popup
+                try {
+                    const cityLoc = page.locator('#loc, input[name="loc"], input[placeholder*="Enter City" i], input[placeholder*="City" i]').first();
+                    if (await cityLoc.count() > 0 && await cityLoc.isVisible()) {
+                        await cityLoc.click();
+                        await cityLoc.fill('');
+                        await cityLoc.type(ppobCity, { delay: 80 });
+                        await page.waitForTimeout(1000);
+
+                        // Click suggestion matching City (e.g. Warud)
+                        const citySug = page.locator('.typeahead-popup li, .dropdown-menu li, .uib-typeahead-match, li[id*="typeahead"]').filter({ hasText: new RegExp(ppobCity, 'i') }).first();
+                        if (await citySug.count() > 0 && await citySug.isVisible()) {
+                            await citySug.click({ force: true }).catch(() => {});
+                            sendUpdate(`Selected City suggestion: ${ppobCity}`);
+                            await page.waitForTimeout(1500);
+                        } else {
+                            const anyCitySug = page.locator('.typeahead-popup li, .dropdown-menu li, .uib-typeahead-match').first();
+                            if (await anyCitySug.count() > 0 && await anyCitySug.isVisible()) {
+                                await anyCitySug.click({ force: true }).catch(() => {});
+                                await page.waitForTimeout(1500);
+                            }
+                        }
+                    }
+                } catch (e) {}
+
+                // 3. Fill Address Fields (Building No, Road, Premises) via Native Playwright
+                try {
+                    // Building No / Flat No / Door No (MANDATORY FIELD)
+                    const bnoLoc = page.locator('#bno, input[placeholder*="Building No" i], input[placeholder*="Door No" i], input[placeholder*="Flat No" i], input[ng-model*="bno" i]').first();
+                    if (await bnoLoc.count() > 0 && await bnoLoc.isVisible()) {
+                        await bnoLoc.click();
+                        await bnoLoc.fill(ppobBno);
+                        await bnoLoc.dispatchEvent('input').catch(() => {});
+                        await bnoLoc.dispatchEvent('change').catch(() => {});
+                        await bnoLoc.dispatchEvent('blur').catch(() => {});
+                    }
+
+                    // Road / Street / Lane (MANDATORY FIELD)
+                    const stLoc = page.locator('#st, input[placeholder*="Enter Road" i], input[placeholder*="Road" i], input[placeholder*="Street" i], input[placeholder*="Lane" i], input[ng-model*="st" i]').first();
+                    if (await stLoc.count() > 0 && await stLoc.isVisible()) {
+                        await stLoc.click();
+                        await stLoc.fill(ppobStreet);
+                        await stLoc.dispatchEvent('input').catch(() => {});
+                        await stLoc.dispatchEvent('change').catch(() => {});
+                        await stLoc.dispatchEvent('blur').catch(() => {});
+                    }
+
+                    // Name of Premises / Building
+                    const bnmLoc = page.locator('#bnm, input[placeholder*="Enter Name of Premises" i], input[placeholder*="Premises" i], input[placeholder*="Building" i], input[ng-model*="bnm" i]').first();
+                    if (await bnmLoc.count() > 0 && await bnmLoc.isVisible()) {
+                        await bnmLoc.click();
+                        await bnmLoc.fill(ppobBnm);
+                        await bnmLoc.dispatchEvent('input').catch(() => {});
+                        await bnmLoc.dispatchEvent('change').catch(() => {});
+                    }
+
+                    // Floor No
+                    if (ppobFloor) {
+                        const flnoLoc = page.locator('#flno, input[placeholder*="Enter Floor No" i], input[placeholder*="Floor" i]').first();
+                        if (await flnoLoc.count() > 0 && await flnoLoc.isVisible()) {
+                            await flnoLoc.fill(ppobFloor);
+                        }
+                    }
+
+                    // Nearby Landmark
+                    if (ppobLandmark) {
+                        const nrbyLoc = page.locator('#nrbyLdMrk, input[placeholder*="Nearby Landmark" i], input[placeholder*="Landmark" i]').first();
+                        if (await nrbyLoc.count() > 0 && await nrbyLoc.isVisible()) {
+                            await nrbyLoc.fill(ppobLandmark);
+                        }
+                    }
+                } catch (e) {}
+
+                // Contact & DOM fallback for Address
                 await page.evaluate(({ pin, city, dist, street, bno, bnm, flno, landmark, em, mob }) => {
                     const setVal = (selectors, val) => {
                         if (!val) return;
@@ -2184,9 +2272,6 @@ async function run() {
                         }
                     };
 
-                    setVal(['#pncd', 'input[placeholder*="Enter PIN Code" i]', 'input[ng-model*="pncd" i]'], pin);
-                    setVal(['#dst', 'input[placeholder*="Enter District Name" i]', 'input[ng-model*="dst" i]'], dist);
-                    setVal(['#loc', 'input[placeholder*="Enter City" i]', 'input[placeholder*="City" i]', 'input[ng-model*="loc" i]'], city);
                     setVal(['#st', 'input[placeholder*="Enter Road" i]', 'input[placeholder*="Road" i]', 'input[ng-model*="st" i]'], street);
                     setVal(['#bnm', 'input[placeholder*="Enter Name of Premises" i]', 'input[placeholder*="Premises" i]', 'input[ng-model*="bnm" i]'], bnm);
                     setVal(['#bno', 'input[placeholder*="Enter Building No" i]', 'input[placeholder*="Building No" i]', 'input[ng-model*="bno" i]'], bno);
@@ -2198,7 +2283,34 @@ async function run() {
 
                 await page.waitForTimeout(800);
 
-                // 3. Select State Jurisdiction (Sector / Circle / Ward / Charge / Unit)
+                // 4. Select State Jurisdiction (Sector / Circle / Ward / Charge / Unit)
+                try {
+                    const sjSelect = page.locator('select[ng-model*="stjd" i], select[name*="stjd" i], select[id*="stjd" i], .form-group:has-text("Sector") select, [class*="col-"]:has-text("Sector") select, [class*="col-"]:has-text("Ward") select').first();
+                    if (await sjSelect.count() > 0) {
+                        for (let i = 0; i < 6; i++) {
+                            const count = await sjSelect.locator('option').count();
+                            if (count > 1) break;
+                            await page.waitForTimeout(500);
+                        }
+                        const optCount = await sjSelect.locator('option').count();
+                        if (optCount > 1) {
+                            const allOpts = await sjSelect.locator('option').allInnerTexts();
+                            const matchedOpt = allOpts.find(o => 
+                                o.toUpperCase().includes(ppobStateJurisdiction.toUpperCase()) || 
+                                o.toUpperCase().includes('AMRAVATI') || 
+                                o.toUpperCase().includes('701')
+                            );
+                            if (matchedOpt) {
+                                await sjSelect.selectOption({ label: matchedOpt.trim() });
+                                sendUpdate(`Selected State Jurisdiction: ${matchedOpt.trim()}`);
+                            } else {
+                                await sjSelect.selectOption({ index: 1 });
+                            }
+                        }
+                    }
+                } catch (e) {}
+
+                // DOM fallback for State Jurisdiction
                 await page.evaluate(({ sjCode }) => {
                     const selects = Array.from(document.querySelectorAll('select'));
                     const sjSelect = selects.find(s => {
@@ -2226,9 +2338,66 @@ async function run() {
                     }
                 }, { sjCode: ppobStateJurisdiction });
 
-                await page.waitForTimeout(600);
+                await page.waitForTimeout(800);
 
-                // 4. Select Center Jurisdiction (Commissionerate, Division, Range)
+                // 5. Select Center Jurisdiction (Commissionerate -> Division -> Range)
+                try {
+                    // Commissionerate
+                    const commSelect = page.locator('select[ng-model*="comrt" i], select[id*="comrt" i], .form-group:has-text("Commissionerate") select').first();
+                    if (await commSelect.count() > 0) {
+                        for (let i = 0; i < 6; i++) {
+                            if (await commSelect.locator('option').count() > 1) break;
+                            await page.waitForTimeout(500);
+                        }
+                        const allOpts = await commSelect.locator('option').allInnerTexts();
+                        const matched = allOpts.find(o => o.includes(ppobComm) || o.toUpperCase().includes('NAGPUR') || o.toUpperCase().includes('AMRAVATI'));
+                        if (matched) {
+                            await commSelect.selectOption({ label: matched.trim() });
+                        } else if (await commSelect.locator('option').count() > 1) {
+                            await commSelect.selectOption({ index: 1 });
+                        }
+                        sendUpdate(`Selected Central Commissionerate.`);
+                        await page.waitForTimeout(1000);
+                    }
+
+                    // Division
+                    const divSelect = page.locator('select[ng-model*="divsn" i], select[id*="divsn" i], .form-group:has-text("Division") select').first();
+                    if (await divSelect.count() > 0) {
+                        for (let i = 0; i < 6; i++) {
+                            if (await divSelect.locator('option').count() > 1) break;
+                            await page.waitForTimeout(500);
+                        }
+                        const allOpts = await divSelect.locator('option').allInnerTexts();
+                        const matched = allOpts.find(o => o.includes(ppobDiv) || o.toUpperCase().includes('AMRAVATI') || o.toUpperCase().includes('WARUD'));
+                        if (matched) {
+                            await divSelect.selectOption({ label: matched.trim() });
+                        } else if (await divSelect.locator('option').count() > 1) {
+                            await divSelect.selectOption({ index: 1 });
+                        }
+                        sendUpdate(`Selected Central Division.`);
+                        await page.waitForTimeout(1000);
+                    }
+
+                    // Range
+                    const rangeSelect = page.locator('select[ng-model*="range" i], select[id*="range" i], .form-group:has-text("Range") select').first();
+                    if (await rangeSelect.count() > 0) {
+                        for (let i = 0; i < 6; i++) {
+                            if (await rangeSelect.locator('option').count() > 1) break;
+                            await page.waitForTimeout(500);
+                        }
+                        const allOpts = await rangeSelect.locator('option').allInnerTexts();
+                        const matched = allOpts.find(o => o.includes(ppobRange) || o.toUpperCase().includes('WARUD') || o.toUpperCase().includes('AMRAVATI'));
+                        if (matched) {
+                            await rangeSelect.selectOption({ label: matched.trim() });
+                        } else if (await rangeSelect.locator('option').count() > 1) {
+                            await rangeSelect.selectOption({ index: 1 });
+                        }
+                        sendUpdate(`Selected Central Range.`);
+                        await page.waitForTimeout(600);
+                    }
+                } catch (e) {}
+
+                // DOM fallback for Center Jurisdiction
                 await page.evaluate(({ comm, div, range }) => {
                     const selects = Array.from(document.querySelectorAll('select'));
 

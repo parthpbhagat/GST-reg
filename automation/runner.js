@@ -2862,76 +2862,169 @@ async function run() {
 
                 await page.waitForTimeout(800);
 
-                // 7. Select Nature of possession of premises
-                await page.evaluate(({ possessionVal }) => {
-                    const visibleSelects = Array.from(document.querySelectorAll('select')).filter(s => s.offsetParent !== null && !s.disabled);
-                    const posSelect = visibleSelects.find(s => {
-                        const ng = (s.getAttribute('ng-model') || '').toLowerCase();
-                        return ng.includes('psnt') || Array.from(s.options || []).some(o => /consent|own|rent|lease/i.test(o.text || ''));
+                // 7. Check if Proof Document is already uploaded on GST Portal
+                const docState = await page.evaluate(() => {
+                    const deleteBtns = Array.from(document.querySelectorAll('button, a.btn, a')).filter(b => {
+                        const t = (b.innerText || '').trim().toLowerCase();
+                        return t === 'delete' || t.includes('delete') || b.querySelector('.fa-trash, .glyphicon-trash');
                     });
-                    if (posSelect && posSelect.options.length > 1) {
-                        let pIdx = Array.from(posSelect.options).findIndex(o => new RegExp(possessionVal, 'i').test(o.text || o.value));
-                        posSelect.selectedIndex = pIdx > 0 ? pIdx : 1;
-                        posSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                }, { possessionVal: ppobPossession });
+                    const hasUploaded = deleteBtns.length > 0 || !!document.querySelector('.upload-table, a[download], i.fa-file-pdf-o');
+                    return { hasUploadedDoc: hasUploaded, deleteCount: deleteBtns.length };
+                });
 
-                await page.waitForTimeout(600);
-
-                // 8. Select Proof Document Type
-                await page.evaluate(({ docTypeVal }) => {
-                    const visibleSelects = Array.from(document.querySelectorAll('select')).filter(s => s.offsetParent !== null && !s.disabled);
-                    const docSelect = visibleSelects.find(s => {
-                        const ng = (s.getAttribute('ng-model') || '').toLowerCase();
-                        return ng.includes('doctype') || Array.from(s.options || []).some(o => /electricity bill|consent letter|municipal/i.test(o.text || ''));
-                    });
-                    if (docSelect && docSelect.options.length > 1) {
-                        let dIdx = Array.from(docSelect.options).findIndex(o => /electricity bill|consent letter|khata|tax/i.test(o.text || o.value));
-                        docSelect.selectedIndex = dIdx > 0 ? dIdx : 1;
-                        docSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                }, { docTypeVal: ppobDocType });
-
-                await page.waitForTimeout(600);
-
-                // 9. Upload Proof Document file
-                try {
-                    const rawDocData = data.ppob_docFile || data.electricityBillFile || data.authSigProofFile || (data.p1 && data.p1.authSigProofFile) || '';
-                    if (rawDocData && (rawDocData.startsWith('data:application/pdf') || rawDocData.startsWith('data:image'))) {
-                        const fs = require('fs');
-                        const path = require('path');
-                        const cleanB64 = rawDocData.replace(/^data:.*?;base64,/, '');
-                        const ext = rawDocData.includes('pdf') ? 'pdf' : 'jpg';
-                        const tempDocPath = path.join(__dirname, `temp_ppob_doc.${ext}`);
-                        fs.writeFileSync(tempDocPath, cleanB64, 'base64');
-                        const ppobFileInput = page.locator('#pp_doc, input[type="file"]').last();
-                        if (await ppobFileInput.count() > 0) {
-                            await ppobFileInput.setInputFiles(tempDocPath).catch(() => {});
-                            sendUpdate('Uploaded Proof of Principal Place of Business document.');
+                // 8. Nature of possession of premises (ONLY change if NO document uploaded and not already set)
+                if (!docState.hasUploadedDoc) {
+                    await page.evaluate(({ possessionVal }) => {
+                        const visibleSelects = Array.from(document.querySelectorAll('select')).filter(s => s.offsetParent !== null && !s.disabled);
+                        const posSelect = visibleSelects.find(s => {
+                            const ng = (s.getAttribute('ng-model') || '').toLowerCase();
+                            return ng.includes('psnt') || Array.from(s.options || []).some(o => /consent|own|rent|lease/i.test(o.text || ''));
+                        });
+                        if (posSelect && posSelect.options.length > 1) {
+                            const currentVal = (posSelect.options[posSelect.selectedIndex]?.text || posSelect.value || '').trim();
+                            const isAlreadySelected = posSelect.selectedIndex > 0 && currentVal !== '' && !/select/i.test(currentVal);
+                            if (!isAlreadySelected) {
+                                let pIdx = Array.from(posSelect.options).findIndex(o => new RegExp(possessionVal, 'i').test(o.text || o.value));
+                                posSelect.selectedIndex = pIdx > 0 ? pIdx : 1;
+                                posSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
                         }
-                    }
-                } catch (e) {
-                    sendUpdate(`PPOB Doc Upload note: ${e.message}`);
+                    }, { possessionVal: ppobPossession });
+                } else {
+                    sendUpdate(`ℹ️ Nature of Possession already locked with ${docState.deleteCount} uploaded document(s). Preserving to prevent portal conflict.`);
                 }
 
                 await page.waitForTimeout(600);
 
-                // 10. Select Nature of Business Activity (Retail Business)
-                await page.evaluate(() => {
-                    const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]')).filter(c => c.offsetParent !== null);
-                    const bwhCb = cbs.find(cb => /bonded warehouse/i.test(cb.parentElement?.innerText || ''));
-                    if (bwhCb && bwhCb.checked) {
-                        bwhCb.click();
+                // 9. Select Proof Document Type & Upload (ONLY if not already uploaded)
+                if (!docState.hasUploadedDoc) {
+                    await page.evaluate(({ docTypeVal }) => {
+                        const visibleSelects = Array.from(document.querySelectorAll('select')).filter(s => s.offsetParent !== null && !s.disabled);
+                        const docSelect = visibleSelects.find(s => {
+                            const ng = (s.getAttribute('ng-model') || '').toLowerCase();
+                            return ng.includes('doctype') || Array.from(s.options || []).some(o => /electricity bill|consent letter|municipal/i.test(o.text || ''));
+                        });
+                        if (docSelect && docSelect.options.length > 1 && docSelect.selectedIndex <= 0) {
+                            let dIdx = Array.from(docSelect.options).findIndex(o => /electricity bill|consent letter|khata|tax/i.test(o.text || o.value));
+                            docSelect.selectedIndex = dIdx > 0 ? dIdx : 1;
+                            docSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }, { docTypeVal: ppobDocType });
+
+                    await page.waitForTimeout(600);
+
+                    // Upload Proof Document file
+                    try {
+                        const rawDocData = data.ppob_docFile || data.electricityBillFile || data.authSigProofFile || (data.p1 && data.p1.authSigProofFile) || '';
+                        if (rawDocData && (rawDocData.startsWith('data:application/pdf') || rawDocData.startsWith('data:image'))) {
+                            const fs = require('fs');
+                            const path = require('path');
+                            const cleanB64 = rawDocData.replace(/^data:.*?;base64,/, '');
+                            const ext = rawDocData.includes('pdf') ? 'pdf' : 'jpg';
+                            const tempDocPath = path.join(__dirname, `temp_ppob_doc.${ext}`);
+                            fs.writeFileSync(tempDocPath, cleanB64, 'base64');
+                            const ppobFileInput = page.locator('#pp_doc, input[type="file"]').last();
+                            if (await ppobFileInput.count() > 0) {
+                                await ppobFileInput.setInputFiles(tempDocPath).catch(() => {});
+                                sendUpdate('Uploaded Proof of Principal Place of Business document.');
+                            }
+                        }
+                    } catch (e) {
+                        sendUpdate(`PPOB Doc Upload note: ${e.message}`);
                     }
-                    const retailCb = cbs.find(cb => /retail business/i.test(cb.parentElement?.innerText || ''));
-                    if (retailCb && !retailCb.checked) {
-                        retailCb.click();
-                        retailCb.checked = true;
-                        retailCb.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+
+                await page.waitForTimeout(600);
+
+                // 10. Select Nature of Business Activity (MANDATORY: Retail Business / Supplier of Services)
+                try {
+                    const activityLocators = [
+                        page.locator('label:has-text("Retail Business")'),
+                        page.locator('label:has-text("Supplier of Services")'),
+                        page.locator('.checkbox:has-text("Retail Business") input[type="checkbox"]'),
+                        page.locator('.checkbox:has-text("Supplier of Services") input[type="checkbox"]'),
+                        page.locator('label:has-text("Office / Sale Office")')
+                    ];
+                    for (const loc of activityLocators) {
+                        if (await loc.count() > 0) {
+                            await loc.first().scrollIntoViewIfNeeded().catch(() => {});
+                            await loc.first().click({ force: true, timeout: 2000 }).catch(() => {});
+                            break;
+                        }
+                    }
+                } catch (e) {}
+
+                await page.evaluate(() => {
+                    // Check Retail Business or Supplier of Services
+                    const allLabels = Array.from(document.querySelectorAll('label, .checkbox, span, div')).filter(el => el.offsetParent !== null);
+                    const target = allLabels.find(l => {
+                        const t = (l.innerText || '').trim();
+                        return /^retail business$/i.test(t) || t.includes('Retail Business') || /^supplier of services$/i.test(t);
+                    });
+                    if (target) {
+                        target.click();
+                        const cb = target.querySelector('input[type="checkbox"]') || (target.getAttribute('for') ? document.getElementById(target.getAttribute('for')) : null) || target.closest('div')?.querySelector('input[type="checkbox"]');
+                        if (cb && !cb.checked) {
+                            cb.checked = true;
+                            cb.dispatchEvent(new Event('change', { bubbles: true }));
+                            cb.dispatchEvent(new Event('input', { bubbles: true }));
+                            cb.dispatchEvent(new Event('click', { bubbles: true }));
+                        }
+                    }
+
+                    // Fallback to checking any checkbox in Nature of Business Activity
+                    const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]')).filter(c => c.offsetParent !== null);
+                    const retCb = cbs.find(c => /retail business/i.test((c.parentElement?.innerText || '') + ' ' + (c.id || '')));
+                    if (retCb && !retCb.checked) {
+                        retCb.checked = true;
+                        retCb.dispatchEvent(new Event('change', { bubbles: true }));
+                        retCb.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+
+                    // AngularJS Scope sync for Nature of Business Activity
+                    if (window.angular) {
+                        try {
+                            const scopes = Array.from(document.querySelectorAll('.tab-pane.active, [ng-controller], form, body')).map(e => window.angular.element(e).scope()).filter(Boolean);
+                            for (const sc of scopes) {
+                                const objs = [sc.ppbz, sc.ppbzdtls, sc.address, sc.x && sc.x.ppbzdtls, sc].filter(Boolean);
+                                for (const o of objs) {
+                                    if (o.natBus) {
+                                        if (Array.isArray(o.natBus)) {
+                                            if (!o.natBus.includes('Retail Business') && !o.natBus.includes('RET')) o.natBus.push('Retail Business');
+                                        } else if (typeof o.natBus === 'object') {
+                                            o.natBus.retail = true;
+                                            o.natBus.retailBusiness = true;
+                                        }
+                                    }
+                                    if (o.natureOfBus) {
+                                        if (Array.isArray(o.natureOfBus)) {
+                                            if (!o.natureOfBus.includes('Retail Business')) o.natureOfBus.push('Retail Business');
+                                        } else if (typeof o.natureOfBus === 'object') {
+                                            o.natureOfBus.retail = true;
+                                        }
+                                    }
+                                }
+                                if (!sc.$$phase) sc.$apply();
+                            }
+                        } catch (e) {}
                     }
                 });
 
+                sendUpdate('✅ Nature of Business Activity (Retail Business) selected.');
+
                 // 11. Additional Place of Business toggle -> No
+                try {
+                    const noRadioLoc = page.locator('label:has-text("Have Additional Place of Business")').locator('..').locator('label:has-text("No"), input[value="N"]').first();
+                    if (await noRadioLoc.count() > 0) {
+                        await noRadioLoc.click({ force: true, timeout: 2000 }).catch(() => {});
+                    } else {
+                        const genericNo = page.locator('input[type="radio"][value="N"]:visible, label:has-text("No"):visible').last();
+                        if (await genericNo.count() > 0) {
+                            await genericNo.click({ force: true, timeout: 2000 }).catch(() => {});
+                        }
+                    }
+                } catch (e) {}
+
                 await page.evaluate(() => {
                     const radios = Array.from(document.querySelectorAll('input[type="radio"]')).filter(r => r.offsetParent !== null);
                     const noR = radios.find(r => {
@@ -2946,6 +3039,7 @@ async function run() {
                 });
 
                 await page.waitForTimeout(800);
+                await dismissAndConfirmModals('Principal Place of Business');
                 await saveAndAdvanceTab('Principal Place of Business');
                 continue;
             }

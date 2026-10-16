@@ -1611,7 +1611,10 @@ async function run() {
             const dismissAndConfirmModals = async (contextLabel = '') => {
                 for (let attempt = 0; attempt < 5; attempt++) {
                     const result = await page.evaluate(() => {
-                        const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .sweet-alert, .ui-dialog')).filter(d => d.offsetParent !== null || window.getComputedStyle(d).display !== 'none');
+                        const dialogs = Array.from(document.querySelectorAll('.modal, div[role="dialog"], .sweet-alert, .ui-dialog, .bootbox')).filter(d => {
+                            const s = window.getComputedStyle(d);
+                            return s.display !== 'none' && s.visibility !== 'hidden' && (d.offsetWidth > 0 || d.offsetHeight > 0 || s.opacity !== '0');
+                        });
                         for (const d of dialogs) {
                             const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn, a')).filter(b => b.offsetParent !== null || window.getComputedStyle(b).display !== 'none');
                             const dText = ((d.innerText || d.textContent || '') + ' ' + (d.querySelector('.modal-title, h4, h3, p')?.innerText || '')).replace(/\s+/g, ' ').trim().toLowerCase();
@@ -1674,24 +1677,40 @@ async function run() {
                     }
                 });
 
-                // Click Save & Continue button
-                const saveLoc = page.locator('button:has-text("SAVE & CONTINUE"):visible, button:has-text("Save & Continue"):visible, button:has-text("Continue"):visible, button.btn-primary:has-text("SAVE"):visible').last();
-                if (await saveLoc.count() > 0) {
-                    await saveLoc.click({ force: true, timeout: 3000 }).catch(() => {});
+                // Click Save & Continue button with highest priority on exact SAVE & CONTINUE
+                const exactSaveContinue = page.locator('button:has-text("SAVE & CONTINUE"):visible, button:has-text("Save & Continue"):visible, input[value="SAVE & CONTINUE"]:visible, input[value="Save & Continue"]:visible').last();
+                if (await exactSaveContinue.count() > 0) {
+                    await exactSaveContinue.click({ force: true, timeout: 3000 }).catch(() => {});
                     sendUpdate(`Clicked "Save & Continue" on ${stepLabel} to persist and complete step.`);
                 } else {
-                    await page.evaluate(() => {
-                        window.scrollTo(0, document.body.scrollHeight);
-                        const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn')).filter(b => b.offsetParent !== null);
-                        const b = btns.reverse().find(x => /save\s*&\s*continue|continue/i.test(x.innerText || x.value || ''));
-                        if (b) { b.removeAttribute('disabled'); b.disabled = false; b.click(); }
-                    });
-                    sendUpdate(`Triggered "Save & Continue" on ${stepLabel}.`);
+                    const saveLoc = page.locator('button:has-text("Continue"):visible, button.btn-primary:has-text("SAVE"):visible, input[value="Continue"]:visible').last();
+                    if (await saveLoc.count() > 0) {
+                        await saveLoc.click({ force: true, timeout: 3000 }).catch(() => {});
+                        sendUpdate(`Clicked "Save / Continue" on ${stepLabel} to persist and complete step.`);
+                    } else {
+                        await page.evaluate(() => {
+                            window.scrollTo(0, document.body.scrollHeight);
+                            const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn')).filter(b => b.offsetParent !== null);
+                            const b = btns.reverse().find(x => /save\s*&\s*continue|continue/i.test(x.innerText || x.value || ''));
+                            if (b) { b.removeAttribute('disabled'); b.disabled = false; b.click(); }
+                        });
+                        sendUpdate(`Triggered "Save & Continue" on ${stepLabel}.`);
+                    }
                 }
 
                 // Auto-confirm prompts smartly
                 await dismissAndConfirmModals(stepLabel);
                 await page.waitForTimeout(2000);
+
+                // Check and log any visible validation errors on this step
+                const currentErrors = await page.evaluate(() => {
+                    const errEls = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"]'));
+                    const staticIgnore = /only maximum file size|format is only allowed|file with pdf|jpeg format is only allowed|1 mb is allowed|upload photograph/i;
+                    return errEls.map(e => (e.innerText || '').trim()).filter(t => t.length > 3 && !staticIgnore.test(t));
+                });
+                if (currentErrors.length > 0) {
+                    sendUpdate(`Validation note on ${stepLabel}: ${currentErrors.join(' | ')}`);
+                }
             };
 
             // Inspect active tab / current screen via Breadcrumb, Heading, and Form Content
@@ -2120,12 +2139,15 @@ async function run() {
                             await bnoLoc.fill(pBno, { timeout: 2000 }).catch(() => {});
                         }
 
-                        // Toggle "Also Authorized Signatory"
+                        // Toggle "Also Authorized Signatory" - verify state before click to prevent toggling off
                         const asContainers = page.locator('div.form-group, .row, div').filter({ hasText: /also authorized signatory/i });
                         if (await asContainers.count() > 0) {
                             const asSwitch = asContainers.last().locator('.switch, label.switch, input[type="checkbox"], span.slider, div.toggle').first();
                             if (await asSwitch.count() > 0) {
-                                await asSwitch.click({ force: true, timeout: 2000 }).catch(() => {});
+                                const isChecked = await asContainers.last().locator('input[type="checkbox"]').first().isChecked().catch(() => false);
+                                if (!isChecked) {
+                                    await asSwitch.click({ force: true, timeout: 2000 }).catch(() => {});
+                                }
                             }
                         }
                     } catch (e) {}
@@ -2196,7 +2218,7 @@ async function run() {
                             if (l) l.click();
                         }
 
-                        // Also Authorized Signatory switch
+                        // Also Authorized Signatory switch (ensure turned ON without double-clicking)
                         const labels = Array.from(document.querySelectorAll('label, div, p, span'));
                         const asLbl = labels.find(el => (el.innerText || '').toLowerCase().includes('also authorized signatory'));
                         if (asLbl) {
@@ -2204,12 +2226,15 @@ async function run() {
                             if (parent) {
                                 const cb = parent.querySelector('input[type="checkbox"]');
                                 const sw = parent.querySelector('.switch, label.switch, span.slider, div.toggle');
-                                if (cb && !cb.checked) {
-                                    cb.click();
-                                    cb.checked = true;
-                                    cb.dispatchEvent(new Event('change', { bubbles: true }));
-                                } else if (sw) {
-                                    sw.click();
+                                const isAlreadyOn = (cb && cb.checked) || (sw && (sw.classList.contains('active') || sw.classList.contains('checked') || sw.getAttribute('aria-checked') === 'true'));
+                                if (!isAlreadyOn) {
+                                    if (cb) {
+                                        cb.checked = true;
+                                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                                        cb.dispatchEvent(new Event('input', { bubbles: true }));
+                                    } else if (sw) {
+                                        sw.click();
+                                    }
                                 }
                             }
                         }
@@ -2317,34 +2342,159 @@ async function run() {
             // Step 3: Authorized Signatory tab
             if (screenInfo.stepKey === 'authorized signatory') {
                 sendUpdate('[પગલું ૩: Authorized Signatory] પ્રાઇમરી સાઇન કરનાર કન્ફર્મ કરી રહ્યા છીએ...');
-                await page.evaluate(({ em, mob }) => {
-                    const chk = document.querySelector('input[type="checkbox"][id*="asg" i], input[type="checkbox"][id*="primary" i], input[type="checkbox"][ng-model*="isasg" i], input[type="checkbox"][ng-model*="ispas" i], table tbody tr input[type="checkbox"]');
-                    if (chk && !chk.checked) {
-                        chk.click();
-                        chk.checked = true;
-                        chk.dispatchEvent(new Event('change', { bubbles: true }));
-                        chk.dispatchEvent(new Event('input', { bubbles: true }));
-                    }
-                    if (window.angular) {
-                        try {
-                            const sc = window.angular.element(chk || document.body).scope();
-                            if (sc) {
-                                const list = sc.asgList || sc.authSignList || (sc.asg && sc.asg.asgList);
-                                if (Array.isArray(list) && list.length > 0) {
-                                    list[0].ispas = 'Y';
-                                    list[0].isasg = 'Y';
-                                }
-                                if (!sc.$$phase) sc.$apply();
-                            }
-                        } catch (e) {}
-                    }
+
+                // 1. Inspect Tab 3 state (Table mode vs Form mode)
+                const asgState = await page.evaluate(({ em, mob }) => {
+                    const tableRows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => {
+                        const t = (r.innerText || '').toLowerCase();
+                        return t.length > 5 && !t.includes('no records') && !t.includes('no data');
+                    });
+                    const hasForm = !!document.querySelector('input[placeholder*="First Name" i], input[name*="fn" i], select[ng-model*="docType" i], input[placeholder*="Designation" i]');
+                    const addNewBtn = !!Array.from(document.querySelectorAll('button, a.btn')).find(b => (b.innerText || '').toLowerCase().includes('add new'));
+
+                    return {
+                        rowCount: tableRows.length,
+                        hasForm: hasForm,
+                        hasAddNew: addNewBtn
+                    };
                 }, { em: (data.email || 'parthpbhagat@gmail.com').trim().toLowerCase(), mob: (data.mobile || '9011494385').trim() });
 
+                sendUpdate(`Authorized Signatory Screen: ${asgState.rowCount} signatories in table, Form visible: ${asgState.hasForm}`);
+
+                // Case 1: Signatories are present in Table mode
+                if (asgState.rowCount > 0) {
+                    // Check Primary Authorized Signatory checkbox/radio in the table
+                    try {
+                        const rowLoc = page.locator('table tbody tr').first();
+                        const primaryInput = rowLoc.locator('input[type="checkbox"], input[type="radio"]').first();
+                        if (await primaryInput.count() > 0) {
+                            const isChk = await primaryInput.isChecked().catch(() => false);
+                            if (!isChk) {
+                                await primaryInput.check({ force: true, timeout: 2000 }).catch(async () => {
+                                    await primaryInput.click({ force: true, timeout: 2000 }).catch(() => {});
+                                });
+                                sendUpdate('Designated row 1 as Primary Authorized Signatory.');
+                            }
+                        }
+                    } catch (e) {}
+
+                    // Also set via DOM & AngularJS scope
+                    await page.evaluate(() => {
+                        const rows = Array.from(document.querySelectorAll('table tbody tr'));
+                        for (const row of rows) {
+                            const inputs = Array.from(row.querySelectorAll('input[type="checkbox"], input[type="radio"]'));
+                            for (const inp of inputs) {
+                                if (!inp.checked) {
+                                    inp.checked = true;
+                                    inp.dispatchEvent(new Event('change', { bubbles: true }));
+                                    inp.dispatchEvent(new Event('click', { bubbles: true }));
+                                }
+                            }
+                            if (window.angular) {
+                                try {
+                                    const sc = window.angular.element(row).scope();
+                                    if (sc) {
+                                        if (sc.row) { sc.row.ispas = 'Y'; sc.row.isasg = 'Y'; }
+                                        if (sc.asg) { sc.asg.ispas = 'Y'; sc.asg.isasg = 'Y'; }
+                                        if (sc.item) { sc.item.ispas = 'Y'; sc.item.isasg = 'Y'; }
+                                        if (sc.signatory) { sc.signatory.ispas = 'Y'; sc.signatory.isasg = 'Y'; }
+                                    }
+                                } catch (e) {}
+                            }
+                        }
+
+                        // Also update root/parent scopes
+                        if (window.angular) {
+                            try {
+                                const scopes = Array.from(document.querySelectorAll('[ng-controller], [ng-view], body')).map(e => window.angular.element(e).scope()).filter(Boolean);
+                                for (const sc of scopes) {
+                                    const lists = [sc.asgList, sc.authSignList, sc.signatoryList, sc.asg && sc.asg.asgList, sc.x && sc.x.asgdtls, sc.asgdtls].filter(Boolean);
+                                    for (const list of lists) {
+                                        if (Array.isArray(list) && list.length > 0) {
+                                            list[0].ispas = 'Y';
+                                            list[0].isasg = 'Y';
+                                            list[0].isopas = 'Y';
+                                        }
+                                    }
+                                    if (!sc.$$phase) sc.$apply();
+                                }
+                            } catch (e) {}
+                        }
+                    });
+                } else if (asgState.hasForm) {
+                    // Case 2: Form view is open - Fill in Authorized Signatory details
+                    sendUpdate('Filling Authorized Signatory form details...');
+                    const pFirst = (data.p1 && data.p1.firstName) || 'Parth';
+                    const pMiddle = (data.p1 && data.p1.middleName) || 'Purushottam';
+                    const pLast = (data.p1 && data.p1.lastName) || 'Bhagat';
+                    const pMobile = (data.mobile || '9011494385').trim();
+                    const pEmail = (data.email || 'parthpbhagat@gmail.com').trim().toLowerCase();
+
+                    await page.evaluate(({ f, m, l, mob, em }) => {
+                        const setVal = (el, val) => {
+                            if (!el || !val) return;
+                            el.value = val;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                        };
+                        const fn = document.querySelector('input[placeholder*="First Name" i], #fn, #fnm');
+                        const mn = document.querySelector('input[placeholder*="Middle Name" i], #mn');
+                        const ln = document.querySelector('input[placeholder*="Last Name" i], #ln, #lnm');
+                        if (fn && !fn.value) setVal(fn, f);
+                        if (mn && !mn.value) setVal(mn, m);
+                        if (ln && !ln.value) setVal(ln, l);
+
+                        // Check primary signatory checkbox/radio
+                        const prim = document.querySelector('input[type="checkbox"][id*="primary" i], input[type="radio"][id*="primary" i], input[id*="ispas" i]');
+                        if (prim && !prim.checked) {
+                            prim.checked = true;
+                            prim.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }, { f: pFirst, m: pMiddle, l: pLast, mob: pMobile, em: pEmail });
+
+                    // Click Save button on form
+                    const saveFormBtn = page.locator('button.btn-primary:has-text("SAVE"), button:has-text("Save Details"), button:has-text("SAVE")').first();
+                    if (await saveFormBtn.count() > 0) {
+                        await saveFormBtn.click({ force: true, timeout: 3000 }).catch(() => {});
+                        sendUpdate('Saved Authorized Signatory form.');
+                        await page.waitForTimeout(1500);
+                    }
+                } else if (asgState.hasAddNew) {
+                    // Case 3: Table is empty and Add New button is available
+                    sendUpdate('Clicking Add New Authorized Signatory...');
+                    const addBtn = page.locator('button:has-text("ADD NEW"), a:has-text("ADD NEW"), button:has-text("Add New")').first();
+                    if (await addBtn.count() > 0) {
+                        await addBtn.click({ force: true, timeout: 3000 }).catch(() => {});
+                        await page.waitForTimeout(1000);
+                    }
+                }
+
                 await page.waitForTimeout(800);
-                await dismissAndConfirmModals();
+                await dismissAndConfirmModals('Authorized Signatory');
 
                 // Save & Continue on Authorized Signatory
                 await saveAndAdvanceTab('Authorized Signatory');
+
+                // Fallback check: If the page didn't advance, attempt direct navigation to Tab 4 (Authorized Representative) in the wizard
+                const stillOnAsg = await page.evaluate(() => {
+                    const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
+                    const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
+                    return bc.includes('authorized signatory') || tab.includes('authorized signatory');
+                });
+
+                if (stillOnAsg) {
+                    sendUpdate('Attempting direct navigation to Tab 4 (Authorized Representative)...');
+                    await page.evaluate(() => {
+                        const tabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) li a, ul.step-wizard li a, .wizard-steps li a, .tabs a'));
+                        const tab4 = tabs.find(t => (t.innerText || '').toLowerCase().includes('authorized representative'));
+                        if (tab4) {
+                            tab4.click();
+                        }
+                    });
+                    await page.waitForTimeout(1500);
+                    await dismissAndConfirmModals('Tab 4 Navigation');
+                }
+
                 continue;
             }
 

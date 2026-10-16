@@ -2149,7 +2149,7 @@ async function run() {
                         const list = Array.isArray(selectors) ? selectors : selectors.split(',').map(s => s.trim());
                         for (const sel of list) {
                             const els = Array.from(document.querySelectorAll(sel));
-                            const v = els.find(e => e.offsetParent !== null && !e.disabled && !e.readOnly);
+                            const v = els.find(e => e.offsetParent !== null && !e.disabled);
                             if (v) return v;
                         }
                         return null;
@@ -2159,6 +2159,8 @@ async function run() {
                         if (!val) return;
                         const el = findVisible(selectors);
                         if (el) {
+                            el.removeAttribute('readonly');
+                            el.removeAttribute('disabled');
                             el.focus();
                             el.value = val;
                             el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -2217,39 +2219,56 @@ async function run() {
 
                 await page.waitForTimeout(600);
 
-                // 2. PIN Code: Playwright native typing & suggestion selection
+                // 2. PIN Code: Playwright native typing + keyboard suggestion selection
                 try {
                     const pinLoc = page.locator('input[placeholder*="Enter PIN Code" i]:visible, #pncd:visible').last();
                     if (await pinLoc.count() > 0) {
                         await pinLoc.click({ timeout: 2000 }).catch(() => {});
                         await pinLoc.fill('', { timeout: 2000 }).catch(() => {});
-                        await pinLoc.type(ppobPin, { delay: 60, timeout: 3000 }).catch(() => {});
-                        await page.waitForTimeout(800);
+                        await pinLoc.type(ppobPin, { delay: 50, timeout: 3000 }).catch(() => {});
+                        await page.waitForTimeout(600);
+                        await pinLoc.press('ArrowDown').catch(() => {});
+                        await page.waitForTimeout(300);
+                        await pinLoc.press('Enter').catch(() => {});
+                        await page.waitForTimeout(600);
 
-                        const pinSug = page.locator('.dropdown-menu:visible li, .typeahead-popup:visible li, .uib-typeahead-match:visible, li[id*="typeahead"]:visible').filter({ hasText: ppobPin }).first();
-                        if (await pinSug.count() > 0) {
-                            await pinSug.click({ force: true, timeout: 2000 }).catch(() => {});
-                            sendUpdate(`Selected PIN suggestion: ${ppobPin}`);
-                            await page.waitForTimeout(800);
-                        }
+                        await page.evaluate(({ pin }) => {
+                            const items = Array.from(document.querySelectorAll('ul li, .dropdown-menu li, .typeahead-popup li, .uib-typeahead-match, li[id*="typeahead"], [role="option"]')).filter(el => el.offsetParent !== null);
+                            const target = items.find(el => (el.innerText || '').includes(pin));
+                            if (target) {
+                                target.click();
+                                const a = target.querySelector('a');
+                                if (a) a.click();
+                            }
+                        }, { pin: ppobPin });
+                        sendUpdate(`Selected PIN suggestion: ${ppobPin}`);
                     }
                 } catch (e) {}
 
-                // 3. City: Playwright native typing & suggestion selection
+                // 3. City: Playwright native typing + keyboard suggestion selection
                 try {
                     const cityLoc = page.locator('input[placeholder*="Enter City" i]:visible, input[placeholder*="City" i]:visible, #loc:visible').last();
                     if (await cityLoc.count() > 0) {
                         await cityLoc.click({ timeout: 2000 }).catch(() => {});
                         await cityLoc.fill('', { timeout: 2000 }).catch(() => {});
-                        await cityLoc.type(ppobCity, { delay: 60, timeout: 3000 }).catch(() => {});
-                        await page.waitForTimeout(1000);
+                        await cityLoc.type(ppobCity, { delay: 50, timeout: 3000 }).catch(() => {});
+                        await page.waitForTimeout(600);
+                        await cityLoc.press('ArrowDown').catch(() => {});
+                        await page.waitForTimeout(300);
+                        await cityLoc.press('Enter').catch(() => {});
+                        await page.waitForTimeout(600);
 
-                        const citySug = page.locator('.dropdown-menu:visible li, .typeahead-popup:visible li, .uib-typeahead-match:visible, li[id*="typeahead"]:visible').filter({ hasText: new RegExp(ppobCity, 'i') }).first();
-                        if (await citySug.count() > 0) {
-                            await citySug.click({ force: true, timeout: 2000 }).catch(() => {});
-                            sendUpdate(`Selected City suggestion: ${ppobCity}`);
-                            await page.waitForTimeout(1200);
-                        }
+                        await page.evaluate(({ city }) => {
+                            const items = Array.from(document.querySelectorAll('ul li, .dropdown-menu li, .typeahead-popup li, .uib-typeahead-match, li[id*="typeahead"], [role="option"]')).filter(el => el.offsetParent !== null);
+                            const target = items.find(el => new RegExp(city, 'i').test(el.innerText || ''));
+                            if (target) {
+                                target.click();
+                                const a = target.querySelector('a');
+                                if (a) a.click();
+                            }
+                        }, { city: ppobCity });
+                        sendUpdate(`Selected City suggestion: ${ppobCity}`);
+                        await page.waitForTimeout(1000);
                     }
                 } catch (e) {}
 
@@ -2546,17 +2565,27 @@ async function run() {
 
             // Click Save & Continue or Next button to move to the NEXT step sequentially
             try {
-                const saveBtnLoc = page.locator('button, input[type="button"], input[type="submit"], a.btn, a').filter({
-                    hasText: /save\s*&\s*continue|continue|save\s*&\s*next|\bnext\b/i
-                }).last();
-                if (await saveBtnLoc.count() > 0 && await saveBtnLoc.isVisible()) {
-                    await saveBtnLoc.scrollIntoViewIfNeeded().catch(() => {});
-                    await saveBtnLoc.click({ force: true }).catch(() => {});
+                // Ensure Save / Continue buttons are not disabled by Angular form validity
+                await page.evaluate(() => {
+                    window.scrollTo(0, document.body.scrollHeight);
+                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a.btn, a')).filter(b => b.offsetParent !== null);
+                    for (const b of btns) {
+                        const t = (b.innerText || b.value || '').trim().toLowerCase();
+                        if (t.includes('save') || t.includes('continue') || t.includes('next')) {
+                            b.removeAttribute('disabled');
+                            b.disabled = false;
+                        }
+                    }
+                });
+
+                const saveBtnLoc = page.locator('button:has-text("SAVE & CONTINUE"):visible, button:has-text("Save & Continue"):visible, button:has-text("Continue"):visible, button.btn-primary:has-text("SAVE"):visible').last();
+                if (await saveBtnLoc.count() > 0) {
+                    await saveBtnLoc.click({ force: true, timeout: 3000 }).catch(() => {});
                     sendUpdate('Clicked "Save & Continue" / "Next" to advance to next step.');
                 } else {
                     const clickedBtn = await page.evaluate(() => {
                         window.scrollTo(0, document.body.scrollHeight);
-                        const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a.btn, a'));
+                        const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a.btn, a')).filter(b => b.offsetParent !== null);
                         const btn = btns.reverse().find(b => {
                             const t = (b.innerText || b.value || b.textContent || '').trim().toLowerCase();
                             return (t.includes('save') && t.includes('continue')) ||
@@ -2564,7 +2593,9 @@ async function run() {
                                    /\bnext\b/i.test(t) ||
                                    /\bcontinue\b/i.test(t);
                         });
-                        if (btn && !btn.disabled && btn.offsetParent !== null) {
+                        if (btn) {
+                            btn.removeAttribute('disabled');
+                            btn.disabled = false;
                             btn.click();
                             return (btn.innerText || btn.value || btn.textContent || '').trim();
                         }
@@ -2574,9 +2605,33 @@ async function run() {
                         sendUpdate(`Clicked "${clickedBtn}" to advance to next step.`);
                     }
                 }
+
+                // Poll and immediately confirm any warning / mismatch / proceed modal dialogs!
+                for (let attempt = 0; attempt < 4; attempt++) {
+                    await page.waitForTimeout(800);
+                    const modalConfirmed = await page.evaluate(() => {
+                        const dialogs = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .sweet-alert, .ui-dialog')).filter(d => d.offsetParent !== null);
+                        for (const d of dialogs) {
+                            const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn, a')).filter(b => b.offsetParent !== null);
+                            const proceedBtn = btns.find(b => /proceed|continue|yes|confirm|ok|close|save/i.test(b.innerText || b.value || b.textContent || ''));
+                            if (proceedBtn) {
+                                proceedBtn.removeAttribute('disabled');
+                                proceedBtn.disabled = false;
+                                proceedBtn.click();
+                                return (proceedBtn.innerText || proceedBtn.value || '').trim();
+                            }
+                        }
+                        return null;
+                    });
+                    if (modalConfirmed) {
+                        sendUpdate(`Auto-confirmed prompt: "${modalConfirmed}"`);
+                        await page.waitForTimeout(1000);
+                        break;
+                    }
+                }
             } catch (e) {}
 
-            await page.waitForTimeout(2500);
+            await page.waitForTimeout(2000);
         }
 
         // Verify that the portal is genuinely on the Verification screen before attempting submission

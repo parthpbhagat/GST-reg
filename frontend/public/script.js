@@ -2660,6 +2660,10 @@ window.startAutomationPipeline = async function (id, mode = 'regular', multiStat
                     label: mapped.label,
                     appId: activeAutomationAppId
                 });
+            } else if (/warning|prompt handled|modal prompt|⚠️/i.test(status)) {
+                if (window.showPipelineWarningBanner) {
+                    window.showPipelineWarningBanner(status.replace(/^STATUS:\s*/i, ''));
+                }
             }
 
             if (status.includes('Navigating')) setPipelineActiveStep(2);
@@ -2777,6 +2781,14 @@ window.startAutomationPipeline = async function (id, mode = 'regular', multiStat
             badge.innerText = 'ADDRESS WARNING';
             badge.style.color = '#f97316';
             document.getElementById('warning-card').classList.remove('hidden');
+        });
+
+        socket.on('automation_portal_warning', (warn) => {
+            console.log('Received automation_portal_warning:', warn);
+            if (window.showPipelineWarningBanner) {
+                const text = typeof warn === 'object' ? (warn.message || warn.rawMessage || warn.title || JSON.stringify(warn)) : warn;
+                window.showPipelineWarningBanner(text);
+            }
         });
 
         socket.on('automation_portal_error', (data) => {
@@ -3045,6 +3057,17 @@ window.mapPortalError = function (msg) {
         return { field: 'ppob_docFile', step: 4, stepName: 'Principal Place of Business', label: 'Principal Place Document' };
     }
     return { field: 'businessConstitution', step: 0, stepName: 'Business Details', label: 'Constitution of Business' };
+};
+
+window.showPipelineWarningBanner = function (msg) {
+    if (!msg) return;
+    const banner = document.getElementById('pipeline-warning-banner');
+    const bannerText = document.getElementById('pipeline-warning-banner-text');
+    if (banner && bannerText) {
+        bannerText.innerText = typeof msg === 'object' ? (msg.message || JSON.stringify(msg)) : msg;
+        banner.classList.remove('hidden');
+        banner.style.display = 'flex';
+    }
 };
 
 window.showPipelineErrorModal = function (errData) {

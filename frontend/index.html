@@ -531,6 +531,22 @@
                     </div>
                 </div>
 
+                <!-- Live Portal Warning Banner (Visible when any GST Portal Warning/Modal Occurs) -->
+                <div id="pipeline-warning-banner" class="hidden"
+                    style="margin-bottom: 20px; border: 1.5px solid #f59e0b; background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(15, 23, 42, 0.95)); padding: 14px 20px; border-radius: 12px; display: none; align-items: center; justify-content: space-between; box-shadow: 0 4px 20px rgba(245, 158, 11, 0.25);">
+                    <div style="display: flex; align-items: center; gap: 14px;">
+                        <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(245, 158, 11, 0.25); color: #fbbf24; display: grid; place-items: center; font-size: 18px; flex-shrink: 0;">
+                            ⚠️
+                        </div>
+                        <div>
+                            <div style="color: #fbbf24; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">GST Portal Notice / Warning</div>
+                            <div id="pipeline-warning-banner-text" style="color: #fef3c7; font-size: 13.5px; font-weight: 500; margin-top: 2px;"></div>
+                        </div>
+                    </div>
+                    <button type="button" onclick="document.getElementById('pipeline-warning-banner').classList.add('hidden'); document.getElementById('pipeline-warning-banner').style.display='none';"
+                        style="background: transparent; border: 1px solid rgba(251, 191, 36, 0.4); color: #fbbf24; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; white-space: nowrap;">Dismiss</button>
+                </div>
+
                 <div class="automation-grid">
                     <!-- Left: Visual Pipeline -->
                     <div class="pipeline-view">

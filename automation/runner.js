@@ -2126,28 +2126,42 @@ async function run() {
             // Step 5: Principal Place of Business tab
             if (screenInfo.tabText.toLowerCase().includes('principal place') || screenInfo.headerText.toLowerCase().includes('principal place') || currentTabTitle.toLowerCase().includes('principal place')) {
                 sendUpdate('[પગલું ૫: Principal Place of Business] મુખ્ય વેપાર સ્થળ વિગતો કન્ફર્મ કરી રહ્યા છીએ...');
-                
-                // Native Playwright fill for PPOB Email & Mobile
+
                 const ppobEm = (data.email || 'parthpbhagat@gmail.com').trim().toLowerCase();
                 const ppobMob = (data.mobile || '9011494385').trim();
+                const ppobPin = (data.ppob_pincode || (data.p1 && data.p1.res_pincode) || '444906').trim();
+                const ppobCity = (data.ppob_city || (data.p1 && data.p1.res_city) || 'warud').trim();
+                const ppobDist = (data.ppob_district || data.district || data.businessDistrict || 'Amravati').trim();
+                const ppobStreet = (data.ppob_street || (data.p1 && data.p1.res_road) || 'ntr road').trim();
+                const ppobBno = (data.ppob_flatNo || (data.p1 && data.p1.res_buildingNo) || '29').trim();
+                const ppobBnm = (data.ppob_building || (data.p1 && data.p1.res_buildingName) || data.legalName || 'Parth P Bhagat').trim();
+                const ppobFloor = (data.ppob_floor || '').trim();
+                const ppobLandmark = (data.ppob_landmark || '').trim();
+                const ppobStateJurisdiction = (data.ppob_stateJurisdiction || data.state_jurisdiction || 'AMRAVATI_701').trim();
+                const ppobComm = (data.ppob_commissionerate || data.central_commissionerate || 'VH').trim();
+                const ppobDiv = (data.ppob_division || data.central_division || 'VH03').trim();
+                const ppobRange = (data.ppob_range || data.central_range || 'VH0302').trim();
+                const ppobPossession = (data.ppob_natureOfPossession || 'Consent').trim();
+                const ppobDocType = (data.ppob_doc || 'Electricity Bill').trim();
+
+                // 1. Fill PIN Code via native Playwright so GST portal auto-detects State/District
                 try {
-                    const pEmLoc = page.locator('#em, #pp_email, input[name="em"], input[ng-model*="contdtls.em" i], input[placeholder*="Email" i]').first();
-                    if (await pEmLoc.count() > 0 && await pEmLoc.isVisible()) {
-                        await pEmLoc.fill(ppobEm).catch(() => {});
-                    }
-                    const pMbLoc = page.locator('#mbno, #pp_mbno, input[name="mbno"], input[ng-model*="contdtls.mbno" i], input[placeholder*="Mobile" i]').first();
-                    if (await pMbLoc.count() > 0 && await pMbLoc.isVisible()) {
-                        await pMbLoc.fill(ppobMob).catch(() => {});
+                    const pinLoc = page.locator('#pncd, input[name="pncd"], input[placeholder*="Enter PIN Code" i], input[placeholder*="PIN" i]').first();
+                    if (await pinLoc.count() > 0 && await pinLoc.isVisible()) {
+                        await pinLoc.fill(ppobPin).catch(() => {});
+                        await pinLoc.dispatchEvent('change').catch(() => {});
+                        await pinLoc.dispatchEvent('blur').catch(() => {});
                     }
                 } catch (e) {}
 
-                await page.evaluate(({ possessionVal, em, mob }) => {
+                // 2. Fill Address & Contact fields via DOM & Angular
+                await page.evaluate(({ pin, city, dist, street, bno, bnm, flno, landmark, em, mob }) => {
                     const setVal = (selectors, val) => {
                         if (!val) return;
                         const selArr = Array.isArray(selectors) ? selectors : selectors.split(',').map(s => s.trim());
                         for (const s of selArr) {
                             const el = document.querySelector(s);
-                            if (el && (!el.value || el.value.trim().length === 0)) {
+                            if (el) {
                                 el.removeAttribute('disabled');
                                 el.removeAttribute('readonly');
                                 el.value = val;
@@ -2170,27 +2184,178 @@ async function run() {
                         }
                     };
 
-                    setVal(['#em', '#pp_email', 'input[name="em"]', 'input[ng-model*="contdtls.em" i]', 'input[placeholder*="Email" i]'], em);
-                    setVal(['#mbno', '#pp_mbno', 'input[name="mbno"]', 'input[ng-model*="contdtls.mbno" i]', 'input[placeholder*="Mobile" i]'], mob);
+                    setVal(['#pncd', 'input[placeholder*="Enter PIN Code" i]', 'input[ng-model*="pncd" i]'], pin);
+                    setVal(['#dst', 'input[placeholder*="Enter District Name" i]', 'input[ng-model*="dst" i]'], dist);
+                    setVal(['#loc', 'input[placeholder*="Enter City" i]', 'input[placeholder*="City" i]', 'input[ng-model*="loc" i]'], city);
+                    setVal(['#st', 'input[placeholder*="Enter Road" i]', 'input[placeholder*="Road" i]', 'input[ng-model*="st" i]'], street);
+                    setVal(['#bnm', 'input[placeholder*="Enter Name of Premises" i]', 'input[placeholder*="Premises" i]', 'input[ng-model*="bnm" i]'], bnm);
+                    setVal(['#bno', 'input[placeholder*="Enter Building No" i]', 'input[placeholder*="Building No" i]', 'input[ng-model*="bno" i]'], bno);
+                    setVal(['#flno', 'input[placeholder*="Enter Floor No" i]', 'input[placeholder*="Floor" i]'], flno);
+                    setVal(['#nrbyLdMrk', 'input[placeholder*="Enter Nearby Landmark" i]', 'input[placeholder*="Landmark" i]'], landmark);
+                    setVal(['#em', '#pp_email', 'input[name="em"]', 'input[ng-model*="contdtls.em" i]', 'input[placeholder*="Office Email Address" i]', 'input[placeholder*="Email" i]'], em);
+                    setVal(['#mbno', '#pp_mbno', 'input[name="mbno"]', 'input[ng-model*="contdtls.mbno" i]', 'input[placeholder*="Mobile Number" i]', 'input[placeholder*="Mobile" i]'], mob);
+                }, { pin: ppobPin, city: ppobCity, dist: ppobDist, street: ppobStreet, bno: ppobBno, bnm: ppobBnm, flno: ppobFloor, landmark: ppobLandmark, em: ppobEm, mob: ppobMob });
 
+                await page.waitForTimeout(800);
+
+                // 3. Select State Jurisdiction (Sector / Circle / Ward / Charge / Unit)
+                await page.evaluate(({ sjCode }) => {
                     const selects = Array.from(document.querySelectorAll('select'));
-                    const posSelect = selects.find(s => Array.from(s.options || []).some(o => /consent|own|rent|lease/i.test(o.text || '')));
-                    if (posSelect && posSelect.selectedIndex <= 0) {
-                        for (let i = 0; i < posSelect.options.length; i++) {
-                            if (/consent|rent|own/i.test(posSelect.options[i].text || '')) {
-                                posSelect.selectedIndex = i;
-                                posSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    const sjSelect = selects.find(s => {
+                        const id = (s.id || '').toLowerCase();
+                        const ng = (s.getAttribute('ng-model') || s.getAttribute('data-ng-model') || '').toLowerCase();
+                        return id.includes('stjd') || ng.includes('stjd') || ng.includes('sj');
+                    }) || selects.find(s => {
+                        const lbl = s.closest('.form-group, .col-md-6, .col-sm-6, div')?.innerText || '';
+                        return /sector|circle|ward|charge|unit/i.test(lbl);
+                    });
+
+                    if (sjSelect && sjSelect.options.length > 1) {
+                        let matchedIdx = -1;
+                        for (let i = 1; i < sjSelect.options.length; i++) {
+                            const opt = sjSelect.options[i];
+                            const val = (opt.value || '').toUpperCase();
+                            const txt = (opt.text || '').toUpperCase();
+                            if (val === sjCode.toUpperCase() || txt.includes(sjCode.toUpperCase()) || txt.includes('AMRAVATI') || txt.includes('701')) {
+                                matchedIdx = i;
                                 break;
                             }
                         }
+                        sjSelect.selectedIndex = matchedIdx > 0 ? matchedIdx : 1;
+                        sjSelect.dispatchEvent(new Event('change', { bubbles: true }));
                     }
+                }, { sjCode: ppobStateJurisdiction });
+
+                await page.waitForTimeout(600);
+
+                // 4. Select Center Jurisdiction (Commissionerate, Division, Range)
+                await page.evaluate(({ comm, div, range }) => {
+                    const selects = Array.from(document.querySelectorAll('select'));
+
+                    // Commissionerate
+                    const commSelect = selects.find(s => {
+                        const id = (s.id || '').toLowerCase();
+                        const ng = (s.getAttribute('ng-model') || s.getAttribute('data-ng-model') || '').toLowerCase();
+                        return id.includes('comrt') || ng.includes('comrt');
+                    }) || selects.find(s => /commissionerate/i.test(s.closest('.form-group, div')?.innerText || ''));
+                    if (commSelect && commSelect.options.length > 1) {
+                        let cIdx = Array.from(commSelect.options).findIndex(o => o.value === comm || o.text.includes(comm));
+                        commSelect.selectedIndex = cIdx > 0 ? cIdx : 1;
+                        commSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+
+                    // Division
+                    const divSelect = selects.find(s => {
+                        const id = (s.id || '').toLowerCase();
+                        const ng = (s.getAttribute('ng-model') || s.getAttribute('data-ng-model') || '').toLowerCase();
+                        return id.includes('divsn') || ng.includes('divsn');
+                    }) || selects.find(s => /division/i.test(s.closest('.form-group, div')?.innerText || ''));
+                    if (divSelect && divSelect.options.length > 1) {
+                        let dIdx = Array.from(divSelect.options).findIndex(o => o.value === div || o.text.includes(div));
+                        divSelect.selectedIndex = dIdx > 0 ? dIdx : 1;
+                        divSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+
+                    // Range
+                    const rangeSelect = selects.find(s => {
+                        const id = (s.id || '').toLowerCase();
+                        const ng = (s.getAttribute('ng-model') || s.getAttribute('data-ng-model') || '').toLowerCase();
+                        return id.includes('range') || ng.includes('range');
+                    }) || selects.find(s => /range/i.test(s.closest('.form-group, div')?.innerText || ''));
+                    if (rangeSelect && rangeSelect.options.length > 1) {
+                        let rIdx = Array.from(rangeSelect.options).findIndex(o => o.value === range || o.text.includes(range));
+                        rangeSelect.selectedIndex = rIdx > 0 ? rIdx : 1;
+                        rangeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }, { comm: ppobComm, div: ppobDiv, range: ppobRange });
+
+                await page.waitForTimeout(600);
+
+                // 5. Select Nature of possession of premises
+                await page.evaluate(({ possessionVal }) => {
+                    const selects = Array.from(document.querySelectorAll('select'));
+                    const posSelect = selects.find(s => {
+                        const ng = (s.getAttribute('ng-model') || '').toLowerCase();
+                        return ng.includes('psnt') || Array.from(s.options || []).some(o => /consent|own|rent|lease/i.test(o.text || ''));
+                    });
+                    if (posSelect && posSelect.options.length > 1) {
+                        let pIdx = Array.from(posSelect.options).findIndex(o => new RegExp(possessionVal, 'i').test(o.text || o.value));
+                        posSelect.selectedIndex = pIdx > 0 ? pIdx : 1;
+                        posSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }, { possessionVal: ppobPossession });
+
+                await page.waitForTimeout(600);
+
+                // 6. Select Proof of Principal Place of Business Document Type
+                await page.evaluate(({ docTypeVal }) => {
+                    const selects = Array.from(document.querySelectorAll('select'));
+                    const docSelect = selects.find(s => {
+                        const ng = (s.getAttribute('ng-model') || '').toLowerCase();
+                        return ng.includes('doctype') || Array.from(s.options || []).some(o => /electricity bill|consent letter|municipal/i.test(o.text || ''));
+                    });
+                    if (docSelect && docSelect.options.length > 1) {
+                        let dIdx = Array.from(docSelect.options).findIndex(o => /electricity bill|consent letter|khata|tax/i.test(o.text || o.value));
+                        docSelect.selectedIndex = dIdx > 0 ? dIdx : 1;
+                        docSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }, { docTypeVal: ppobDocType });
+
+                await page.waitForTimeout(600);
+
+                // 7. Upload Proof Document file if available
+                try {
+                    const rawDocData = data.ppob_docFile || data.electricityBillFile || data.authSigProofFile || (data.p1 && data.p1.authSigProofFile) || '';
+                    if (rawDocData && (rawDocData.startsWith('data:application/pdf') || rawDocData.startsWith('data:image'))) {
+                        const fs = require('fs');
+                        const path = require('path');
+                        const cleanB64 = rawDocData.replace(/^data:.*?;base64,/, '');
+                        const ext = rawDocData.includes('pdf') ? 'pdf' : 'jpg';
+                        const tempDocPath = path.join(__dirname, `temp_ppob_doc.${ext}`);
+                        fs.writeFileSync(tempDocPath, cleanB64, 'base64');
+                        const ppobFileInput = page.locator('#pp_doc, input[type="file"]').last();
+                        if (await ppobFileInput.count() > 0) {
+                            await ppobFileInput.setInputFiles(tempDocPath).catch(() => {});
+                            sendUpdate('Uploaded Proof of Principal Place of Business document.');
+                        }
+                    }
+                } catch (e) {
+                    sendUpdate(`PPOB Doc Upload note: ${e.message}`);
+                }
+
+                await page.waitForTimeout(600);
+
+                // 8. Select Nature of Business Activity (Retail Business or user selection)
+                await page.evaluate(() => {
                     const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
-                    const whCb = cbs.find(cb => /warehouse|office|retail|wholesale/i.test(cb.parentElement?.innerText || ''));
-                    if (whCb && !whCb.checked) {
-                        whCb.checked = true;
-                        whCb.dispatchEvent(new Event('change', { bubbles: true }));
+                    // Uncheck Bonded warehouse if user didn't request it
+                    const bwhCb = cbs.find(cb => /bonded warehouse/i.test(cb.parentElement?.innerText || ''));
+                    if (bwhCb && bwhCb.checked) {
+                        bwhCb.click();
                     }
-                }, { possessionVal: data.ppob_natureOfPossession || 'Consent', em: ppobEm, mob: ppobMob });
+                    // Check Retail Business
+                    const retailCb = cbs.find(cb => /retail business/i.test(cb.parentElement?.innerText || ''));
+                    if (retailCb && !retailCb.checked) {
+                        retailCb.click();
+                        retailCb.checked = true;
+                        retailCb.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+
+                // 9. Additional Place of Business toggle -> No
+                await page.evaluate(() => {
+                    const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                    const noR = radios.find(r => {
+                        const t = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || r.value || '').toLowerCase();
+                        return t.includes('no') || r.value === 'N';
+                    });
+                    if (noR && !noR.checked) {
+                        noR.click();
+                        noR.checked = true;
+                        noR.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+
                 await page.waitForTimeout(1000);
             }
 

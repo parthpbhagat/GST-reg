@@ -54,6 +54,18 @@ function getPossessionCode(possessionName) {
     return 'CON';
 }
 
+function getPPOBDocTypeCode(docName) {
+    if (!docName) return 'ELCB';
+    const d = docName.toLowerCase();
+    if (d.includes('elect')) return 'ELCB';
+    if (d.includes('consent')) return 'CONL';
+    if (d.includes('rent') || d.includes('lease')) return 'RNTA';
+    if (d.includes('khata') || d.includes('munc') || d.includes('municipal')) return 'MUNC';
+    if (d.includes('tax') || d.includes('ptrc')) return 'PTRC';
+    if (d.includes('ownership') || d.includes('lodc')) return 'LODC';
+    return 'ELCB';
+}
+
 const REASON_CODES = {
     'voluntary basis': 'VOLN',
     'crossing the threshold': 'CRSS',
@@ -147,6 +159,7 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
     const effectiveTrn = String(options.secToken || trn || data.trn || (stateCd + '2600' + effectiveDraftId + 'TRN')).trim();
 
     // Promoters array (opdtls)
+    const defaultDg = constitutionCode === 'PRO' ? 'proprietor' : (constitutionCode === 'PAR' || constitutionCode === 'LLP' ? 'partner' : 'director');
     const opdtls = [];
     for (let i = 1; i <= 10; i++) {
         const p = data['p' + i];
@@ -164,7 +177,7 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
                 gd: (p.gender || 'male').toLowerCase().startsWith('f') ? 'F' : 'M',
                 mbno: (p.mobile || cleanMobile).trim(),
                 em: (p.email || cleanEmail).toLowerCase().trim(),
-                dg: (p.designation || 'director').toLowerCase().trim(),
+                dg: (p.designation || defaultDg).toLowerCase().trim(),
                 pan: { num: (p.pan || cleanPan).toUpperCase().trim() },
                 rsad: {
                     cnty: 'IND',
@@ -202,7 +215,7 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
             gd: (data.gender || 'M').toUpperCase().startsWith('F') ? 'F' : 'M',
             mbno: cleanMobile,
             em: cleanEmail,
-            dg: (data.designation || 'Proprietor').toLowerCase().trim(),
+            dg: (data.designation || defaultDg).toLowerCase().trim(),
             pan: { num: cleanPan },
             rsad: {
                 cnty: 'IND',
@@ -239,7 +252,7 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
                 gd: (a.gender || 'male').toLowerCase().startsWith('f') ? 'F' : 'M',
                 mbno: (a.mobile || cleanMobile).trim(),
                 em: (a.email || cleanEmail).toLowerCase().trim(),
-                dg: (a.designation || 'director').toLowerCase().trim(),
+                dg: (a.designation || defaultDg).toLowerCase().trim(),
                 pan: { num: (a.pan || cleanPan).toUpperCase().trim() },
                 rsad: {
                     cnty: 'IND',
@@ -269,11 +282,26 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
 
     if (asgdtls.length === 0) {
         const firstOp = opdtls[0];
+        const authProofFile = data.authSigProofFile || (data.p1 && data.p1.authSigProofFile) || null;
+        const asgDocs = [...(firstOp.dcupdtls || [])];
+        if (authProofFile) {
+            asgDocs.push({
+                id: Date.now() + 500,
+                ty: 'LOA',
+                ct: (typeof authProofFile === 'string' && authProofFile.includes('pdf')) ? 'application/pdf' : 'image/jpeg',
+                docName: 'Letter_of_Authorisation.pdf',
+                hash: computeFileHash(authProofFile)
+            });
+        }
+
         asgdtls.push(Object.assign({}, firstOp, {
             eid: 2,
             isasg: 'Y',
             isasgcmpt: 'Y',
             ispas: 'Y',
+            isop: 'Y',
+            isopas: 'Y',
+            dcupdtls: asgDocs,
             aadhaarflag: (data.aadhaarAuth || 'Yes').toLowerCase() === 'no' ? 'N' : 'Y'
         }));
     }
@@ -328,11 +356,12 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
     const ppobDocFile = data.ppob_natureOfPossessionDoc || data.ppob_docFile || data.electricityBillFile || data.proofOfConstitutionFile || null;
     const ppobDocs = [];
     if (ppobDocFile) {
+        const ppobDocType = getPPOBDocTypeCode(data.ppob_doc || data.ppob_docType);
         ppobDocs.push({
             id: Date.now().toString(),
-            ty: data.ppob_docType || 'ELCB',
+            ty: ppobDocType,
             ct: (typeof ppobDocFile === 'string' && ppobDocFile.includes('pdf')) ? 'application/pdf' : 'image/jpeg',
-            docName: data.ppob_docFileName || (data.ppob_docType ? `${data.ppob_docType.toLowerCase()}.pdf` : 'document.pdf'),
+            docName: data.ppob_docFileName || `${ppobDocType.toLowerCase()}.pdf`,
             hash: computeFileHash(ppobDocFile),
             legibscore: '85.00'
         });
@@ -443,7 +472,7 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
         },
         stsidtls: {
             ebdtls: {
-                hasebconn: data.stateSpecific_electricityBoard ? 'Y' : 'N',
+                hasebconn: (data.stateSpecific_electricityConsumerNo || data.stateSpecific_electricityBoard) ? 'Y' : 'N',
                 ebdes: (data.stateSpecific_electricityBoard || '').trim(),
                 ebcd: (data.stateSpecific_electricityBoardCode || '').trim(),
                 canum: (data.stateSpecific_electricityConsumerNo || '').trim()
@@ -454,12 +483,15 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
             add: {
                 stcd: stateCd,
                 pncd: pincode,
-                dst: (data.ppob_district || data.district || '').trim(),
+                dst: (data.ppob_district || data.district || data.businessDistrict || '').trim(),
                 loc: (data.ppob_city || data.ppob_locality || '').trim(),
                 lg: lng,
                 lt: lat,
                 st: (data.ppob_street || data.ppob_locality || '').trim(),
-                bno: (data.ppob_flatNo || data.ppob_building || '').trim()
+                bno: (data.ppob_flatNo || data.ppob_buildingNo || '').trim(),
+                bnm: (data.ppob_building || data.ppob_buildingName || '').trim(),
+                flno: (data.ppob_floor || '').trim(),
+                landMark: (data.ppob_landmark || '').trim()
             },
             ntbz: ntbz,
             contdtls: {

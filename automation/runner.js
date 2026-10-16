@@ -2343,6 +2343,80 @@ async function run() {
             if (screenInfo.stepKey === 'authorized signatory') {
                 sendUpdate('[પગલું ૩: Authorized Signatory] પ્રાઇમરી સાઇન કરનાર કન્ફર્મ કરી રહ્યા છીએ...');
 
+                // A. Unconditionally find and check "Primary Authorized Signatory" checkbox / toggle across the page
+                try {
+                    const primaryCheckboxes = [
+                        page.locator('label:has-text("Primary Authorized Signatory") input[type="checkbox"]'),
+                        page.locator('label:has-text("Primary Authorized Signatory")'),
+                        page.locator('.checkbox:has-text("Primary Authorized Signatory") input[type="checkbox"]'),
+                        page.locator('div:has-text("Primary Authorized Signatory") input[type="checkbox"]').first(),
+                        page.locator('span:has-text("Primary Authorized Signatory")').locator('..').locator('input[type="checkbox"]').first(),
+                        page.locator('input[type="checkbox"][id*="primary" i], input[type="checkbox"][name*="primary" i], input[type="checkbox"][ng-model*="ispas" i], input[type="checkbox"][id*="ispas" i]'),
+                        page.locator('table tbody tr input[type="checkbox"], table tbody tr input[type="radio"]')
+                    ];
+
+                    for (const loc of primaryCheckboxes) {
+                        if (await loc.count() > 0) {
+                            const isChecked = await loc.first().isChecked().catch(() => false);
+                            if (!isChecked) {
+                                await loc.first().scrollIntoViewIfNeeded().catch(() => {});
+                                await loc.first().check({ force: true, timeout: 2000 }).catch(async () => {
+                                    await loc.first().click({ force: true, timeout: 2000 }).catch(() => {});
+                                });
+                                sendUpdate('✅ "Primary Authorized Signatory" ચેકબોક્સ સફળતાપૂર્વક ટીક (Check) કર્યું.');
+                                break;
+                            } else {
+                                sendUpdate('ℹ️ "Primary Authorized Signatory" ચેકબોક્સ પહેલેથી ટીક (Checked) છે.');
+                                break;
+                            }
+                        }
+                    }
+                } catch (e) {}
+
+                // B. Also confirm and sync via DOM & AngularJS
+                await page.evaluate(() => {
+                    const allEls = Array.from(document.querySelectorAll('label, div, p, span, td, th'));
+                    const targetEl = allEls.find(el => {
+                        const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+                        return txt.includes('primary authorized signatory') || txt.includes('primary signatory');
+                    });
+
+                    if (targetEl) {
+                        let cb = targetEl.querySelector('input[type="checkbox"], input[type="radio"]');
+                        if (!cb && targetEl.getAttribute('for')) {
+                            cb = document.getElementById(targetEl.getAttribute('for'));
+                        }
+                        if (!cb) {
+                            const parent = targetEl.closest('.form-group, .row, .checkbox, div, tr') || targetEl.parentElement;
+                            if (parent) {
+                                cb = parent.querySelector('input[type="checkbox"], input[type="radio"]');
+                            }
+                        }
+
+                        if (cb && !cb.checked) {
+                            cb.checked = true;
+                            cb.dispatchEvent(new Event('change', { bubbles: true }));
+                            cb.dispatchEvent(new Event('input', { bubbles: true }));
+                            cb.dispatchEvent(new Event('click', { bubbles: true }));
+                        } else if (targetEl.tagName === 'LABEL') {
+                            targetEl.click();
+                        }
+                    }
+
+                    // Also check any input whose id/name/ng-model has primary or ispas
+                    const cbs = Array.from(document.querySelectorAll('input[type="checkbox"], input[type="radio"]'));
+                    for (const c of cbs) {
+                        const attrStr = ((c.id || '') + ' ' + (c.name || '') + ' ' + (c.getAttribute('ng-model') || '')).toLowerCase();
+                        if (attrStr.includes('primary') || attrStr.includes('ispas') || attrStr.includes('pas')) {
+                            if (!c.checked) {
+                                c.checked = true;
+                                c.dispatchEvent(new Event('change', { bubbles: true }));
+                                c.dispatchEvent(new Event('input', { bubbles: true }));
+                            }
+                        }
+                    }
+                });
+
                 // 1. Inspect Tab 3 state (Table mode vs Form mode)
                 const asgState = await page.evaluate(({ em, mob }) => {
                     const tableRows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => {

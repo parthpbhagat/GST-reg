@@ -2143,307 +2143,240 @@ async function run() {
                 const ppobRange = (data.ppob_range || data.central_range || 'VH0302').trim();
                 const ppobPossession = (data.ppob_natureOfPossession || 'Consent').trim();
                 const ppobDocType = (data.ppob_doc || 'Electricity Bill').trim();
-
-                // 1. PIN Code: Native Playwright type + click suggestion popup
-                try {
-                    const pinLoc = page.locator('#pncd, input[name="pncd"], input[placeholder*="Enter PIN Code" i], input[placeholder*="PIN" i]').first();
-                    if (await pinLoc.count() > 0 && await pinLoc.isVisible()) {
-                        await pinLoc.click();
-                        await pinLoc.fill('');
-                        await pinLoc.type(ppobPin, { delay: 80 });
-                        await page.waitForTimeout(1000);
-
-                        // Click the typeahead suggestion popup item
-                        const pinSug = page.locator('.typeahead-popup li, .dropdown-menu li, .uib-typeahead-match, li[id*="typeahead"]').filter({ hasText: ppobPin }).first();
-                        if (await pinSug.count() > 0 && await pinSug.isVisible()) {
-                            await pinSug.click({ force: true }).catch(() => {});
-                            sendUpdate(`Selected PIN suggestion: ${ppobPin}`);
-                            await page.waitForTimeout(1000);
-                        } else {
-                            const anySug = page.locator('.typeahead-popup li, .dropdown-menu li, .uib-typeahead-match').first();
-                            if (await anySug.count() > 0 && await anySug.isVisible()) {
-                                await anySug.click({ force: true }).catch(() => {});
-                                await page.waitForTimeout(1000);
-                            }
-                        }
-                    }
-                } catch (e) {}
-
-                // 2. City / Town / Village: Native Playwright type + click suggestion popup
-                try {
-                    const cityLoc = page.locator('#loc, input[name="loc"], input[placeholder*="Enter City" i], input[placeholder*="City" i]').first();
-                    if (await cityLoc.count() > 0 && await cityLoc.isVisible()) {
-                        await cityLoc.click();
-                        await cityLoc.fill('');
-                        await cityLoc.type(ppobCity, { delay: 80 });
-                        await page.waitForTimeout(1000);
-
-                        // Click suggestion matching City (e.g. Warud)
-                        const citySug = page.locator('.typeahead-popup li, .dropdown-menu li, .uib-typeahead-match, li[id*="typeahead"]').filter({ hasText: new RegExp(ppobCity, 'i') }).first();
-                        if (await citySug.count() > 0 && await citySug.isVisible()) {
-                            await citySug.click({ force: true }).catch(() => {});
-                            sendUpdate(`Selected City suggestion: ${ppobCity}`);
-                            await page.waitForTimeout(1500);
-                        } else {
-                            const anyCitySug = page.locator('.typeahead-popup li, .dropdown-menu li, .uib-typeahead-match').first();
-                            if (await anyCitySug.count() > 0 && await anyCitySug.isVisible()) {
-                                await anyCitySug.click({ force: true }).catch(() => {});
-                                await page.waitForTimeout(1500);
-                            }
-                        }
-                    }
-                } catch (e) {}
-
-                // 3. Fill Address Fields (Building No, Road, Premises) via Native Playwright
-                try {
-                    // Building No / Flat No / Door No (MANDATORY FIELD)
-                    const bnoLoc = page.locator('#bno, input[placeholder*="Building No" i], input[placeholder*="Door No" i], input[placeholder*="Flat No" i], input[ng-model*="bno" i]').first();
-                    if (await bnoLoc.count() > 0 && await bnoLoc.isVisible()) {
-                        await bnoLoc.click();
-                        await bnoLoc.fill(ppobBno);
-                        await bnoLoc.dispatchEvent('input').catch(() => {});
-                        await bnoLoc.dispatchEvent('change').catch(() => {});
-                        await bnoLoc.dispatchEvent('blur').catch(() => {});
-                    }
-
-                    // Road / Street / Lane (MANDATORY FIELD)
-                    const stLoc = page.locator('#st, input[placeholder*="Enter Road" i], input[placeholder*="Road" i], input[placeholder*="Street" i], input[placeholder*="Lane" i], input[ng-model*="st" i]').first();
-                    if (await stLoc.count() > 0 && await stLoc.isVisible()) {
-                        await stLoc.click();
-                        await stLoc.fill(ppobStreet);
-                        await stLoc.dispatchEvent('input').catch(() => {});
-                        await stLoc.dispatchEvent('change').catch(() => {});
-                        await stLoc.dispatchEvent('blur').catch(() => {});
-                    }
-
-                    // Name of Premises / Building
-                    const bnmLoc = page.locator('#bnm, input[placeholder*="Enter Name of Premises" i], input[placeholder*="Premises" i], input[placeholder*="Building" i], input[ng-model*="bnm" i]').first();
-                    if (await bnmLoc.count() > 0 && await bnmLoc.isVisible()) {
-                        await bnmLoc.click();
-                        await bnmLoc.fill(ppobBnm);
-                        await bnmLoc.dispatchEvent('input').catch(() => {});
-                        await bnmLoc.dispatchEvent('change').catch(() => {});
-                    }
-
-                    // Floor No
-                    if (ppobFloor) {
-                        const flnoLoc = page.locator('#flno, input[placeholder*="Enter Floor No" i], input[placeholder*="Floor" i]').first();
-                        if (await flnoLoc.count() > 0 && await flnoLoc.isVisible()) {
-                            await flnoLoc.fill(ppobFloor);
-                        }
-                    }
-
-                    // Nearby Landmark
-                    if (ppobLandmark) {
-                        const nrbyLoc = page.locator('#nrbyLdMrk, input[placeholder*="Nearby Landmark" i], input[placeholder*="Landmark" i]').first();
-                        if (await nrbyLoc.count() > 0 && await nrbyLoc.isVisible()) {
-                            await nrbyLoc.fill(ppobLandmark);
-                        }
-                    }
-                } catch (e) {}
-
-                // Contact & DOM fallback for Address
+                // 1. Fill all visible Address and Contact fields via DOM & Angular
                 await page.evaluate(({ pin, city, dist, street, bno, bnm, flno, landmark, em, mob }) => {
-                    const setVal = (selectors, val) => {
+                    const findVisible = (selectors) => {
+                        const list = Array.isArray(selectors) ? selectors : selectors.split(',').map(s => s.trim());
+                        for (const sel of list) {
+                            const els = Array.from(document.querySelectorAll(sel));
+                            const v = els.find(e => e.offsetParent !== null && !e.disabled && !e.readOnly);
+                            if (v) return v;
+                        }
+                        return null;
+                    };
+
+                    const setField = (selectors, val) => {
                         if (!val) return;
-                        const selArr = Array.isArray(selectors) ? selectors : selectors.split(',').map(s => s.trim());
-                        for (const s of selArr) {
-                            const el = document.querySelector(s);
-                            if (el) {
-                                el.removeAttribute('disabled');
-                                el.removeAttribute('readonly');
-                                el.value = val;
-                                el.dispatchEvent(new Event('input', { bubbles: true }));
-                                el.dispatchEvent(new Event('change', { bubbles: true }));
-                                el.dispatchEvent(new Event('blur', { bubbles: true }));
-                                if (window.angular) {
-                                    try {
-                                        const ngModel = window.angular.element(el).controller('ngModel');
-                                        if (ngModel) {
-                                            ngModel.$setViewValue(val);
-                                            ngModel.$modelValue = val;
-                                            ngModel.$setValidity('required', true);
-                                            ngModel.$commitViewValue();
-                                        }
-                                    } catch (e) {}
-                                }
-                                break;
+                        const el = findVisible(selectors);
+                        if (el) {
+                            el.focus();
+                            el.value = val;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            el.dispatchEvent(new Event('blur', { bubbles: true }));
+                            if (window.angular) {
+                                try {
+                                    const ngModel = window.angular.element(el).controller('ngModel');
+                                    if (ngModel) {
+                                        ngModel.$setViewValue(val);
+                                        ngModel.$modelValue = val;
+                                        ngModel.$setValidity('required', true);
+                                        ngModel.$commitViewValue();
+                                    }
+                                } catch (e) {}
                             }
                         }
                     };
 
-                    setVal(['#st', 'input[placeholder*="Enter Road" i]', 'input[placeholder*="Road" i]', 'input[ng-model*="st" i]'], street);
-                    setVal(['#bnm', 'input[placeholder*="Enter Name of Premises" i]', 'input[placeholder*="Premises" i]', 'input[ng-model*="bnm" i]'], bnm);
-                    setVal(['#bno', 'input[placeholder*="Enter Building No" i]', 'input[placeholder*="Building No" i]', 'input[ng-model*="bno" i]'], bno);
-                    setVal(['#flno', 'input[placeholder*="Enter Floor No" i]', 'input[placeholder*="Floor" i]'], flno);
-                    setVal(['#nrbyLdMrk', 'input[placeholder*="Enter Nearby Landmark" i]', 'input[placeholder*="Landmark" i]'], landmark);
-                    setVal(['#em', '#pp_email', 'input[name="em"]', 'input[ng-model*="contdtls.em" i]', 'input[placeholder*="Office Email Address" i]', 'input[placeholder*="Email" i]'], em);
-                    setVal(['#mbno', '#pp_mbno', 'input[name="mbno"]', 'input[ng-model*="contdtls.mbno" i]', 'input[placeholder*="Mobile Number" i]', 'input[placeholder*="Mobile" i]'], mob);
+                    // Fill visible inputs on the active Principal Place of Business tab
+                    setField(['input[placeholder*="Enter PIN Code" i]', 'input[placeholder*="PIN Code" i]', '#pncd'], pin);
+                    setField(['input[placeholder*="Enter District Name" i]', 'input[placeholder*="District" i]', '#dst'], dist);
+                    setField(['input[placeholder*="Enter City" i]', 'input[placeholder*="City" i]', '#loc'], city);
+                    setField(['input[placeholder*="Enter Road" i]', 'input[placeholder*="Road" i]', 'input[placeholder*="Street" i]', 'input[placeholder*="Lane" i]', '#st'], street);
+                    setField(['input[placeholder*="Enter Building No" i]', 'input[placeholder*="Building No" i]', 'input[placeholder*="Flat No" i]', 'input[placeholder*="Door No" i]', '#bno'], bno);
+                    setField(['input[placeholder*="Enter Name of Premises" i]', 'input[placeholder*="Premises" i]', 'input[placeholder*="Building" i]', '#bnm'], bnm);
+                    setField(['input[placeholder*="Enter Floor No" i]', 'input[placeholder*="Floor" i]', '#flno'], flno);
+                    setField(['input[placeholder*="Enter Nearby Landmark" i]', 'input[placeholder*="Landmark" i]', '#nrbyLdMrk'], landmark);
+                    setField(['input[placeholder*="Office Email Address" i]', 'input[placeholder*="Office Email" i]', 'input[placeholder*="Email" i]', '#em', '#pp_email'], em);
+                    setField(['input[placeholder*="Mobile Number" i]', 'input[placeholder*="Mobile" i]', '#mbno', '#pp_mbno'], mob);
+
+                    // Sync AngularJS Scope on the active screen
+                    if (window.angular) {
+                        try {
+                            const scEl = findVisible(['input[placeholder*="Enter PIN Code" i]', 'input[placeholder*="Building No" i]']) || document.querySelector('.tab-pane.active') || document.body;
+                            const sc = window.angular.element(scEl).scope();
+                            if (sc) {
+                                const objs = [sc.ppbz, sc.ppbzdtls, sc.pp, sc.address, sc.x && sc.x.ppbzdtls, sc.x && sc.x.ppbz, sc].filter(Boolean);
+                                for (const obj of objs) {
+                                    if (obj.add || typeof obj === 'object') {
+                                        const add = obj.add || obj;
+                                        add.bno = bno;
+                                        add.st = street;
+                                        add.bnm = bnm;
+                                        add.pncd = pin;
+                                        add.loc = city;
+                                        add.dst = dist;
+                                        add.stcd = '27';
+                                    }
+                                }
+                                if (!sc.$$phase) sc.$apply();
+                            }
+                        } catch (e) {}
+                    }
                 }, { pin: ppobPin, city: ppobCity, dist: ppobDist, street: ppobStreet, bno: ppobBno, bnm: ppobBnm, flno: ppobFloor, landmark: ppobLandmark, em: ppobEm, mob: ppobMob });
-
-                await page.waitForTimeout(800);
-
-                // 4. Select State Jurisdiction (Sector / Circle / Ward / Charge / Unit)
-                try {
-                    const sjSelect = page.locator('select[ng-model*="stjd" i], select[name*="stjd" i], select[id*="stjd" i], .form-group:has-text("Sector") select, [class*="col-"]:has-text("Sector") select, [class*="col-"]:has-text("Ward") select').first();
-                    if (await sjSelect.count() > 0) {
-                        for (let i = 0; i < 6; i++) {
-                            const count = await sjSelect.locator('option').count();
-                            if (count > 1) break;
-                            await page.waitForTimeout(500);
-                        }
-                        const optCount = await sjSelect.locator('option').count();
-                        if (optCount > 1) {
-                            const allOpts = await sjSelect.locator('option').allInnerTexts();
-                            const matchedOpt = allOpts.find(o => 
-                                o.toUpperCase().includes(ppobStateJurisdiction.toUpperCase()) || 
-                                o.toUpperCase().includes('AMRAVATI') || 
-                                o.toUpperCase().includes('701')
-                            );
-                            if (matchedOpt) {
-                                await sjSelect.selectOption({ label: matchedOpt.trim() });
-                                sendUpdate(`Selected State Jurisdiction: ${matchedOpt.trim()}`);
-                            } else {
-                                await sjSelect.selectOption({ index: 1 });
-                            }
-                        }
-                    }
-                } catch (e) {}
-
-                // DOM fallback for State Jurisdiction
-                await page.evaluate(({ sjCode }) => {
-                    const selects = Array.from(document.querySelectorAll('select'));
-                    const sjSelect = selects.find(s => {
-                        const id = (s.id || '').toLowerCase();
-                        const ng = (s.getAttribute('ng-model') || s.getAttribute('data-ng-model') || '').toLowerCase();
-                        return id.includes('stjd') || ng.includes('stjd') || ng.includes('sj');
-                    }) || selects.find(s => {
-                        const lbl = s.closest('.form-group, .col-md-6, .col-sm-6, div')?.innerText || '';
-                        return /sector|circle|ward|charge|unit/i.test(lbl);
-                    });
-
-                    if (sjSelect && sjSelect.options.length > 1) {
-                        let matchedIdx = -1;
-                        for (let i = 1; i < sjSelect.options.length; i++) {
-                            const opt = sjSelect.options[i];
-                            const val = (opt.value || '').toUpperCase();
-                            const txt = (opt.text || '').toUpperCase();
-                            if (val === sjCode.toUpperCase() || txt.includes(sjCode.toUpperCase()) || txt.includes('AMRAVATI') || txt.includes('701')) {
-                                matchedIdx = i;
-                                break;
-                            }
-                        }
-                        sjSelect.selectedIndex = matchedIdx > 0 ? matchedIdx : 1;
-                        sjSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                }, { sjCode: ppobStateJurisdiction });
-
-                await page.waitForTimeout(800);
-
-                // 5. Select Center Jurisdiction (Commissionerate -> Division -> Range)
-                try {
-                    // Commissionerate
-                    const commSelect = page.locator('select[ng-model*="comrt" i], select[id*="comrt" i], .form-group:has-text("Commissionerate") select').first();
-                    if (await commSelect.count() > 0) {
-                        for (let i = 0; i < 6; i++) {
-                            if (await commSelect.locator('option').count() > 1) break;
-                            await page.waitForTimeout(500);
-                        }
-                        const allOpts = await commSelect.locator('option').allInnerTexts();
-                        const matched = allOpts.find(o => o.includes(ppobComm) || o.toUpperCase().includes('NAGPUR') || o.toUpperCase().includes('AMRAVATI'));
-                        if (matched) {
-                            await commSelect.selectOption({ label: matched.trim() });
-                        } else if (await commSelect.locator('option').count() > 1) {
-                            await commSelect.selectOption({ index: 1 });
-                        }
-                        sendUpdate(`Selected Central Commissionerate.`);
-                        await page.waitForTimeout(1000);
-                    }
-
-                    // Division
-                    const divSelect = page.locator('select[ng-model*="divsn" i], select[id*="divsn" i], .form-group:has-text("Division") select').first();
-                    if (await divSelect.count() > 0) {
-                        for (let i = 0; i < 6; i++) {
-                            if (await divSelect.locator('option').count() > 1) break;
-                            await page.waitForTimeout(500);
-                        }
-                        const allOpts = await divSelect.locator('option').allInnerTexts();
-                        const matched = allOpts.find(o => o.includes(ppobDiv) || o.toUpperCase().includes('AMRAVATI') || o.toUpperCase().includes('WARUD'));
-                        if (matched) {
-                            await divSelect.selectOption({ label: matched.trim() });
-                        } else if (await divSelect.locator('option').count() > 1) {
-                            await divSelect.selectOption({ index: 1 });
-                        }
-                        sendUpdate(`Selected Central Division.`);
-                        await page.waitForTimeout(1000);
-                    }
-
-                    // Range
-                    const rangeSelect = page.locator('select[ng-model*="range" i], select[id*="range" i], .form-group:has-text("Range") select').first();
-                    if (await rangeSelect.count() > 0) {
-                        for (let i = 0; i < 6; i++) {
-                            if (await rangeSelect.locator('option').count() > 1) break;
-                            await page.waitForTimeout(500);
-                        }
-                        const allOpts = await rangeSelect.locator('option').allInnerTexts();
-                        const matched = allOpts.find(o => o.includes(ppobRange) || o.toUpperCase().includes('WARUD') || o.toUpperCase().includes('AMRAVATI'));
-                        if (matched) {
-                            await rangeSelect.selectOption({ label: matched.trim() });
-                        } else if (await rangeSelect.locator('option').count() > 1) {
-                            await rangeSelect.selectOption({ index: 1 });
-                        }
-                        sendUpdate(`Selected Central Range.`);
-                        await page.waitForTimeout(600);
-                    }
-                } catch (e) {}
-
-                // DOM fallback for Center Jurisdiction
-                await page.evaluate(({ comm, div, range }) => {
-                    const selects = Array.from(document.querySelectorAll('select'));
-
-                    // Commissionerate
-                    const commSelect = selects.find(s => {
-                        const id = (s.id || '').toLowerCase();
-                        const ng = (s.getAttribute('ng-model') || s.getAttribute('data-ng-model') || '').toLowerCase();
-                        return id.includes('comrt') || ng.includes('comrt');
-                    }) || selects.find(s => /commissionerate/i.test(s.closest('.form-group, div')?.innerText || ''));
-                    if (commSelect && commSelect.options.length > 1) {
-                        let cIdx = Array.from(commSelect.options).findIndex(o => o.value === comm || o.text.includes(comm));
-                        commSelect.selectedIndex = cIdx > 0 ? cIdx : 1;
-                        commSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-
-                    // Division
-                    const divSelect = selects.find(s => {
-                        const id = (s.id || '').toLowerCase();
-                        const ng = (s.getAttribute('ng-model') || s.getAttribute('data-ng-model') || '').toLowerCase();
-                        return id.includes('divsn') || ng.includes('divsn');
-                    }) || selects.find(s => /division/i.test(s.closest('.form-group, div')?.innerText || ''));
-                    if (divSelect && divSelect.options.length > 1) {
-                        let dIdx = Array.from(divSelect.options).findIndex(o => o.value === div || o.text.includes(div));
-                        divSelect.selectedIndex = dIdx > 0 ? dIdx : 1;
-                        divSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-
-                    // Range
-                    const rangeSelect = selects.find(s => {
-                        const id = (s.id || '').toLowerCase();
-                        const ng = (s.getAttribute('ng-model') || s.getAttribute('data-ng-model') || '').toLowerCase();
-                        return id.includes('range') || ng.includes('range');
-                    }) || selects.find(s => /range/i.test(s.closest('.form-group, div')?.innerText || ''));
-                    if (rangeSelect && rangeSelect.options.length > 1) {
-                        let rIdx = Array.from(rangeSelect.options).findIndex(o => o.value === range || o.text.includes(range));
-                        rangeSelect.selectedIndex = rIdx > 0 ? rIdx : 1;
-                        rangeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                }, { comm: ppobComm, div: ppobDiv, range: ppobRange });
 
                 await page.waitForTimeout(600);
 
-                // 5. Select Nature of possession of premises
+                // 2. PIN Code: Playwright native typing & suggestion selection
+                try {
+                    const pinLoc = page.locator('input[placeholder*="Enter PIN Code" i]:visible, #pncd:visible').last();
+                    if (await pinLoc.count() > 0) {
+                        await pinLoc.click({ timeout: 2000 }).catch(() => {});
+                        await pinLoc.fill('', { timeout: 2000 }).catch(() => {});
+                        await pinLoc.type(ppobPin, { delay: 60, timeout: 3000 }).catch(() => {});
+                        await page.waitForTimeout(800);
+
+                        const pinSug = page.locator('.dropdown-menu:visible li, .typeahead-popup:visible li, .uib-typeahead-match:visible, li[id*="typeahead"]:visible').filter({ hasText: ppobPin }).first();
+                        if (await pinSug.count() > 0) {
+                            await pinSug.click({ force: true, timeout: 2000 }).catch(() => {});
+                            sendUpdate(`Selected PIN suggestion: ${ppobPin}`);
+                            await page.waitForTimeout(800);
+                        }
+                    }
+                } catch (e) {}
+
+                // 3. City: Playwright native typing & suggestion selection
+                try {
+                    const cityLoc = page.locator('input[placeholder*="Enter City" i]:visible, input[placeholder*="City" i]:visible, #loc:visible').last();
+                    if (await cityLoc.count() > 0) {
+                        await cityLoc.click({ timeout: 2000 }).catch(() => {});
+                        await cityLoc.fill('', { timeout: 2000 }).catch(() => {});
+                        await cityLoc.type(ppobCity, { delay: 60, timeout: 3000 }).catch(() => {});
+                        await page.waitForTimeout(1000);
+
+                        const citySug = page.locator('.dropdown-menu:visible li, .typeahead-popup:visible li, .uib-typeahead-match:visible, li[id*="typeahead"]:visible').filter({ hasText: new RegExp(ppobCity, 'i') }).first();
+                        if (await citySug.count() > 0) {
+                            await citySug.click({ force: true, timeout: 2000 }).catch(() => {});
+                            sendUpdate(`Selected City suggestion: ${ppobCity}`);
+                            await page.waitForTimeout(1200);
+                        }
+                    }
+                } catch (e) {}
+
+                // 4. Playwright native fill for Building No and Road to ensure no validation blocks
+                try {
+                    const bnoLoc = page.locator('input[placeholder*="Building No" i]:visible, input[placeholder*="Flat No" i]:visible, input[placeholder*="Door No" i]:visible, #bno:visible').last();
+                    if (await bnoLoc.count() > 0) {
+                        await bnoLoc.click({ timeout: 2000 }).catch(() => {});
+                        await bnoLoc.fill(ppobBno, { timeout: 2000 }).catch(() => {});
+                        await bnoLoc.dispatchEvent('change').catch(() => {});
+                    }
+                    const stLoc = page.locator('input[placeholder*="Enter Road" i]:visible, input[placeholder*="Road" i]:visible, input[placeholder*="Street" i]:visible, input[placeholder*="Lane" i]:visible, #st:visible').last();
+                    if (await stLoc.count() > 0) {
+                        await stLoc.click({ timeout: 2000 }).catch(() => {});
+                        await stLoc.fill(ppobStreet, { timeout: 2000 }).catch(() => {});
+                        await stLoc.dispatchEvent('change').catch(() => {});
+                    }
+                    const bnmLoc = page.locator('input[placeholder*="Enter Name of Premises" i]:visible, input[placeholder*="Premises" i]:visible, #bnm:visible').last();
+                    if (await bnmLoc.count() > 0) {
+                        await bnmLoc.click({ timeout: 2000 }).catch(() => {});
+                        await bnmLoc.fill(ppobBnm, { timeout: 2000 }).catch(() => {});
+                    }
+                } catch (e) {}
+
+                await page.waitForTimeout(600);
+
+                // 5. Select State Jurisdiction (Sector / Circle / Ward / Charge / Unit)
+                await page.evaluate(({ sjCode }) => {
+                    const visibleSelects = Array.from(document.querySelectorAll('select')).filter(s => s.offsetParent !== null && !s.disabled);
+                    const sjSelect = visibleSelects.find(s => {
+                        const txt = (s.closest('.form-group, [class*="col-"], div')?.innerText || '').toLowerCase();
+                        const ng = (s.getAttribute('ng-model') || '').toLowerCase();
+                        return txt.includes('sector') || txt.includes('circle') || txt.includes('ward') || txt.includes('charge') || txt.includes('unit') || ng.includes('stjd');
+                    });
+                    if (sjSelect && sjSelect.options.length > 1) {
+                        let matchedIdx = Array.from(sjSelect.options).findIndex(o => 
+                            (o.value || '').toUpperCase().includes(sjCode.toUpperCase()) || 
+                            (o.text || '').toUpperCase().includes('AMRAVATI') || 
+                            (o.text || '').toUpperCase().includes('701')
+                        );
+                        sjSelect.selectedIndex = matchedIdx > 0 ? matchedIdx : 1;
+                        sjSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                        if (window.angular) {
+                            try {
+                                const ngModel = window.angular.element(sjSelect).controller('ngModel');
+                                if (ngModel) { ngModel.$setViewValue(sjSelect.value); ngModel.$commitViewValue(); }
+                            } catch (e) {}
+                        }
+                    }
+                }, { sjCode: ppobStateJurisdiction });
+
+                await page.waitForTimeout(600);
+
+                // 6. Select Center Jurisdiction (Commissionerate -> Division -> Range)
+                // Commissionerate
+                await page.evaluate(({ comm }) => {
+                    const visibleSelects = Array.from(document.querySelectorAll('select')).filter(s => s.offsetParent !== null && !s.disabled);
+                    const commSelect = visibleSelects.find(s => {
+                        const txt = (s.closest('.form-group, div')?.innerText || '').toLowerCase();
+                        const ng = (s.getAttribute('ng-model') || '').toLowerCase();
+                        return txt.includes('commissionerate') || ng.includes('comrt');
+                    });
+                    if (commSelect && commSelect.options.length > 1) {
+                        let cIdx = Array.from(commSelect.options).findIndex(o => o.value === comm || o.text.includes(comm) || o.text.includes('NAGPUR') || o.text.includes('AMRAVATI'));
+                        commSelect.selectedIndex = cIdx > 0 ? cIdx : 1;
+                        commSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                        if (window.angular) {
+                            try {
+                                const ngModel = window.angular.element(commSelect).controller('ngModel');
+                                if (ngModel) { ngModel.$setViewValue(commSelect.value); ngModel.$commitViewValue(); }
+                            } catch (e) {}
+                        }
+                    }
+                }, { comm: ppobComm });
+
+                await page.waitForTimeout(1000);
+
+                // Division
+                await page.evaluate(({ div }) => {
+                    const visibleSelects = Array.from(document.querySelectorAll('select')).filter(s => s.offsetParent !== null && !s.disabled);
+                    const divSelect = visibleSelects.find(s => {
+                        const txt = (s.closest('.form-group, div')?.innerText || '').toLowerCase();
+                        const ng = (s.getAttribute('ng-model') || '').toLowerCase();
+                        return txt.includes('division') || ng.includes('divsn');
+                    });
+                    if (divSelect && divSelect.options.length > 1) {
+                        let dIdx = Array.from(divSelect.options).findIndex(o => o.value === div || o.text.includes(div) || o.text.includes('AMRAVATI') || o.text.includes('WARUD'));
+                        divSelect.selectedIndex = dIdx > 0 ? dIdx : 1;
+                        divSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                        if (window.angular) {
+                            try {
+                                const ngModel = window.angular.element(divSelect).controller('ngModel');
+                                if (ngModel) { ngModel.$setViewValue(divSelect.value); ngModel.$commitViewValue(); }
+                            } catch (e) {}
+                        }
+                    }
+                }, { div: ppobDiv });
+
+                await page.waitForTimeout(1000);
+
+                // Range
+                await page.evaluate(({ range }) => {
+                    const visibleSelects = Array.from(document.querySelectorAll('select')).filter(s => s.offsetParent !== null && !s.disabled);
+                    const rangeSelect = visibleSelects.find(s => {
+                        const txt = (s.closest('.form-group, div')?.innerText || '').toLowerCase();
+                        const ng = (s.getAttribute('ng-model') || '').toLowerCase();
+                        return txt.includes('range') || ng.includes('range');
+                    });
+                    if (rangeSelect && rangeSelect.options.length > 1) {
+                        let rIdx = Array.from(rangeSelect.options).findIndex(o => o.value === range || o.text.includes(range) || o.text.includes('WARUD') || o.text.includes('AMRAVATI'));
+                        rangeSelect.selectedIndex = rIdx > 0 ? rIdx : 1;
+                        rangeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                        if (window.angular) {
+                            try {
+                                const ngModel = window.angular.element(rangeSelect).controller('ngModel');
+                                if (ngModel) { ngModel.$setViewValue(rangeSelect.value); ngModel.$commitViewValue(); }
+                            } catch (e) {}
+                        }
+                    }
+                }, { range: ppobRange });
+
+                await page.waitForTimeout(600);
+
+                // 7. Select Nature of possession of premises
                 await page.evaluate(({ possessionVal }) => {
-                    const selects = Array.from(document.querySelectorAll('select'));
-                    const posSelect = selects.find(s => {
+                    const visibleSelects = Array.from(document.querySelectorAll('select')).filter(s => s.offsetParent !== null && !s.disabled);
+                    const posSelect = visibleSelects.find(s => {
                         const ng = (s.getAttribute('ng-model') || '').toLowerCase();
                         return ng.includes('psnt') || Array.from(s.options || []).some(o => /consent|own|rent|lease/i.test(o.text || ''));
                     });
@@ -2456,10 +2389,10 @@ async function run() {
 
                 await page.waitForTimeout(600);
 
-                // 6. Select Proof of Principal Place of Business Document Type
+                // 8. Select Proof of Principal Place of Business Document Type
                 await page.evaluate(({ docTypeVal }) => {
-                    const selects = Array.from(document.querySelectorAll('select'));
-                    const docSelect = selects.find(s => {
+                    const visibleSelects = Array.from(document.querySelectorAll('select')).filter(s => s.offsetParent !== null && !s.disabled);
+                    const docSelect = visibleSelects.find(s => {
                         const ng = (s.getAttribute('ng-model') || '').toLowerCase();
                         return ng.includes('doctype') || Array.from(s.options || []).some(o => /electricity bill|consent letter|municipal/i.test(o.text || ''));
                     });
@@ -2494,9 +2427,9 @@ async function run() {
 
                 await page.waitForTimeout(600);
 
-                // 8. Select Nature of Business Activity (Retail Business or user selection)
+                // 9. Select Nature of Business Activity (Retail Business or user selection)
                 await page.evaluate(() => {
-                    const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+                    const cbs = Array.from(document.querySelectorAll('input[type="checkbox"]')).filter(c => c.offsetParent !== null);
                     // Uncheck Bonded warehouse if user didn't request it
                     const bwhCb = cbs.find(cb => /bonded warehouse/i.test(cb.parentElement?.innerText || ''));
                     if (bwhCb && bwhCb.checked) {
@@ -2511,9 +2444,9 @@ async function run() {
                     }
                 });
 
-                // 9. Additional Place of Business toggle -> No
+                // 10. Additional Place of Business toggle -> No
                 await page.evaluate(() => {
-                    const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                    const radios = Array.from(document.querySelectorAll('input[type="radio"]')).filter(r => r.offsetParent !== null);
                     const noR = radios.find(r => {
                         const t = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || r.value || '').toLowerCase();
                         return t.includes('no') || r.value === 'N';

@@ -1892,11 +1892,11 @@ async function run() {
             let urlStepKey = '';
             if (currentUrl.includes('/newappl/business/place')) urlStepKey = 'principal place';
             else if (currentUrl.includes('/newappl/business/addlplace')) urlStepKey = 'additional places';
-            else if (currentUrl.includes('/newappl/business')) urlStepKey = 'business details';
-            else if (currentUrl.includes('/newappl/promoters')) urlStepKey = 'promoter';
-            else if (currentUrl.includes('/newappl/authsignatory')) urlStepKey = 'authorized signatory';
-            else if (currentUrl.includes('/newappl/authrepresentative')) urlStepKey = 'authorized representative';
-            else if (currentUrl.includes('/newappl/goodsservices')) urlStepKey = 'goods and services';
+            else if (currentUrl.includes('/newappl/business') || currentUrl.includes('/msr/commoninfo/business')) urlStepKey = 'business details';
+            else if (currentUrl.includes('/newappl/promoters') || currentUrl.includes('/msr/commoninfo/promoters')) urlStepKey = 'promoter';
+            else if (currentUrl.includes('/newappl/authsignatory') || currentUrl.includes('/msr/commoninfo/authsignatory')) urlStepKey = 'authorized signatory';
+            else if (currentUrl.includes('/newappl/authrepresentative') || currentUrl.includes('/msr/commoninfo/authrepresentative')) urlStepKey = 'authorized representative';
+            else if (currentUrl.includes('/newappl/goodsservices') || currentUrl.includes('/msr/commoninfo/goodsservices')) urlStepKey = 'goods and services';
             else if (currentUrl.includes('/newappl/statespecific')) urlStepKey = 'state specific';
             else if (currentUrl.includes('/newappl/aadhar')) urlStepKey = 'aadhaar';
             else if (currentUrl.includes('/newappl/verify')) urlStepKey = 'verification';
@@ -2138,7 +2138,10 @@ async function run() {
                     }
                 } catch (e) { }
 
-                await saveAndAdvanceTab('Business Details', 'https://reg.gst.gov.in/registration/auth/newappl/promoters', 'Promoter / Partners');
+                const nextPromotersUrl = (automationMode === 'multistate' || page.url().includes('/msr/commoninfo/'))
+                    ? (process.env.GST_URL_MSR_STEP2_PROMOTERS || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/promoters')
+                    : 'https://reg.gst.gov.in/registration/auth/newappl/promoters';
+                await saveAndAdvanceTab('Business Details', nextPromotersUrl, 'Promoter / Partners');
                 continue;
             }
 
@@ -2674,7 +2677,10 @@ async function run() {
                     }
 
                     sendUpdate('Advancing Promoter / Partner via SAVE & CONTINUE...');
-                    await saveAndAdvanceTab('Promoter / Partner', 'https://reg.gst.gov.in/registration/auth/newappl/authsignatory', 'Authorized Signatory');
+                    const nextAuthSignatoryUrl = (automationMode === 'multistate' || page.url().includes('/msr/commoninfo/'))
+                        ? (process.env.GST_URL_MSR_STEP3_AUTHSIGNATORY || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/authsignatory')
+                        : 'https://reg.gst.gov.in/registration/auth/newappl/authsignatory';
+                    await saveAndAdvanceTab('Promoter / Partner', nextAuthSignatoryUrl, 'Authorized Signatory');
                     await page.waitForTimeout(1500);
                     await dismissAndConfirmModals('Promoter / Partner Post-Advance');
                     continue;
@@ -3340,21 +3346,24 @@ async function run() {
                 await dismissAndConfirmModals('Authorized Signatory Pre-Advance');
 
                 // Save & Continue on Authorized Signatory
-                await saveAndAdvanceTab('Authorized Signatory', 'https://reg.gst.gov.in/registration/auth/newappl/authrepresentative', 'Authorized Representative');
+                const nextAuthRepUrl = (automationMode === 'multistate' || page.url().includes('/msr/commoninfo/'))
+                    ? (process.env.GST_URL_MSR_STEP4_AUTHREP || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/authrepresentative')
+                    : 'https://reg.gst.gov.in/registration/auth/newappl/authrepresentative';
+                await saveAndAdvanceTab('Authorized Signatory', nextAuthRepUrl, 'Authorized Representative');
 
                 // If still on Authorized Signatory, retry Save & Continue and then advance
                 const stillOnAsg = await page.evaluate(() => {
                     const url = window.location.href || '';
-                    if (url.includes('/newappl/authrepresentative')) return false;
+                    if (url.includes('/authrepresentative')) return false;
                     const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
                     const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
-                    return bc.includes('authorized signatory') || tab.includes('authorized signatory') || url.includes('/newappl/authsignatory');
+                    return bc.includes('authorized signatory') || tab.includes('authorized signatory') || url.includes('/authsignatory');
                 });
 
                 if (stillOnAsg) {
                     await dismissAndConfirmModals('Authorized Signatory Final Modal');
                     await page.waitForTimeout(1000);
-                    await saveAndAdvanceTab('Authorized Signatory', 'https://reg.gst.gov.in/registration/auth/newappl/authrepresentative', 'Authorized Representative');
+                    await saveAndAdvanceTab('Authorized Signatory', nextAuthRepUrl, 'Authorized Representative');
                 }
 
                 continue;
@@ -3393,8 +3402,12 @@ async function run() {
                 });
 
                 await page.waitForTimeout(600);
-                await dismissAndConfirmModals('Authorized Representative');
-                await saveAndAdvanceTab('Authorized Representative', 'https://reg.gst.gov.in/registration/auth/newappl/business/place', 'Principal Place of Business');
+                const isMsrActive = (automationMode === 'multistate' || page.url().includes('/msr/commoninfo/'));
+                const nextFromAuthRepUrl = isMsrActive
+                    ? (process.env.GST_URL_MSR_STEP5_GOODSSERVICES || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/goodsservices')
+                    : 'https://reg.gst.gov.in/registration/auth/newappl/business/place';
+                const nextFromAuthRepLabel = isMsrActive ? 'Goods and Services' : 'Principal Place of Business';
+                await saveAndAdvanceTab('Authorized Representative', nextFromAuthRepUrl, nextFromAuthRepLabel);
                 continue;
             }
 
@@ -3994,8 +4007,15 @@ async function run() {
 
                 await page.waitForTimeout(800);
                 await dismissAndConfirmModals('Goods and Services');
-                await saveAndAdvanceTab('Goods and Services', 'https://reg.gst.gov.in/registration/auth/newappl/statespecific', 'State Specific Information');
-                continue;
+                const isMsrActive = (automationMode === 'multistate' || page.url().includes('/msr/commoninfo/'));
+                if (isMsrActive) {
+                    await saveAndAdvanceTab('Goods and Services', '', 'Save');
+                    sendUpdate('✅ [Multi-State Registration] Common Information (Steps 1-5) successfully saved & completed!');
+                    break;
+                } else {
+                    await saveAndAdvanceTab('Goods and Services', 'https://reg.gst.gov.in/registration/auth/newappl/statespecific', 'State Specific Information');
+                    continue;
+                }
             }
 
             // Step 8: State Specific Information tab

@@ -68,6 +68,11 @@ app.get('/api/gst-endpoints', (req, res) => {
         msr: process.env.GST_URL_MSR || 'https://reg.gst.gov.in/registration/msr',
         msrverify: process.env.GST_URL_MSR_VERIFY || 'https://reg.gst.gov.in/registration/msrverify',
         dashboard: process.env.GST_URL_DASHBOARD || 'https://reg.gst.gov.in/registration/auth/dashboard',
+        msr_step1_business: process.env.GST_URL_MSR_STEP1_BUSINESS || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/business',
+        msr_step2_promoters: process.env.GST_URL_MSR_STEP2_PROMOTERS || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/promoters',
+        msr_step3_authsignatory: process.env.GST_URL_MSR_STEP3_AUTHSIGNATORY || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/authsignatory',
+        msr_step4_authrep: process.env.GST_URL_MSR_STEP4_AUTHREP || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/authrepresentative',
+        msr_step5_goodsservices: process.env.GST_URL_MSR_STEP5_GOODSSERVICES || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/goodsservices',
 
         // 2. Master Data
         pincodes: process.env.GST_API_PINCODES || 'https://reg.gst.gov.in/master/pincodes',

@@ -273,7 +273,9 @@ async function run() {
     let keepaliveTimer = null;
 
     try {
-        let trnText = (appData.trn || data.trn || '').trim();
+        let rawTrn = (appData.trn || appData.masterTrn || data.trn || data.masterTrn || '').trim();
+        const trnCleanMatch = rawTrn.match(/\b(\d{12,15}(?:TRN)?)\b/i);
+        let trnText = trnCleanMatch ? trnCleanMatch[1].toUpperCase() : rawTrn;
 
         // =========================================================================
         // [પગલું ૧: TRN Login]
@@ -543,25 +545,138 @@ async function run() {
             });
         }
 
-        // Navigate to TRN Login Screen
-        sendUpdate('Navigating to TRN Login screen...');
-        await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await page.waitForSelector('#radiotrn', { state: 'visible', timeout: 30000 });
-        await page.click('#radiotrn');
+        // Ensure clean, valid TRN string
+        if (trnText) {
+            const cleanMatch = trnText.match(/\b(\d{12,15}(?:TRN)?)\b/i);
+            if (cleanMatch) trnText = cleanMatch[1].toUpperCase();
+        }
 
-        await page.waitForSelector('#trnno', { state: 'visible', timeout: 30000 });
-        await page.fill('#trnno', trnText);
-
-        // Fill Email Address if present
-        try {
-            const emailInputs = [page.locator('#email'), page.locator('#trn_email')];
-            for (const el of emailInputs) {
-                if (await el.count() > 0 && await el.first().isVisible()) {
-                    await el.first().fill(data.email || '');
-                    break;
+        // If trnText is still missing, fallback to querying database
+        if (!trnText || trnText.length < 5) {
+            try {
+                const dbAppRes = await new Promise((resolve) => {
+                    http.get(`http://127.0.0.1:3002/api/applications/${appId}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }, (res) => {
+                        let raw = '';
+                        res.on('data', c => raw += c);
+                        res.on('end', () => {
+                            try { resolve(JSON.parse(raw)); } catch (e) { resolve(null); }
+                        });
+                    }).on('error', () => resolve(null));
+                });
+                if (dbAppRes && dbAppRes.application) {
+                    const fetchedTrn = dbAppRes.application.trn || dbAppRes.application.masterTrn || (dbAppRes.application.data && dbAppRes.application.data.trn) || '';
+                    if (fetchedTrn) {
+                        const m = fetchedTrn.match(/\b(\d{12,15}(?:TRN)?)\b/i);
+                        trnText = m ? m[1].toUpperCase() : fetchedTrn.trim();
+                    }
                 }
+            } catch (e) { }
+        }
+
+        sendUpdate(`Navigating to TRN Login screen with TRN: ${trnText}...`);
+        await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.waitForTimeout(1000);
+
+        // Click TRN radio button
+        const radioTrn = page.locator('#radiotrn, input[type="radio"][value*="trn" i], label:has-text("Temporary Reference Number")').first();
+        await radioTrn.waitFor({ state: 'visible', timeout: 30000 });
+        await radioTrn.click({ force: true });
+        await page.waitForTimeout(1000);
+
+        // Fill TRN & Email using multiple strategies (Playwright type + DOM + AngularJS scope)
+        const userEmail = (data.email || (data.p1 && data.p1.email) || '').trim();
+
+        for (let fillAttempt = 0; fillAttempt < 3; fillAttempt++) {
+            // 1. Playwright locators with sequential typing
+            const trnInput = page.locator('input[placeholder*="Temporary Reference Number" i], #trnno, #trn, input[name*="trn" i]').first();
+            if (await trnInput.count() > 0 && await trnInput.isVisible()) {
+                await trnInput.click({ force: true }).catch(() => { });
+                await trnInput.fill('').catch(() => { });
+                await trnInput.pressSequentially(trnText, { delay: 40 }).catch(() => { });
             }
-        } catch (e) { }
+
+            const emailInput = page.locator('input[placeholder*="Email Address" i]:visible, input[placeholder*="Email" i]:visible, #trneml:visible, #trn_email:visible, input[name*="email" i]:visible').first();
+            if (await emailInput.count() > 0 && await emailInput.isVisible() && userEmail) {
+                await emailInput.click({ force: true }).catch(() => { });
+                await emailInput.fill('').catch(() => { });
+                await emailInput.pressSequentially(userEmail, { delay: 40 }).catch(() => { });
+            }
+
+            // 2. Direct DOM & AngularJS scope injection
+            await page.evaluate(({ tVal, eVal }) => {
+                const triggerField = (inputEl, val) => {
+                    if (!inputEl || !val) return;
+                    inputEl.focus();
+                    inputEl.value = val;
+                    inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+                    inputEl.dispatchEvent(new Event('blur', { bubbles: true }));
+                    if (window.angular) {
+                        try {
+                            const ngModel = window.angular.element(inputEl).controller('ngModel');
+                            if (ngModel) {
+                                ngModel.$setViewValue(val);
+                                ngModel.$modelValue = val;
+                                ngModel.$commitViewValue();
+                                ngModel.$render();
+                            }
+                            const sc = window.angular.element(inputEl).scope();
+                            if (sc) {
+                                if (sc.trnModel) sc.trnModel = val;
+                                if (sc.trn) sc.trn = val;
+                                if (sc.trnno) sc.trnno = val;
+                                if (sc.email) sc.email = eVal;
+                                if (!sc.$$phase) sc.$apply();
+                            }
+                        } catch (e) { }
+                    }
+                };
+
+                const visibleInputs = Array.from(document.querySelectorAll('input')).filter(i => i.offsetParent !== null && window.getComputedStyle(i).display !== 'none');
+
+                // Find TRN input
+                const trnEl = visibleInputs.find(i => {
+                    const p = (i.placeholder || '').toLowerCase();
+                    const id = (i.id || '').toLowerCase();
+                    const name = (i.name || '').toLowerCase();
+                    return p.includes('temporary reference number') || p.includes('trn') || id.includes('trn') || name.includes('trn');
+                });
+                if (trnEl) triggerField(trnEl, tVal);
+
+                // Find Email input
+                if (eVal) {
+                    const emailEl = visibleInputs.find(i => {
+                        const p = (i.placeholder || '').toLowerCase();
+                        const id = (i.id || '').toLowerCase();
+                        const name = (i.name || '').toLowerCase();
+                        return p.includes('email') || id.includes('email') || name.includes('email');
+                    });
+                    if (emailEl) triggerField(emailEl, eVal);
+                }
+            }, { tVal: trnText, eVal: userEmail });
+
+            await page.waitForTimeout(500);
+
+            // Verify if values stick in DOM
+            const currentFilled = await page.evaluate(() => {
+                const visibleInputs = Array.from(document.querySelectorAll('input')).filter(i => i.offsetParent !== null);
+                const trnEl = visibleInputs.find(i => (i.placeholder || '').toLowerCase().includes('temporary reference number') || (i.id || '').toLowerCase().includes('trn'));
+                const emailEl = visibleInputs.find(i => (i.placeholder || '').toLowerCase().includes('email') || (i.id || '').toLowerCase().includes('email'));
+                return {
+                    trn: trnEl ? trnEl.value : '',
+                    email: emailEl ? emailEl.value : ''
+                };
+            });
+
+            if (currentFilled.trn && (!userEmail || currentFilled.email)) {
+                sendUpdate(`✅ TRN Login inputs filled successfully -> TRN: "${currentFilled.trn}", Email: "${currentFilled.email}"`);
+                break;
+            } else {
+                await page.waitForTimeout(800);
+            }
+        }
 
         // TRN Login Captcha Loop
         let trnLoginSuccess = false;

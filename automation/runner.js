@@ -284,14 +284,15 @@ async function run() {
         if (trnText && trnText.length > 5) {
             sendUpdate(`Application already has TRN: ${trnText}. Proceeding straight to TRN Login...`);
         } else {
-            const partAUrl = (automationMode === 'multistate') ? 'https://reg.gst.gov.in/registration/msr' : 'https://reg.gst.gov.in/registration/';
-            sendUpdate(`Navigating to official GST portal (${automationMode === 'multistate' ? 'Multi-State Part A' : 'Part A'} registration)...`);
+            const msrUrl = process.env.GST_URL_MSR || 'https://reg.gst.gov.in/registration/msr';
+            const partAUrl = (automationMode === 'multistate') ? msrUrl : 'https://reg.gst.gov.in/registration/';
+            sendUpdate(`Navigating to official GST portal (${automationMode === 'multistate' ? 'Multi-State Part A (' + msrUrl + ')' : 'Part A'} registration)...`);
             try {
                 await page.goto(partAUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
             } catch (e) {
                 if (automationMode === 'multistate') {
-                    sendUpdate('Fallback navigating to standard registration URL...');
-                    await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+                    sendUpdate(`Retrying Multi-State Part A navigation to ${msrUrl}...`);
+                    await page.goto(msrUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
                 } else {
                     throw e;
                 }
@@ -397,14 +398,22 @@ async function run() {
                 sendUpdate('Waiting for OTP verification screen...');
                 try {
                     await page.waitForFunction(() => {
-                        const otpEl = document.querySelector('#mobile_otp');
-                        const captchaEl = document.querySelector('#captcha');
+                        const u = window.location.href;
+                        if (u.includes('/msrverify') || u.includes('/verify')) return true;
+                        const otpEl = document.querySelector('#mobile_otp, #otp, input[name*="otp"]');
                         if (otpEl && otpEl.offsetParent !== null) return true;
+                        const captchaEl = document.querySelector('#captcha');
                         if (captchaEl && captchaEl.value === '') return true;
+                        const err = document.querySelector('.alert-danger, .err, [ng-show*="err"]');
+                        if (err && err.offsetParent !== null && err.innerText.trim().length > 0) return true;
                         return false;
-                    }, { timeout: 30000 });
+                    }, { timeout: 35000 });
 
                     const isCleared = await page.evaluate(() => {
+                        const u = window.location.href;
+                        if (u.includes('/msrverify') || u.includes('/verify')) return false;
+                        const otpEl = document.querySelector('#mobile_otp, #otp, input[name*="otp"]');
+                        if (otpEl && otpEl.offsetParent !== null) return false;
                         const captchaEl = document.querySelector('#captcha');
                         return captchaEl && captchaEl.value === '';
                     });
@@ -414,9 +423,14 @@ async function run() {
                         await page.waitForTimeout(1000);
                     } else {
                         initialCaptchaSuccess = true;
+                        sendUpdate(`OTP verification screen active: ${page.url()}`);
                     }
                 } catch (e) {
-                    throw new Error("Timeout waiting for OTP verification screen to proceed.");
+                    if (page.url().includes('msrverify') || page.url().includes('/verify')) {
+                        initialCaptchaSuccess = true;
+                    } else {
+                        throw new Error("Timeout waiting for OTP verification screen to proceed.");
+                    }
                 }
             }
 
@@ -433,20 +447,22 @@ async function run() {
                 const [mobileOtp, emailOtp] = otpsStr.split(',');
 
                 sendUpdate('Submitting OTPs...');
-                await page.evaluate(() => {
-                    const m = document.querySelector('#mobile_otp');
-                    if (m) m.value = '';
-                    const e1 = document.querySelector('#email-otp');
-                    if (e1) e1.value = '';
-                    const e2 = document.querySelector('#email_otp');
-                    if (e2) e2.value = '';
-                });
+                await page.evaluate(({ mOtp, eOtp }) => {
+                    const m = document.querySelector('#mobile_otp, input[name="mobile_otp"], input[data-ng-model*="mobile"]');
+                    if (m) {
+                        m.value = mOtp;
+                        m.dispatchEvent(new Event('input', { bubbles: true }));
+                        m.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    const e1 = document.querySelector('#email-otp, #email_otp, input[name="email_otp"], input[data-ng-model*="email"]');
+                    if (e1) {
+                        e1.value = eOtp;
+                        e1.dispatchEvent(new Event('input', { bubbles: true }));
+                        e1.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }, { mOtp: mobileOtp, eOtp: emailOtp });
 
-                await page.fill('#mobile_otp', mobileOtp);
-                const emailOtpFilled = await page.locator('#email-otp').count() > 0
-                    ? page.fill('#email-otp', emailOtp)
-                    : page.fill('#email_otp', emailOtp).catch(() => page.fill('#email-otp', emailOtp).catch(() => { }));
-                await emailOtpFilled;
+                await page.waitForTimeout(500);
 
                 const proceedOtpBtn = page.locator('button', { hasText: 'Proceed' }).last();
                 await proceedOtpBtn.click();
@@ -454,19 +470,23 @@ async function run() {
                 sendUpdate('Verifying OTPs...');
                 try {
                     await page.waitForFunction(() => {
-                        const trnEl = document.querySelector('span[data-ng-bind="trn"]');
+                        const trnEl = document.querySelector('span[data-ng-bind="trn"], span[data-ng-bind*="trn"], span[ng-bind*="trn"], .trn-number');
                         if (trnEl && trnEl.textContent.trim().length > 5) return true;
+
+                        const bodyText = document.body.innerText.toLowerCase();
+                        if (/\b\d{14,16}(?:trn)?\b/i.test(bodyText) && !bodyText.includes('enter otp')) return true;
 
                         const otpEl = document.querySelector('#mobile_otp');
                         if (otpEl && otpEl.value === '') return true;
 
-                        const bodyText = document.body.innerText.toLowerCase();
                         return bodyText.includes('invalid otp') || bodyText.includes('otp are invalid') || bodyText.includes('otp is invalid');
-                    }, { timeout: 30000 });
+                    }, { timeout: 35000 });
 
                     const isError = await page.evaluate(() => {
-                        const trnEl = document.querySelector('span[data-ng-bind="trn"]');
+                        const trnEl = document.querySelector('span[data-ng-bind="trn"], span[data-ng-bind*="trn"], span[ng-bind*="trn"], .trn-number');
                         if (trnEl && trnEl.textContent.trim().length > 5) return false;
+                        const bodyText = document.body.innerText.toLowerCase();
+                        if (/\b\d{14,16}(?:trn)?\b/i.test(bodyText) && !bodyText.includes('enter otp')) return false;
                         return true;
                     });
 
@@ -477,19 +497,35 @@ async function run() {
                         initialOtpSuccess = true;
                     }
                 } catch (e) {
-                    throw new Error("Timeout waiting for OTP verification to proceed.");
+                    const hasTrn = await page.evaluate(() => {
+                        const el = document.querySelector('span[data-ng-bind*="trn" i], span[ng-bind*="trn" i], .trn-number');
+                        if (el && el.textContent.trim().length > 5) return true;
+                        return /\b\d{14,16}(?:trn)?\b/i.test(document.body.innerText);
+                    });
+                    if (hasTrn) {
+                        initialOtpSuccess = true;
+                    } else {
+                        throw new Error("Timeout waiting for OTP verification to proceed.");
+                    }
                 }
             }
 
             sendUpdate('Extracting Temporary Reference Number (TRN)...');
-            const trnLocator = page.locator('span[data-ng-bind="trn"]');
-            await trnLocator.waitFor({ state: 'attached', timeout: 60000 });
-            await page.waitForFunction(() => {
-                const el = document.querySelector('span[data-ng-bind="trn"]');
-                return el && el.textContent.trim().length > 5;
-            }, { timeout: 60000 });
+            try {
+                await page.waitForFunction(() => {
+                    const el = document.querySelector('span[data-ng-bind*="trn" i], span[ng-bind*="trn" i], .trn-number, strong[ng-bind*="trn" i]');
+                    if (el && el.textContent.trim().length > 5) return true;
+                    const match = document.body.innerText.match(/\b\d{14,16}(?:TRN)?\b/i);
+                    return !!match;
+                }, { timeout: 60000 });
+            } catch (e) { }
 
-            trnText = (await trnLocator.textContent()).trim();
+            trnText = await page.evaluate(() => {
+                const el = document.querySelector('span[data-ng-bind*="trn" i], span[ng-bind*="trn" i], .trn-number, strong[ng-bind*="trn" i]');
+                if (el && el.textContent.trim().length > 5) return el.textContent.trim();
+                const match = document.body.innerText.match(/\b(\d{14,16}(?:TRN)?)\b/i);
+                return match ? match[1].trim() : '';
+            });
             sendUpdate(`TRN Generated: ${trnText}`);
 
             // Persist TRN to database
@@ -621,7 +657,10 @@ async function run() {
             sendUpdate('Verifying TRN OTP...');
             try {
                 await page.waitForFunction(() => {
-                    const editBtn = document.querySelector('button[data-ng-click="editSavedapp(x)"]');
+                    const u = window.location.href;
+                    if (u.includes('/dashboard') || u.includes('/auth/')) return true;
+
+                    const editBtn = document.querySelector('button[data-ng-click="editSavedapp(x)"], button[data-ng-click*="edit"], a[data-ng-click*="edit"], table tbody tr');
                     if (editBtn && editBtn.offsetParent !== null) return true;
 
                     const otpEl = document.querySelector('#mobile_otp');
@@ -629,10 +668,12 @@ async function run() {
 
                     const bodyText = document.body.innerText.toLowerCase();
                     return bodyText.includes('invalid otp') || bodyText.includes('otp are invalid');
-                }, { timeout: 30000 });
+                }, { timeout: 35000 });
 
                 const isError = await page.evaluate(() => {
-                    const editBtn = document.querySelector('button[data-ng-click="editSavedapp(x)"]');
+                    const u = window.location.href;
+                    if (u.includes('/dashboard') || u.includes('/auth/')) return false;
+                    const editBtn = document.querySelector('button[data-ng-click="editSavedapp(x)"], button[data-ng-click*="edit"], a[data-ng-click*="edit"], table tbody tr');
                     if (editBtn && editBtn.offsetParent !== null) return false;
                     return true;
                 });
@@ -644,7 +685,11 @@ async function run() {
                     trnOtpSuccess = true;
                 }
             } catch (e) {
-                throw new Error("Timeout waiting for TRN OTP verification to proceed.");
+                if (page.url().includes('dashboard') || page.url().includes('/auth/')) {
+                    trnOtpSuccess = true;
+                } else {
+                    throw new Error("Timeout waiting for TRN OTP verification to proceed.");
+                }
             }
         }
 
@@ -663,7 +708,13 @@ async function run() {
             } catch (e) { }
         }, 25000);
 
-        sendUpdate('Navigating to Dashboard (My Saved Applications)...');
+        const dashboardUrl = process.env.GST_URL_DASHBOARD || 'https://reg.gst.gov.in/registration/auth/dashboard';
+        sendUpdate(`Navigating to Dashboard (${dashboardUrl})...`);
+        if (!page.url().includes('dashboard')) {
+            try {
+                await page.goto(dashboardUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            } catch (e) { }
+        }
 
         // Continuous network listener for draftId / aplCd in any API request or response
         const draftIdRegex = /(?:applnId|draftId|draft_id|aplCd|appId)=([0-9A-Za-z]+)/i;

@@ -65,6 +65,9 @@ app.get('/api/gst-endpoints', (req, res) => {
         ustatus: process.env.GST_API_STATUS || 'https://reg.gst.gov.in/services/api/ustatus',
         submitotp: process.env.GST_API_SUBMIT_OTP || 'https://reg.gst.gov.in/registration/api/submit/submitotp',
         sendtrnotp: process.env.GST_API_SEND_TRN_OTP || 'https://reg.gst.gov.in/registration/api/submit/sendtrnotp',
+        msr: process.env.GST_URL_MSR || 'https://reg.gst.gov.in/registration/msr',
+        msrverify: process.env.GST_URL_MSR_VERIFY || 'https://reg.gst.gov.in/registration/msrverify',
+        dashboard: process.env.GST_URL_DASHBOARD || 'https://reg.gst.gov.in/registration/auth/dashboard',
 
         // 2. Master Data
         pincodes: process.env.GST_API_PINCODES || 'https://reg.gst.gov.in/master/pincodes',

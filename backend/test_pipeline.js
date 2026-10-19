@@ -1,4 +1,5 @@
 const http = require('http');
+const { execSync } = require('child_process');
 
 async function testAll() {
     console.log('--- STARTING COMPREHENSIVE PIPELINE TEST ---');
@@ -89,8 +90,9 @@ async function testAll() {
 
     // 3. Test Runner Syntax & Compilation
     console.log('\n[3/4] Testing Automation Runner file syntax & dependencies...');
-    const { execSync } = require('child_process');
-    execSync('node -c automation/runner.js');
+    const path = require('path');
+    const runnerPath = path.join(__dirname, '..', 'automation', 'runner.js');
+    execSync(`node -c "${runnerPath}"`);
     console.log('✅ Automation Runner syntax & compilation validated successfully.');
 
     // 4. Test Frontend Server (Vite)

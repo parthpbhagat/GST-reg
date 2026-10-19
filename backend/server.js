@@ -1,6 +1,9 @@
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
+const https = require('https');
 const { Server } = require('socket.io');
 const { supabase, oldSupabase } = require('./database');
 const logger = require('./logger');
@@ -39,11 +42,11 @@ app.post('/api/client-logs', (req, res) => {
 
 // GET /api/gst-endpoints - Return dynamically formatted GST endpoints based on input parameters
 app.get('/api/gst-endpoints', (req, res) => {
-    const draftId = String(req.query.draftId || req.query.applnId || '92980126');
-    const state_cd = String(req.query.state_cd || req.query.stCd || '27');
-    const pincode = String(req.query.pincode || '444906');
-    const docId = String(req.query.docId || '20261027178892');
-    const chapter = String(req.query.chapter || '100');
+    const draftId = String(req.query.draftId || req.query.applnId || '');
+    const state_cd = String(req.query.state_cd || req.query.stCd || '');
+    const pincode = String(req.query.pincode || '');
+    const docId = String(req.query.docId || '');
+    const chapter = String(req.query.chapter || '');
     const amendFlag = String(req.query.amendFlag || 'APLRG');
 
     const formatUrl = (tmpl) => {
@@ -114,6 +117,137 @@ app.get('/api/gst-endpoints', (req, res) => {
         endpoints: resolved,
         templates
     });
+});
+
+// Helper for proxying GET requests to official GST Portal API
+const proxyGstGet = (targetUrl, res) => {
+    https.get(targetUrl, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Referer': 'https://reg.gst.gov.in/registration/'
+        }
+    }, (upstreamRes) => {
+        let rawData = '';
+        upstreamRes.on('data', chunk => rawData += chunk);
+        upstreamRes.on('end', () => {
+            try {
+                const parsed = JSON.parse(rawData);
+                return res.status(upstreamRes.statusCode || 200).json(parsed);
+            } catch (e) {
+                return res.status(upstreamRes.statusCode || 200).send(rawData);
+            }
+        });
+    }).on('error', (err) => {
+        console.error(`[GST Proxy Error] ${targetUrl}:`, err.message);
+        return res.status(502).json({ error: 'Failed to fetch from GST Portal: ' + err.message });
+    });
+};
+
+// 1. All States
+app.get('/api/master/states', (req, res) => {
+    const url = process.env.GST_API_ALLSTATES || 'https://reg.gst.gov.in/master/allstates';
+    proxyGstGet(url, res);
+});
+
+// 2. Active Districts by State Code
+app.get('/api/master/districts/:stateCode', (req, res) => {
+    const tmpl = process.env.GST_API_ACTIVE_DISTRICT || 'https://reg.gst.gov.in/master/st/{state_cd}/activedistrict';
+    proxyGstGet(tmpl.replace('{state_cd}', req.params.stateCode), res);
+});
+
+// 3. SEZ by State Code
+app.get('/api/master/sez/:stateCode', (req, res) => {
+    const tmpl = process.env.GST_API_SEZ || 'https://reg.gst.gov.in/master/sez/{state_cd}';
+    proxyGstGet(tmpl.replace('{state_cd}', req.params.stateCode), res);
+});
+
+// 4. State Jurisdiction (Sector / Circle / Ward) by State Code & Pincode
+app.get('/api/master/jurisdiction/state/:stateCode/:pincode', (req, res) => {
+    const tmpl = process.env.GST_API_PINCODE_JURISDICTION || 'https://reg.gst.gov.in/master/jursd/bypincode/state/{state_cd}/{pincode}';
+    proxyGstGet(tmpl.replace('{state_cd}', req.params.stateCode).replace('{pincode}', req.params.pincode), res);
+});
+
+// 5. Center Jurisdiction: Commissionerates
+app.get(['/api/master/jurisdiction/commissionerate', '/api/master/jurisdiction/commissionerate/:stateCode', '/api/master/jurisdiction/commissionerate/:stateCode/:pincode'], (req, res) => {
+    const url = process.env.GST_API_CENTRECOMMISIONERATE || 'https://reg.gst.gov.in/master/jursd/centrecommisionerate';
+    proxyGstGet(url, res);
+});
+
+// 6. Center Jurisdiction: Division by Commissionerate Code
+app.get(['/api/master/jurisdiction/division/:commCode', '/api/master/jurisdiction/division/:stateCode/:commCode', '/api/master/jurisdiction/division/:stateCode/:commCode/:pincode'], (req, res) => {
+    const commCode = req.params.commCode;
+    proxyGstGet(`https://reg.gst.gov.in/master/jursd/centredivision/${commCode}`, res);
+});
+
+// 7. Center Jurisdiction: Range by Division Code
+app.get(['/api/master/jurisdiction/range/:divCode', '/api/master/jurisdiction/range/:stateCode/:divCode', '/api/master/jurisdiction/range/:stateCode/:divCode/:pincode'], (req, res) => {
+    const divCode = req.params.divCode;
+    proxyGstGet(`https://reg.gst.gov.in/master/jursd/centrerange/${divCode}`, res);
+});
+
+// 8. HSN Code Search via GST Portal Chapter Endpoint
+app.get('/api/hsn/:code', (req, res) => {
+    const query = (req.params.code || '').trim();
+    if (!query) return res.json({ data: [] });
+    const chapter = query.slice(0, 2);
+    const url = `https://reg.gst.gov.in/master/hsn/l1/${chapter}`;
+    https.get(url, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Referer': 'https://reg.gst.gov.in/registration/'
+        }
+    }, (upstreamRes) => {
+        let rawData = '';
+        upstreamRes.on('data', chunk => rawData += chunk);
+        upstreamRes.on('end', () => {
+            try {
+                const parsed = JSON.parse(rawData);
+                let items = (parsed && Array.isArray(parsed.data)) ? parsed.data : [];
+                // Filter matching query
+                const qLower = query.toLowerCase();
+                const filtered = items.filter(it => (it.c && it.c.toLowerCase().includes(qLower)) || (it.n && it.n.toLowerCase().includes(qLower)));
+                return res.json({ data: filtered.length > 0 ? filtered : items });
+            } catch (e) {
+                return res.json({ data: [] });
+            }
+        });
+    }).on('error', () => res.json({ data: [] }));
+});
+
+// 9. Standard SAC (Service Accounting Codes) Search
+const COMMON_SAC_DATA = [
+    { c: '998311', n: 'Legal advisory and representation services concerning criminal law' },
+    { c: '998312', n: 'Legal advisory and representation services concerning other fields of law' },
+    { c: '998313', n: 'Legal documentation and certification services' },
+    { c: '998314', n: 'Legal advisory and representation services' },
+    { c: '998319', n: 'Other legal services n.e.c.' },
+    { c: '998321', n: 'Accounting, auditing and bookkeeping services' },
+    { c: '998322', n: 'Tax consultancy and preparation services' },
+    { c: '998331', n: 'Management consulting services' },
+    { c: '998341', n: 'Information technology (IT) consulting and support services' },
+    { c: '998351', n: 'Scientific and technical consulting services' },
+    { c: '995411', n: 'Construction services of commercial buildings' },
+    { c: '995412', n: 'Construction services of other buildings' },
+    { c: '996111', n: 'Services in wholesale trade' },
+    { c: '996211', n: 'Services in retail trade' },
+    { c: '996311', n: 'Accommodation services provided by hotels, motels, etc.' },
+    { c: '996331', n: 'Food and beverage services provided by restaurants and bars' },
+    { c: '996411', n: 'Passenger transportation services by railway' },
+    { c: '996511', n: 'Road transport services of goods' },
+    { c: '997111', n: 'Central banking services and financial intermediation' },
+    { c: '997211', n: 'Real estate services involving own or leased property' },
+    { c: '998411', n: 'Telecommunications services' },
+    { c: '998511', n: 'Employment agency and personnel supply services' },
+    { c: '998711', n: 'Maintenance and repair services of fabricated metal products, machinery' }
+];
+
+app.get('/api/sac/:code', (req, res) => {
+    const q = (req.params.code || '').trim().toLowerCase();
+    if (!q) return res.json({ data: COMMON_SAC_DATA });
+    const matches = COMMON_SAC_DATA.filter(s => s.c.toLowerCase().includes(q) || s.n.toLowerCase().includes(q));
+    res.json({ data: matches.length > 0 ? matches : COMMON_SAC_DATA.slice(0, 10) });
 });
 
 app.post('/api/log-ocr', async (req, res) => {
@@ -237,24 +371,6 @@ app.delete('/api/file', (req, res) => {
         }
     }
     res.status(400).json({ error: 'Invalid file path' });
-});
-
-// GET /api/hsn/:code - Proxy for GST HSN API
-app.get('/api/hsn/:code', (req, res) => {
-    const https = require('https');
-    https.get(`https://reg.gst.gov.in/master/hsn/l1/${req.params.code}`, (apiRes) => {
-        let body = '';
-        apiRes.on('data', chunk => body += chunk);
-        apiRes.on('end', () => {
-            try {
-                res.json(JSON.parse(body));
-            } catch (e) {
-                res.status(500).json({ error: 'Failed to parse JSON' });
-            }
-        });
-    }).on('error', (e) => {
-        res.status(500).json({ error: 'Failed to fetch HSN' });
-    });
 });
 
 // POST /api/applications - Submit a new application
@@ -422,55 +538,7 @@ app.put('/api/applications/:id/status', authenticateToken, async (req, res) => {
     if (arn) appData.arn = arn;
     if (trn) appData.trn = trn;
 
-    if (status === 'Accepted' || status === 'Approved') {
-        try {
-            const legalName = appData.legalName || id;
-            const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const fs = require('fs');
-            const path = require('path');
-            const dirPath = path.join(__dirname, 'data', safeLegalName);
-
-            if (!fs.existsSync(dirPath)) {
-                fs.mkdirSync(dirPath, { recursive: true });
-            }
-
-            // Move photos
-            if (appData.promoters) {
-                appData.promoters.forEach((p, idx) => {
-                    if (p.promoterPhotoFile && p.promoterPhotoFile.startsWith('data:image')) {
-                        const base64Data = p.promoterPhotoFile.replace(/^data:image\/\w+;base64,/, "");
-                        const ext = p.promoterPhotoFile.substring("data:image/".length, p.promoterPhotoFile.indexOf(";base64"));
-                        const fileName = `promoterPhoto_${p.firstName || idx}_${Date.now()}.${ext}`;
-                        const filePath = path.join(dirPath, fileName);
-                        fs.writeFileSync(filePath, base64Data, 'base64');
-                        p.promoterPhotoFile = filePath;
-                    }
-                });
-            }
-
-            if (appData.ppob_docFile && (appData.ppob_docFile.startsWith('data:image') || appData.ppob_docFile.startsWith('data:application/pdf'))) {
-                const base64Data = appData.ppob_docFile.replace(/^data:(image|application)\/\w+;base64,/, "");
-                const ext = appData.ppob_docFile.includes('application/pdf') ? 'pdf' : 'jpg';
-                const fileName = `ppob_docFile_${Date.now()}.${ext}`;
-                const filePath = path.join(dirPath, fileName);
-                fs.writeFileSync(filePath, base64Data, 'base64');
-                appData.ppob_docFile = filePath;
-            }
-
-            // Move PDF Declaration (Added missing logic to prevent enormous base64 payload overhead in DB)
-            if (appData.authSig && appData.authSig.authSigProofFile && (appData.authSig.authSigProofFile.startsWith('data:image') || appData.authSig.authSigProofFile.startsWith('data:application/pdf'))) {
-                const base64Data = appData.authSig.authSigProofFile.replace(/^data:.*?;base64,/, "");
-                const ext = appData.authSig.authSigProofFile.includes('application/pdf') ? 'pdf' : 'jpg';
-                const fileName = `authSigProofFile_${Date.now()}.${ext}`;
-                const filePath = path.join(dirPath, fileName);
-                fs.writeFileSync(filePath, base64Data, 'base64');
-                appData.authSig.authSigProofFile = filePath;
-            }
-
-        } catch (err) {
-            console.error('Error saving files during approval:', err);
-        }
-    }
+    // All application data and uploaded document data are stored purely in Supabase database without saving to local PC disk
 
     let updateQuery = supabase.from('applications').update({ status, data: appData }).eq('appId', id);
     if (req.user.email !== 'admin@example.com') {
@@ -642,7 +710,6 @@ app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
 });
 
 const { spawn } = require('child_process');
-const path = require('path');
 
 const activeAutomations = new Map();
 
@@ -667,7 +734,7 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
         spawnArgs.push(JSON.stringify(multiStateConfig));
     }
 
-    const child = spawn('node', spawnArgs, { cwd: runnerDir });
+    const child = spawn('node', spawnArgs, { cwd: runnerDir, env: { ...process.env }, windowsHide: false });
     activeAutomations.set(appId, child);
 
     let stdoutBuffer = '';
@@ -688,7 +755,7 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
                         const parsed = JSON.parse(statusMsg.replace('PORTAL_ERROR:', ''));
                         logger.runner(appId, 'PORTAL_ERROR', JSON.stringify(parsed));
                         io.to(appId).emit('automation_portal_error', parsed);
-                    } catch (e) {}
+                    } catch (e) { }
                 }
             } else if (line.startsWith('PORTAL_ERROR:')) {
                 const errDataStr = line.replace('PORTAL_ERROR:', '');
@@ -703,10 +770,10 @@ app.post('/api/automation/start', authenticateToken, (req, res) => {
                 const imageSrc = line.replace('CAPTCHA_IMAGE:', '');
                 logger.runner(appId, 'CAPTCHA', 'New CAPTCHA image received from GST portal');
                 io.to(appId).emit('automation_captcha_image', imageSrc);
-            } else if (line.startsWith('SCREENSHOT:')) {
-                const base64 = line.replace('SCREENSHOT:', '');
-                logger.runner(appId, 'SCREENSHOT', 'Captured live browser screenshot');
-                io.to(appId).emit('automation_screenshot', { appId, image: base64 });
+            // } else if (line.startsWith('SCREENSHOT:')) {
+            //     const base64 = line.replace('SCREENSHOT:', '');
+            //     logger.runner(appId, 'SCREENSHOT', 'Captured live browser screenshot');
+            //     io.to(appId).emit('automation_screenshot', { appId, image: base64 });
             } else if (line.startsWith('WAITING_FOR_WARNING_RESPONSE')) {
                 logger.runner(appId, 'WARNING', 'Waiting for address warning response');
                 io.to(appId).emit('automation_warning');

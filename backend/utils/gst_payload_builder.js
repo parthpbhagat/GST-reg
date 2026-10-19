@@ -25,13 +25,18 @@ const STATE_CODES = {
 
 function getStateCode(stateName) {
     if (!stateName) return '24';
-    const clean = stateName.toLowerCase().trim();
+    const clean = String(stateName).toLowerCase().trim();
+    if (/^\d{2}$/.test(clean)) return clean;
     return STATE_CODES[clean] || '24';
 }
 
 function getConstitutionCode(constName) {
     if (!constName) return 'PRO';
-    const c = constName.toLowerCase();
+    const clean = String(constName).trim();
+    if (['PRO', 'PVT', 'PUB', 'LLP', 'PAR', 'HUF', 'SOC', 'TRU'].includes(clean.toUpperCase())) {
+        return clean.toUpperCase();
+    }
+    const c = clean.toLowerCase();
     if (c.includes('proprietor')) return 'PRO';
     if (c.includes('private limited') || c.includes('pvt')) return 'PVT';
     if (c.includes('public limited')) return 'PUB';
@@ -45,7 +50,9 @@ function getConstitutionCode(constName) {
 
 function getPossessionCode(possessionName) {
     if (!possessionName) return 'CON';
-    const p = possessionName.toLowerCase();
+    const clean = String(possessionName).trim().toUpperCase();
+    if (['CON', 'REN', 'OWN', 'LEA', 'SHR'].includes(clean)) return clean;
+    const p = String(possessionName).toLowerCase();
     if (p.includes('consent')) return 'CON';
     if (p.includes('rent')) return 'REN';
     if (p.includes('own')) return 'OWN';
@@ -56,7 +63,9 @@ function getPossessionCode(possessionName) {
 
 function getPPOBDocTypeCode(docName) {
     if (!docName) return 'ELCB';
-    const d = docName.toLowerCase();
+    const clean = String(docName).trim().toUpperCase();
+    if (['ELCB', 'CONL', 'RNTA', 'MUNC', 'PTRC', 'LODC'].includes(clean)) return clean;
+    const d = String(docName).toLowerCase();
     if (d.includes('elect')) return 'ELCB';
     if (d.includes('consent')) return 'CONL';
     if (d.includes('rent') || d.includes('lease')) return 'RNTA';
@@ -136,6 +145,79 @@ function computeFileHash(fileData) {
     return '';
 }
 
+function isDummyElectricityConsumerNo(val) {
+    if (!val) return true;
+    const s = String(val).trim().toLowerCase();
+    if (!s || s === 'undefined' || s === 'null' || s === 'na' || s === 'n/a' || s === 'none' || s === 'no' || s === '') return true;
+    if (/^(test|dummy|sample)$/i.test(s)) return true;
+    return false;
+}
+
+const ELECTRICITY_BOARD_LOOKUP = {
+    // Maharashtra (27)
+    'maharashtra state electricity distribution co.ltd': { code: 'MSEDCL', desc: 'Maharashtra State Electricity Distribution Co.Ltd' },
+    'maharashtra state electricity distribution': { code: 'MSEDCL', desc: 'Maharashtra State Electricity Distribution Co.Ltd' },
+    'msedcl': { code: 'MSEDCL', desc: 'Maharashtra State Electricity Distribution Co.Ltd' },
+    'adani electricity mumbai limited': { code: 'AEML', desc: 'Adani Electricity Mumbai Limited' },
+    'adani electricity': { code: 'AEML', desc: 'Adani Electricity Mumbai Limited' },
+    'aeml': { code: 'AEML', desc: 'Adani Electricity Mumbai Limited' },
+    'the tata power company limited': { code: 'TPWR', desc: 'The Tata Power Company Limited' },
+    'tata power': { code: 'TPWR', desc: 'The Tata Power Company Limited' },
+    'brihanmumbai electric supply and transport': { code: 'BEST', desc: 'Brihanmumbai Electric Supply and Transport' },
+    'best': { code: 'BEST', desc: 'Brihanmumbai Electric Supply and Transport' },
+    // Gujarat (24)
+    'dakshin gujarat vij company limited': { code: 'DGVCL', desc: 'Dakshin Gujarat Vij Company Limited' },
+    'dgvcl': { code: 'DGVCL', desc: 'Dakshin Gujarat Vij Company Limited' },
+    'madhya gujarat vij company limited': { code: 'MGVCL', desc: 'Madhya Gujarat Vij Company Limited' },
+    'mgvcl': { code: 'MGVCL', desc: 'Madhya Gujarat Vij Company Limited' },
+    'paschim gujarat vij company limited': { code: 'PGVCL', desc: 'Paschim Gujarat Vij Company Limited' },
+    'pgvcl': { code: 'PGVCL', desc: 'Paschim Gujarat Vij Company Limited' },
+    'uttar gujarat vij company limited': { code: 'UGVCL', desc: 'Uttar Gujarat Vij Company Limited' },
+    'ugvcl': { code: 'UGVCL', desc: 'Uttar Gujarat Vij Company Limited' },
+    'torrent power limited': { code: 'TPA', desc: 'Torrent Power Limited' },
+    'torrent power': { code: 'TPA', desc: 'Torrent Power Limited' },
+    // Delhi (07)
+    'bses rajdhani power limited': { code: 'BRPL', desc: 'BSES Rajdhani Power Limited' },
+    'bses yamuna power limited': { code: 'BYPL', desc: 'BSES Yamuna Power Limited' },
+    'tata power delhi distribution limited': { code: 'TPDDL', desc: 'Tata Power Delhi Distribution Limited' }
+};
+
+const STATE_DEFAULT_EB = {
+    '27': { code: 'MSEDCL', desc: 'Maharashtra State Electricity Distribution Co. Ltd' },
+    'maharashtra': { code: 'MSEDCL', desc: 'Maharashtra State Electricity Distribution Co. Ltd' },
+    '24': { code: 'DGVCL', desc: 'Dakshin Gujarat Vij Company Limited' },
+    'gujarat': { code: 'DGVCL', desc: 'Dakshin Gujarat Vij Company Limited' },
+    '07': { code: 'BRPL', desc: 'BSES Rajdhani Power Limited' },
+    'delhi': { code: 'BRPL', desc: 'BSES Rajdhani Power Limited' }
+};
+
+function resolveElectricityBoard(boardName, boardCode, state) {
+    if (boardCode && String(boardCode).trim()) {
+        return {
+            code: String(boardCode).trim(),
+            desc: (boardName || boardCode).trim()
+        };
+    }
+    if (boardName) {
+        const cleanName = String(boardName).trim().toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (ELECTRICITY_BOARD_LOOKUP[cleanName]) {
+            return ELECTRICITY_BOARD_LOOKUP[cleanName];
+        }
+        for (const [key, val] of Object.entries(ELECTRICITY_BOARD_LOOKUP)) {
+            if (cleanName.includes(key) || key.includes(cleanName)) {
+                return val;
+            }
+        }
+    }
+    if (state) {
+        const sKey = String(state).trim().toLowerCase();
+        if (STATE_DEFAULT_EB[sKey]) return STATE_DEFAULT_EB[sKey];
+        const sCd = getStateCode(sKey);
+        if (sCd && STATE_DEFAULT_EB[sCd]) return STATE_DEFAULT_EB[sCd];
+    }
+    return null;
+}
+
 /**
  * Builds the official GST registration payload dynamically from user application data
  * @param {Object} data - Application data from Supabase/wizard
@@ -184,6 +266,7 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
                     stcd: getStateCode(p.res_state || data.state),
                     dst: (p.res_district || data.district || data.ppob_district || '').trim(),
                     loc: (p.res_city || p.res_locality || data.ppob_city || '').trim(),
+                    subloc: (p.res_locality || p.res_city || data.ppob_locality || data.locality || '').trim(),
                     pncd: (p.res_pincode || data.ppob_pincode || '').trim(),
                     bno: (p.res_buildingNo || p.res_floor || data.ppob_flatNo || '').trim(),
                     bnm: (p.res_buildingName || data.ppob_building || '').trim(),
@@ -192,11 +275,13 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
                 dcupdtls: photoFile ? [{
                     id: Date.now() + i,
                     ty: 'PHOT',
-                    ct: photoFile.includes('pdf') ? 'application/pdf' : 'image/jpeg',
+                    ct: 'image/jpeg',
                     hash: computeFileHash(photoFile)
                 }] : [],
                 iscitind: 'Y',
                 isopcmpt: 'Y',
+                isasg: 'Y',
+                isopas: 'Y',
                 isNewSignatoryDetailsAfterSCN: false
             });
         }
@@ -239,7 +324,30 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
     for (let i = 1; i <= 10; i++) {
         const a = data['a' + i];
         if (a && (a.firstName || a.lastName)) {
-            const photoFile = a.authSigPhotoFile || a.photoFile || null;
+            const photoFile = (a.authSigPhotoFile && a.authSigPhotoFile.length > 50) ? a.authSigPhotoFile
+                : (a.photoFile && a.photoFile.length > 50) ? a.photoFile
+                : (data.p1 && data.p1.promoterPhotoFile && data.p1.promoterPhotoFile.length > 50) ? data.p1.promoterPhotoFile
+                : (data.promoterPhotoFile && data.promoterPhotoFile.length > 50) ? data.promoterPhotoFile : null;
+            const authProofFile = a.authSigProofFile || (data && data.authSigProofFile) || (data.p1 && data.p1.authSigProofFile) || null;
+            const asgDocs = [];
+            if (photoFile) {
+                asgDocs.push({
+                    id: Date.now() + 100 + i,
+                    ty: 'PHOT',
+                    ct: 'image/jpeg',
+                    hash: computeFileHash(photoFile)
+                });
+            }
+            if (authProofFile) {
+                const isPdf = typeof authProofFile === 'string' && (authProofFile.startsWith('data:application/pdf') || authProofFile.toLowerCase().endsWith('.pdf') || authProofFile.includes('application/pdf'));
+                asgDocs.push({
+                    id: Date.now() + 500 + i,
+                    ty: 'LOA',
+                    ct: isPdf ? 'application/pdf' : 'image/jpeg',
+                    docName: 'Letter_of_Authorisation.pdf',
+                    hash: computeFileHash(authProofFile)
+                });
+            }
             asgdtls.push({
                 eid: i + 1,
                 fn: (a.firstName || '').trim(),
@@ -259,17 +367,13 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
                     stcd: getStateCode(a.res_state || data.state),
                     dst: (a.res_district || data.district || data.ppob_district || '').trim(),
                     loc: (a.res_city || a.res_locality || data.ppob_city || '').trim(),
+                    subloc: (a.res_locality || a.res_city || data.ppob_locality || data.locality || '').trim(),
                     pncd: (a.res_pincode || data.ppob_pincode || '').trim(),
                     bno: (a.res_buildingNo || a.res_floor || data.ppob_flatNo || '').trim(),
                     bnm: (a.res_buildingName || data.ppob_building || '').trim(),
                     st: (a.res_road || a.res_locality || data.ppob_street || '').trim()
                 },
-                dcupdtls: photoFile ? [{
-                    id: Date.now() + 100 + i,
-                    ty: 'PHOT',
-                    ct: photoFile.includes('pdf') ? 'application/pdf' : 'image/jpeg',
-                    hash: computeFileHash(photoFile)
-                }] : [],
+                dcupdtls: asgDocs,
                 iscitind: 'Y',
                 isasg: 'Y',
                 isasgcmpt: 'Y',
@@ -285,10 +389,11 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
         const authProofFile = data.authSigProofFile || (data.p1 && data.p1.authSigProofFile) || null;
         const asgDocs = [...(firstOp.dcupdtls || [])];
         if (authProofFile) {
+            const isPdf = typeof authProofFile === 'string' && (authProofFile.startsWith('data:application/pdf') || authProofFile.toLowerCase().endsWith('.pdf') || authProofFile.includes('application/pdf'));
             asgDocs.push({
                 id: Date.now() + 500,
                 ty: 'LOA',
-                ct: (typeof authProofFile === 'string' && authProofFile.includes('pdf')) ? 'application/pdf' : 'image/jpeg',
+                ct: isPdf ? 'application/pdf' : 'image/jpeg',
                 docName: 'Letter_of_Authorisation.pdf',
                 hash: computeFileHash(authProofFile)
             });
@@ -337,15 +442,17 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
         });
     }
 
-    // GST portal requires at least one commodity or service in gdssvcdtls
+    // Check if user provided single hsn / sac in alternative field names
     if (bzgddtls.length === 0 && bzsdtls.length === 0) {
-        const defaultHsn = (data.hsn || data.hsnCode || data.commodityHsn || '1001').trim();
-        const defaultDesc = (data.hsnDescription || data.commodityDesc || 'WHEAT AND MESLIN').trim();
-        bzgddtls.push({
-            eid: 1,
-            hsncd: defaultHsn,
-            gdes: defaultDesc
-        });
+        const uHsn = (data.hsn || data.hsnCode || data.commodityHsn || '').trim();
+        const uDesc = (data.hsnDescription || data.commodityDesc || data.goodsDescription || 'GOODS').trim();
+        const uSac = (data.sac || data.sacCode || data.serviceSac || '').trim();
+        const uSacDesc = (data.sacDescription || data.serviceDesc || 'SERVICES').trim();
+        if (uHsn) {
+            bzgddtls.push({ eid: 1, hsncd: uHsn, gdes: uDesc });
+        } else if (uSac) {
+            bzsdtls.push({ eid: 1, saccd: uSac, sdes: uSacDesc });
+        }
     }
 
     // PPOB Nature of Business array
@@ -368,18 +475,42 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
     const ppobDocs = [];
     if (ppobDocFile) {
         const ppobDocType = getPPOBDocTypeCode(data.ppob_doc || data.ppob_docType);
+        const isPdf = typeof ppobDocFile === 'string' && (ppobDocFile.startsWith('data:application/pdf') || ppobDocFile.toLowerCase().endsWith('.pdf') || ppobDocFile.includes('application/pdf'));
         ppobDocs.push({
             id: Date.now().toString(),
             ty: ppobDocType,
-            ct: (typeof ppobDocFile === 'string' && ppobDocFile.includes('pdf')) ? 'application/pdf' : 'image/jpeg',
-            docName: data.ppob_docFileName || `${ppobDocType.toLowerCase()}.pdf`,
+            ct: isPdf ? 'application/pdf' : 'image/jpeg',
+            docName: data.ppob_docFileName || (isPdf ? `${ppobDocType.toLowerCase()}.pdf` : `${ppobDocType.toLowerCase()}.jpg`),
             hash: computeFileHash(ppobDocFile),
             legibscore: '85.00'
         });
     }
 
-    const lat = data.ppob_latitude ? String(data.ppob_latitude) : '';
-    const lng = data.ppob_longitude ? String(data.ppob_longitude) : '';
+    const STATE_DEFAULT_COORDS = {
+        '01': { lat: '34.0837', lng: '74.7973' },
+        '02': { lat: '31.1048', lng: '77.1734' },
+        '03': { lat: '30.7333', lng: '76.7794' },
+        '04': { lat: '30.7333', lng: '76.7794' },
+        '06': { lat: '29.0588', lng: '76.0856' },
+        '07': { lat: '28.7041', lng: '77.1025' },
+        '08': { lat: '27.0238', lng: '74.2179' },
+        '09': { lat: '26.8467', lng: '80.9462' },
+        '19': { lat: '22.5726', lng: '88.3639' },
+        '23': { lat: '22.9734', lng: '78.6569' },
+        '24': { lat: '23.0225', lng: '72.5714' },
+        '27': { lat: '19.7515', lng: '75.7139' },
+        '29': { lat: '15.3173', lng: '75.7139' },
+        '33': { lat: '11.1271', lng: '78.6569' },
+        '36': { lat: '17.3850', lng: '78.4867' }
+    };
+
+    let lat = (data.ppob_latitude && String(data.ppob_latitude).trim()) || '';
+    let lng = (data.ppob_longitude && String(data.ppob_longitude).trim()) || '';
+    if (!lat || !lng) {
+        const def = STATE_DEFAULT_COORDS[stateCd] || { lat: '19.7515', lng: '75.7139' };
+        lat = def.lat;
+        lng = def.lng;
+    }
     const city = (data.ppob_city || data.district || data.businessDistrict || '').trim();
     const pincode = (data.ppob_pincode || '').trim();
 
@@ -439,33 +570,33 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
                 eid: 1,
                 lt: lat,
                 lg: lng,
-                eloc: pincode,
+                eloc: (data.ppob_eloc || pincode),
                 city: city,
-                geoCodeLevel: 'pincode',
+                geoCodeLevel: (lat && lng) ? 'rooftop' : 'pincode',
                 nrbyLdMrk: data.ppob_landmark || null,
-                locSubloc: null,
-                feedback: { locSubloc: false, st: false, bnm: false, bno: false, nrbyLdMrk: false }
+                locSubloc: (data.ppob_locality || data.ppob_subLocality || data.locality || city || null),
+                feedback: { locSubloc: Boolean(data.ppob_locality || data.ppob_subLocality || data.locality), st: false, bnm: false, bno: false, nrbyLdMrk: false }
             }],
             asgdtls: [{
                 eid: 2,
                 lt: lat,
                 lg: lng,
-                eloc: pincode,
+                eloc: (data.ppob_eloc || pincode),
                 city: city,
-                geoCodeLevel: 'pincode',
+                geoCodeLevel: (lat && lng) ? 'rooftop' : 'pincode',
                 nrbyLdMrk: data.ppob_landmark || null,
-                locSubloc: null,
-                feedback: { locSubloc: false, st: false, bnm: false, bno: false, nrbyLdMrk: false }
+                locSubloc: (data.ppob_locality || data.ppob_subLocality || data.locality || city || null),
+                feedback: { locSubloc: Boolean(data.ppob_locality || data.ppob_subLocality || data.locality), st: false, bnm: false, bno: false, nrbyLdMrk: false }
             }],
             ppbzdtls: {
                 lt: lat,
                 lg: lng,
-                eloc: pincode,
+                eloc: (data.ppob_eloc || pincode),
                 city: city,
-                geoCodeLevel: 'pincode',
+                geoCodeLevel: (lat && lng) ? 'rooftop' : 'pincode',
                 nrbyLdMrk: data.ppob_landmark || null,
-                locSubloc: null,
-                feedback: { locSubloc: false, st: false, bnm: false, bno: false, nrbyLdMrk: false }
+                locSubloc: (data.ppob_locality || data.ppob_subLocality || data.locality || city || null),
+                feedback: { locSubloc: Boolean(data.ppob_locality || data.ppob_subLocality || data.locality), st: false, bnm: false, bno: false, nrbyLdMrk: false }
             }
         },
         sezPovToDateVald: '10',
@@ -481,14 +612,26 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
             bzgddtls: bzgddtls,
             bzsdtls: bzsdtls
         },
-        stsidtls: {
-            ebdtls: {
-                hasebconn: (data.stateSpecific_electricityConsumerNo || data.stateSpecific_electricityBoard) ? 'Y' : 'N',
-                ebdes: (data.stateSpecific_electricityBoard || '').trim(),
-                ebcd: (data.stateSpecific_electricityBoardCode || '').trim(),
-                canum: (data.stateSpecific_electricityConsumerNo || '').trim()
-            }
-        },
+        stsidtls: (() => {
+            const rawEbConsumer = data.stateSpecific_electricityConsumerNo || (data.stsidtls && data.stsidtls.ebdtls && data.stsidtls.ebdtls.canum) || '';
+            const rawEbBoard = data.stateSpecific_electricityBoard || (data.stsidtls && data.stsidtls.ebdtls && data.stsidtls.ebdtls.ebdes) || '';
+            const rawEbCode = data.stateSpecific_electricityBoardCode || (data.stsidtls && data.stsidtls.ebdtls && data.stsidtls.ebdtls.ebcd) || '';
+
+            const isEbConsumerDummy = isDummyElectricityConsumerNo(rawEbConsumer);
+            const resolvedBoard = resolveElectricityBoard(rawEbBoard, rawEbCode);
+
+            // An electricity connection is only valid on GST portal if it has both a recognized board code AND a real (non-dummy) consumer number
+            const hasValidEb = !isEbConsumerDummy && resolvedBoard && resolvedBoard.code && String(rawEbConsumer).trim().length > 0;
+
+            return {
+                ebdtls: {
+                    hasebconn: hasValidEb ? 'Y' : 'N',
+                    ebdes: hasValidEb ? resolvedBoard.desc : '',
+                    ebcd: hasValidEb ? resolvedBoard.code : '',
+                    canum: hasValidEb ? String(rawEbConsumer).trim() : ''
+                }
+            };
+        })(),
         adhrflag: (data.aadhaarAuth || 'Yes').toLowerCase() === 'no' ? 'N' : 'Y',
         ppbzdtls: {
             add: {
@@ -496,6 +639,7 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
                 pncd: pincode,
                 dst: (data.ppob_district || data.district || data.businessDistrict || '').trim(),
                 loc: (data.ppob_city || data.ppob_locality || '').trim(),
+                subloc: (data.ppob_locality || data.ppob_subLocality || data.locality || '').trim(),
                 lg: lng,
                 lt: lat,
                 st: (data.ppob_street || data.ppob_locality || '').trim(),
@@ -516,13 +660,19 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
                 rangecd: (data.ppob_range || data.central_range || '').trim()
             },
             sj: {
-                stjdno: (data.ppob_stateJurisdiction || data.state_jurisdiction || '').trim(),
-                stjd: 'unit'
+                stjdno: (data.ppob_stateJurisdictionCode || (data.ppob_stateJurisdiction && data.ppob_stateJurisdiction.length <= 10 ? data.ppob_stateJurisdiction : '') || data.state_jurisdiction_code || data.state_jurisdiction || '').trim(),
+                stjd: (data.ppob_stateJurisdictionType || data.state_jurisdiction_type || (stateCd === '27' ? 'Charge' : 'unit')).trim()
             },
             psnt: getPossessionCode(data.ppob_natureOfPossession),
             dcupdtls: ppobDocs
         },
-        adbzdtls: []
+        adbzdtls: [],
+        jurdFlag: 'N',
+        isAddlnInfo: 'Y',
+        isMsrChildFlow: 'N',
+        itcPassonLimit: '250000',
+        msrActiveTab: 'BKACDTLS',
+        sezPovToDateVald: '10'
     };
 
     if (options.stCds && Array.isArray(options.stCds) && options.stCds.length > 0) {
@@ -538,5 +688,8 @@ module.exports = {
     getConstitutionCode,
     getPossessionCode,
     formatDDMMYYYY,
-    computeFileHash
+    computeFileHash,
+    resolveElectricityBoard,
+    ELECTRICITY_BOARD_LOOKUP
 };
+

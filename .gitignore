@@ -11,3 +11,4 @@ frontend/dist/
 .env
 .DS_Store
 automation/temp_*
+automation/*.png

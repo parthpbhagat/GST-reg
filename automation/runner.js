@@ -1,3 +1,11 @@
+const path = require('path');
+try {
+    require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+} catch (e) {
+    try {
+        require(path.join(__dirname, '..', 'backend', 'node_modules', 'dotenv')).config({ path: path.join(__dirname, '..', '.env') });
+    } catch (_) { }
+}
 const { chromium } = require('playwright');
 const http = require('http');
 const { buildGstApplicationPayload, getStateCode } = require('../backend/utils/gst_payload_builder');
@@ -43,6 +51,14 @@ function formatDDMMYYYY(dateStr) {
         return `${day}/${month}/${year}`;
     }
     return String(dateStr);
+}
+
+function isDummyElectricityConsumerNo(val) {
+    if (!val) return true;
+    const s = String(val).trim().toLowerCase();
+    if (!s || s === 'undefined' || s === 'null' || s === 'na' || s === 'n/a' || s === 'none' || s === 'no' || s === '') return true;
+    if (/^(test|dummy|sample)$/i.test(s)) return true;
+    return false;
 }
 
 function extractCleanErrorMessage(raw) {
@@ -146,18 +162,19 @@ function sendPortalError(msg, defaultStep = 0, defaultField = 'businessConstitut
 
 let globalPage = null;
 let isExiting = false;
-setInterval(async () => {
-    if (globalPage && !isExiting) {
-        try {
-            if (!globalPage.isClosed()) {
-                const buffer = await globalPage.screenshot({ type: 'jpeg', quality: 30 });
-                console.log(`SCREENSHOT:${buffer.toString('base64')}`);
-            }
-        } catch (e) {
-            // Ignore screenshot errors
-        }
-    }
-}, 3000);
+// Live browser preview screenshots disabled as requested
+// setInterval(async () => {
+//     if (globalPage && !isExiting) {
+//         try {
+//             if (!globalPage.isClosed()) {
+//                 const buffer = await globalPage.screenshot({ type: 'jpeg', quality: 40 });
+//                 console.log(`SCREENSHOT:${buffer.toString('base64')}`);
+//             }
+//         } catch (e) {
+//             // Ignore screenshot errors
+//         }
+//     }
+// }, 1500);
 
 process.on('uncaughtException', (err) => {
     console.error(`[Runner Error]: UNCAUGHT EXCEPTION: ${err ? (err.stack || err.message) : err}`);
@@ -202,16 +219,30 @@ async function run() {
     const data = appData.data || {};
 
     sendUpdate(`INITIALIZING: Launching ${automationMode === 'multistate' ? 'Multi-State' : 'Regular'} automation process...`);
-    sendUpdate('INITIALIZING: Starting browser session...');
+
+    const isHeadless = process.env.HEADLESS === 'true';
+    const os = require('os');
+    const userDataDir = path.join(os.tmpdir(), `gst_chrome_profile_${appId || 'run'}`);
+
+    const launchArgs = isHeadless ? [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu'
+    ] : [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--start-maximized',
+        '--new-window',
+        '--window-position=0,0',
+        '--window-size=1920,1080'
+    ];
 
     const launchOptions = {
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu'
-        ]
+        headless: isHeadless,
+        args: launchArgs,
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        viewport: isHeadless ? { width: 1280, height: 800 } : null
     };
 
     const fs = require('fs');
@@ -221,13 +252,24 @@ async function run() {
         launchOptions.channel = 'msedge';
     }
 
-    const browser = await chromium.launch(launchOptions);
-    const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        viewport: { width: 1280, height: 800 }
-    });
-    const page = await context.newPage();
+    sendUpdate(`INITIALIZING: Starting browser session (${isHeadless ? 'Headless Mode' : 'Visible Chrome Window'})...`);
+
+    let context;
+    let browser = null;
+    try {
+        context = await chromium.launchPersistentContext(userDataDir, launchOptions);
+    } catch (launchErr) {
+        browser = await chromium.launch(launchOptions);
+        context = await browser.newContext({
+            userAgent: launchOptions.userAgent,
+            viewport: launchOptions.viewport
+        });
+    }
+
+    const pages = context.pages();
+    const page = pages.length > 0 ? pages[0] : await context.newPage();
     globalPage = page;
+    await page.bringToFront().catch(() => {});
     let keepaliveTimer = null;
 
     try {
@@ -237,7 +279,7 @@ async function run() {
         // [પગલું ૧: TRN Login]
         // Automation દ્વારા TRN જનરેટ કરવો અને લૉગિન કરીને સેશન મેળવવું (Auth Token)
         // =========================================================================
-        sendUpdate('[પગલું ૧: TRN Login] Automation દ્વારા TRN જનરેટ કરવો અને લૉગિન કરીને સેશન મેળવવું...');
+        sendUpdate('[step ૧: TRN Login] Automation...');
 
         if (trnText && trnText.length > 5) {
             sendUpdate(`Application already has TRN: ${trnText}. Proceeding straight to TRN Login...`);
@@ -273,7 +315,7 @@ async function run() {
                 await page.selectOption('#applnType', { value: taxpayerTypeValue });
                 sendUpdate(`Selected taxpayer type by value: ${taxpayerTypeValue}`);
             } catch (e) {
-                await page.selectOption('#applnType', { label: taxpayerTypeLabel }).catch(() => {});
+                await page.selectOption('#applnType', { label: taxpayerTypeLabel }).catch(() => { });
             }
 
             // Select State
@@ -308,7 +350,7 @@ async function run() {
                             selectEl.dispatchEvent(new Event('change', { bubbles: true }));
                         }
                     }, multiStateConfig.stCds);
-                } catch (e) {}
+                } catch (e) { }
             }
 
             await page.waitForTimeout(2500);
@@ -455,10 +497,10 @@ async function run() {
                 const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/trn`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-                }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
+                }, (res) => { res.on('data', () => { }); res.on('end', resolve); });
                 req.on('error', reject);
-                const trnPayload = (automationMode === 'multistate') 
-                    ? { trn: trnText, masterTrn: trnText } 
+                const trnPayload = (automationMode === 'multistate')
+                    ? { trn: trnText, masterTrn: trnText }
                     : { trn: trnText };
                 req.write(JSON.stringify(trnPayload));
                 req.end();
@@ -483,7 +525,7 @@ async function run() {
                     break;
                 }
             }
-        } catch (e) {}
+        } catch (e) { }
 
         // TRN Login Captcha Loop
         let trnLoginSuccess = false;
@@ -615,10 +657,10 @@ async function run() {
                         fetch('/registration/auth/api/keepalive', {
                             method: 'GET',
                             headers: { 'Accept': 'application/json, text/plain, */*' }
-                        }).catch(() => {});
-                    }).catch(() => {});
+                        }).catch(() => { });
+                    }).catch(() => { });
                 }
-            } catch (e) {}
+            } catch (e) { }
         }, 25000);
 
         sendUpdate('Navigating to Dashboard (My Saved Applications)...');
@@ -644,7 +686,7 @@ async function run() {
                         }
                     }
                 }
-            } catch (e) {}
+            } catch (e) { }
         };
         page.on('request', reqHandler);
         page.on('response', respHandler);
@@ -669,7 +711,7 @@ async function run() {
                                 }
                             }
                         }
-                    } catch (e) {}
+                    } catch (e) { }
                 }
                 const cells = Array.from(document.querySelectorAll('table td, table th'));
                 for (const td of cells) {
@@ -706,7 +748,7 @@ async function run() {
                                 return;
                             }
                         }
-                    } catch(e) {}
+                    } catch (e) { }
                 }
 
                 const table = document.querySelector('table');
@@ -730,19 +772,26 @@ async function run() {
             try {
                 const actionBtn = page.locator('table tbody tr:first-child td:last-child a, table tbody tr:first-child td:last-child button, table tbody tr:first-child td:last-child i, .fa-pencil, [title*="Edit" i]').first();
                 if (await actionBtn.count() > 0) {
-                    await actionBtn.click({ force: true }).catch(() => {});
+                    await actionBtn.click({ force: true }).catch(() => { });
                 }
-            } catch(e) {}
+            } catch (e) { }
 
             await page.waitForTimeout(3000);
         }
 
-        // Ensure portal has loaded into registration wizard
+        // Ensure portal has loaded into registration wizard (wait up to 20s for form to appear)
         try {
             await page.waitForFunction(() => {
-                return !window.location.href.includes('dashboard') || !!document.querySelector('.nav-tabs, #cmbzdt, input[name*="lgnmbzpan"]');
-            }, { timeout: 15000 });
-        } catch(e) {}
+                // Check if we navigated away from dashboard into the registration form
+                const url = window.location.href;
+                const notDashboard = !url.includes('dashboard');
+                const hasWizard = !!document.querySelector('.nav-tabs, #cmbzdt, input[name*="lgnmbzpan"], [ng-model*="bzdtls"], select[ng-model*="cobz"], form[name*="bzdtls"]');
+                return notDashboard || hasWizard;
+            }, { timeout: 20000 });
+        } catch (e) { }
+
+        // Extra wait for Angular to fully render the form
+        await page.waitForTimeout(2000);
 
         // 2. Fallback extraction from URL, Angular rootScope, and storage
         if (!capturedDraftId) {
@@ -757,7 +806,7 @@ async function run() {
                             const rid = rootScope.applnId || rootScope.draftId || rootScope.draft_id || rootScope.aplCd;
                             if (rid && /^\d{6,12}$/.test(String(rid))) return String(rid);
                         }
-                    } catch(e) {}
+                    } catch (e) { }
                 }
                 for (let i = 0; i < sessionStorage.length; i++) {
                     const val = sessionStorage.getItem(sessionStorage.key(i));
@@ -782,26 +831,18 @@ async function run() {
         // =========================================================================
         // [પગલું ૨ & ૩: Direct Official GST JSON Upload]
         // =========================================================================
-        sendUpdate('[પગલું ૩: Direct JSON Upload] Official GST Portal API પર સંપૂર્ણ Application JSON POST કરી રહ્યા છીએ...');
+        sendUpdate('[step ૩: Direct JSON Upload]...');
 
         const finalGstPayload = buildGstApplicationPayload(data, capturedDraftId, trnText || (data && data.trn) || '');
 
-        // Save JSON to disk and synchronize into database
+        // Synchronize payload in memory and database (no local disk storage)
         try {
-            const path = require('path');
-            const legalName = (data && data.legalName) || appId;
-            const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const dirPath = path.join(__dirname, '..', 'backend', 'data', safeLegalName);
-            if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
-            fs.writeFileSync(path.join(dirPath, 'gst_application_payload.json'), JSON.stringify(finalGstPayload, null, 2), 'utf-8');
-            fs.writeFileSync(path.join(dirPath, 'gst_final_uploaded_payload.json'), JSON.stringify(finalGstPayload, null, 2), 'utf-8');
-            sendUpdate(`Saved official GST JSON to disk: backend/data/${safeLegalName}/gst_final_uploaded_payload.json`);
 
             await new Promise((resolve) => {
                 const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-                }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
+                }, (res) => { res.on('data', () => { }); res.on('end', resolve); });
                 req.on('error', () => resolve());
                 const updatedData = Object.assign({}, data, { gst_payload: finalGstPayload, draftId: capturedDraftId });
                 req.write(JSON.stringify({ data: updatedData }));
@@ -827,7 +868,7 @@ async function run() {
                 const status = resSave.status;
                 const text = await resSave.text();
                 let json = null;
-                try { json = JSON.parse(text); } catch (e) {}
+                try { json = JSON.parse(text); } catch (e) { }
                 return { ok: resSave.ok, status, json, text };
             } catch (err) {
                 return { ok: false, error: err.message };
@@ -852,14 +893,7 @@ async function run() {
                 cobz: (multiStateConfig && multiStateConfig.cobz) || undefined
             });
 
-            try {
-                const path = require('path');
-                const legalName = (data && data.legalName) || appId;
-                const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                const dirPath = path.join(__dirname, '..', 'backend', 'data', safeLegalName);
-                if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
-                fs.writeFileSync(path.join(dirPath, 'gst_multistate_common_payload.json'), JSON.stringify(msrCommonPayload, null, 2), 'utf-8');
-            } catch (e) {}
+            // Keep multi-state common payload in memory (no disk writing)
 
             const msrCommonResult = await page.evaluate(async (payload) => {
                 try {
@@ -874,7 +908,7 @@ async function run() {
                     const status = res.status;
                     const text = await res.text();
                     let json = null;
-                    try { json = JSON.parse(text); } catch (e) {}
+                    try { json = JSON.parse(text); } catch (e) { }
                     return { ok: res.ok, status, json, text };
                 } catch (err) {
                     return { ok: false, error: err.message };
@@ -897,13 +931,7 @@ async function run() {
                     cobz: (multiStateConfig && multiStateConfig.cobz) || undefined
                 });
 
-                try {
-                    const path = require('path');
-                    const legalName = (data && data.legalName) || appId;
-                    const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                    const dirPath = path.join(__dirname, '..', 'backend', 'data', safeLegalName);
-                    fs.writeFileSync(path.join(dirPath, `gst_multistate_state_${stCode}_payload.json`), JSON.stringify(statePayload, null, 2), 'utf-8');
-                } catch (e) {}
+                // State payload kept in memory (no disk writing)
 
                 const stateResult = await page.evaluate(async (payload) => {
                     try {
@@ -918,7 +946,7 @@ async function run() {
                         const status = res.status;
                         const text = await res.text();
                         let json = null;
-                        try { json = JSON.parse(text); } catch (e) {}
+                        try { json = JSON.parse(text); } catch (e) { }
                         return { ok: res.ok, status, json, text };
                     } catch (err) {
                         return { ok: false, error: err.message };
@@ -936,13 +964,13 @@ async function run() {
                     const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/trn`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-                    }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
+                    }, (res) => { res.on('data', () => { }); res.on('end', resolve); });
                     req.on('error', () => resolve());
                     req.write(JSON.stringify({ masterTrn: trnText, stateTrns: stateTrnMap }));
                     req.end();
                 });
                 sendUpdate(`[Multi-State] State TRNs synchronized to DB: ${JSON.stringify(stateTrnMap)}`);
-            } catch (e) {}
+            } catch (e) { }
         }
 
         const saveMsg = (saveApiResult.json && (saveApiResult.json.msg || saveApiResult.json.message || saveApiResult.json.status)) || saveApiResult.text || saveApiResult.error || 'Saved';
@@ -963,7 +991,7 @@ async function run() {
                     }).catch(e => ({ error: e.message }));
                     report.appDataStatus = resApp.status || (resApp.error ? 'err: ' + resApp.error : 'ok');
                     if (resApp.ok || resApp.status === 200) {
-                        try { report.appData = await resApp.json(); } catch (e) {}
+                        try { report.appData = await resApp.json(); } catch (e) { }
                     }
 
                     // 2. GET /registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId={draftId}
@@ -973,7 +1001,7 @@ async function run() {
                     }).catch(e => ({ error: e.message }));
                     report.finalFormStatus = resFinal.status || (resFinal.error ? 'err: ' + resFinal.error : 'ok');
                     if (resFinal.ok || resFinal.status === 200) {
-                        try { report.finalFormData = await resFinal.json(); } catch (e) {}
+                        try { report.finalFormData = await resFinal.json(); } catch (e) { }
                     }
                 }
 
@@ -985,27 +1013,14 @@ async function run() {
 
         if (syncResult && syncResult.report) {
             sendUpdate(`GST Portal API sync report: ApplicationData(GET)=${syncResult.report.appDataStatus || 200}, GenerateFinalForm(GET)=${syncResult.report.finalFormStatus || 200}`);
-            
+
             if (syncResult.report.appData) {
                 try {
-                    const legalName = (data && data.legalName) || appId;
-                    const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                    const liveDataPath = path.join(__dirname, '..', 'backend', 'data', safeLegalName, 'gst_portal_applicationdata_get.json');
-                    fs.writeFileSync(liveDataPath, JSON.stringify(syncResult.report.appData, null, 2), 'utf-8');
                     const bz = syncResult.report.appData.bzdtls && syncResult.report.appData.bzdtls.bzdtlsbz;
                     const liveLgnm = (bz && bz.lgnmbzpan) || '';
                     const livePan = (bz && bz.pan && bz.pan.num) || '';
                     sendUpdate(`✅ GST Portal Live Data Verified: Legal Name: "${liveLgnm}", PAN: "${livePan}", Draft ID: ${syncResult.report.appData.aplCd || capturedDraftId}`);
-                } catch (e) {}
-            }
-
-            if (syncResult.report.finalFormData) {
-                try {
-                    const legalName = (data && data.legalName) || appId;
-                    const safeLegalName = legalName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                    const finalDataPath = path.join(__dirname, '..', 'backend', 'data', safeLegalName, 'gst_portal_finalform_get.json');
-                    fs.writeFileSync(finalDataPath, JSON.stringify(syncResult.report.finalFormData, null, 2), 'utf-8');
-                } catch (e) {}
+                } catch (e) { }
             }
         }
         sendUpdate('✅ Official GST Portal data and final JSON synchronized successfully.');
@@ -1016,7 +1031,7 @@ async function run() {
         // =========================================================================
         // [પગલું ૪: Business Details Auto-Fill & Verification Screen]
         // =========================================================================
-        sendUpdate('[પગલું ૪: Business Details Auto-Fill] Business Details ફોર્મ પોર્ટલ પર આપમેળે ભરી રહ્યા છીએ...');
+        sendUpdate('Business Details Auto-Fill Business Details...');
 
         const targetConstitution = (data.businessConstitution || 'Proprietorship').trim();
         const targetReason = (data.reasonToObtainRegistration || 'Voluntary Basis').trim();
@@ -1054,9 +1069,11 @@ async function run() {
                     matched = Array.from(cobzSelect.options).find(o => (o.text || '').toLowerCase().includes('proprietor')) || cobzSelect.options[1];
                 }
                 if (matched) {
-                    cobzSelect.value = matched.value;
-                    cobzSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    cobzSelect.dispatchEvent(new Event('input', { bubbles: true }));
+                    if (cobzSelect.value !== matched.value) {
+                        cobzSelect.value = matched.value;
+                        cobzSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                        cobzSelect.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
                 }
             }
 
@@ -1081,9 +1098,11 @@ async function run() {
                     matched = Array.from(reasonSelect.options).find(o => (o.text || '').toLowerCase().includes('voluntary')) || reasonSelect.options[1];
                 }
                 if (matched) {
-                    reasonSelect.value = matched.value;
-                    reasonSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    reasonSelect.dispatchEvent(new Event('input', { bubbles: true }));
+                    if (reasonSelect.value !== matched.value) {
+                        reasonSelect.value = matched.value;
+                        reasonSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                        reasonSelect.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
                 }
             }
 
@@ -1141,7 +1160,7 @@ async function run() {
                     if (parts.length === 3) {
                         return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]), 12, 0, 0);
                     }
-                } catch(e) {}
+                } catch (e) { }
                 return new Date();
             };
             const commDateObj = parseDateObj(commVal);
@@ -1299,7 +1318,7 @@ async function run() {
                                     ngModel.$render();
                                     ngModel.$commitViewValue();
                                 }
-                            } catch (e) {}
+                            } catch (e) { }
                         }
                     }
                 }
@@ -1346,10 +1365,10 @@ async function run() {
         try {
             const cobzSelectLocator = page.locator('select').filter({ hasText: /Proprietorship/i }).first();
             if (await cobzSelectLocator.count() > 0) {
-                const options = await cobzSelectLocator.locator('option').allInnerTexts();
+                const options = await cobzSelectLocator.locator('option').allInnerTexts({ timeout: 1500 }).catch(() => []);
                 const matchedText = options.find(o => o.toLowerCase().includes(targetConstitution.toLowerCase().includes('proprietor') ? 'proprietor' : targetConstitution.toLowerCase()));
                 if (matchedText) {
-                    await cobzSelectLocator.selectOption({ label: matchedText.trim() }).catch(() => { });
+                    await cobzSelectLocator.selectOption({ label: matchedText.trim() }, { timeout: 1500 }).catch(() => { });
                 }
             }
         } catch (e) { }
@@ -1362,22 +1381,22 @@ async function run() {
             if (await r14Container.count() > 0) {
                 if (wantYes) {
                     const yesRadio = r14Container.locator('input[type="radio"]').first();
-                    await yesRadio.check({ force: true }).catch(async () => {
-                        await yesRadio.click({ force: true }).catch(() => {});
+                    await yesRadio.check({ force: true, timeout: 1500 }).catch(async () => {
+                        await yesRadio.click({ force: true, timeout: 1500 }).catch(() => { });
                     });
                     sendUpdate('Selected Option under Rule 14A: Yes');
                 } else {
                     const noRadio = r14Container.locator('input[type="radio"]').nth(1);
                     if (await noRadio.count() > 0) {
-                        await noRadio.check({ force: true }).catch(async () => {
-                            await noRadio.click({ force: true }).catch(() => {});
+                        await noRadio.check({ force: true, timeout: 1500 }).catch(async () => {
+                            await noRadio.click({ force: true, timeout: 1500 }).catch(() => { });
                         });
                         sendUpdate('Selected Option under Rule 14A: No');
                     }
                 }
-                await page.waitForTimeout(500);
+                await page.waitForTimeout(300);
             }
-        } catch(e) {}
+        } catch (e) { }
 
         // Date of Commencement: robust location, clearing readonly, and typing
         try {
@@ -1397,7 +1416,7 @@ async function run() {
                 await commInputLoc.evaluate(el => {
                     el.removeAttribute('readonly');
                     el.removeAttribute('disabled');
-                }).catch(() => {});
+                }).catch(() => { });
                 await commInputLoc.click({ force: true }).catch(() => { });
                 await commInputLoc.fill('').catch(() => { });
                 if (commInputLoc.pressSequentially) {
@@ -1429,7 +1448,7 @@ async function run() {
 
             if (liabInputLoc && await liabInputLoc.count() > 0) {
                 await liabInputLoc.scrollIntoViewIfNeeded().catch(() => { });
-                await liabInputLoc.evaluate(el => el.removeAttribute('readonly')).catch(() => {});
+                await liabInputLoc.evaluate(el => el.removeAttribute('readonly')).catch(() => { });
                 await liabInputLoc.click({ force: true }).catch(() => { });
                 await liabInputLoc.fill('').catch(() => { });
                 if (liabInputLoc.pressSequentially) {
@@ -1440,7 +1459,7 @@ async function run() {
                 await liabInputLoc.press('Tab').catch(() => { });
                 sendUpdate(`Typed Date of Liability: ${liabDate}`);
             }
-        } catch (e) {}
+        } catch (e) { }
 
         // Check Declaration Checkbox via Playwright locator
         try {
@@ -1459,13 +1478,13 @@ async function run() {
                     const checked = await cb.isChecked().catch(() => false);
                     if (!checked) {
                         await cb.check({ force: true }).catch(async () => {
-                            await cb.click({ force: true }).catch(() => {});
+                            await cb.click({ force: true }).catch(() => { });
                         });
                         sendUpdate('Checked Business Details mandatory declaration checkbox.');
                     }
                 }
             }
-        } catch (e) {}
+        } catch (e) { }
 
         sendUpdate(`✅ Business Details populated (Constitution: ${targetConstitution}, Reason: ${targetReason}, Commencement: ${commDate}).`);
         await page.waitForTimeout(1000);
@@ -1479,7 +1498,7 @@ async function run() {
                     if (parts.length === 3) {
                         return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]), 12, 0, 0);
                     }
-                } catch(e) {}
+                } catch (e) { }
                 return new Date();
             };
             const commDateObj = parseDateObj(commVal);
@@ -1505,7 +1524,7 @@ async function run() {
                                 ngModel.$render();
                                 ngModel.$commitViewValue();
                             }
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                 }
             }
@@ -1551,7 +1570,7 @@ async function run() {
                         sc.chkDecl = true;
                         if (!sc.$$phase) sc.$apply();
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
 
             const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
@@ -1591,7 +1610,7 @@ async function run() {
             // Check if portal blocked navigation with a real error
             const portalError = await page.evaluate(() => {
                 const errs = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"]'));
-                const staticIgnore = /only maximum file size|format is only allowed|file with pdf|jpeg format is only allowed|1 mb is allowed|upload photograph/i;
+                const staticIgnore = /only maximum file size|format is only allowed|file with pdf|jpeg format is only allowed|1 mb is allowed|upload photograph|maps services are currently unavailable|reg-mp-400|maps services|duplicate email address|another user exists with same email|exists with same email address in promoter/i;
                 for (const e of errs) {
                     if (e.offsetParent !== null || window.getComputedStyle(e).display !== 'none') {
                         const t = (e.innerText || '').trim();
@@ -1609,6 +1628,7 @@ async function run() {
 
             // Common helper: dismiss and auto-confirm any open modal/dialog intelligently
             const dismissAndConfirmModals = async (contextLabel = '') => {
+                let lastHandled = null;
                 for (let attempt = 0; attempt < 5; attempt++) {
                     const result = await page.evaluate(() => {
                         const dialogs = Array.from(document.querySelectorAll('.modal, div[role="dialog"], .sweet-alert, .ui-dialog, .bootbox')).filter(d => {
@@ -1632,8 +1652,52 @@ async function run() {
                                 }
                             }
 
-                            // 2. Check if this is an error alert modal
-                            if (dText.includes('error') || dText.includes('mandatory') || dText.includes('invalid') || dText.includes('required') || dText.includes('cannot') || dText.includes('failed')) {
+                            // 2. Check if this is the Aadhaar "You have opted Yes" confirmation dialog (must click OK)
+                            if (dText.includes('opted') && (dText.includes('yes') || dText.includes('aadhaar'))) {
+                                const okBtn = btns.find(b => /ok|proceed|continue|yes|confirm/i.test(b.innerText || b.value || b.textContent || ''));
+                                if (okBtn) {
+                                    okBtn.removeAttribute('disabled');
+                                    okBtn.disabled = false;
+                                    okBtn.click();
+                                    return { action: 'confirmed', text: 'OK (Aadhaar Yes Confirmed)', raw: dText.slice(0, 120) };
+                                }
+                            }
+
+                            // 2b. Check if this is the Constitution change warning (You can only change Constitution after deleting all entries...)
+                            if (dText.includes('constitution') && (dText.includes('deleting all') || dText.includes('promoter') || dText.includes('entries'))) {
+                                const closeBtn = btns.find(b => /close|ok/i.test(b.innerText || b.value || ''));
+                                if (closeBtn) {
+                                    closeBtn.click();
+                                    return { action: 'dismissed_warning', text: 'CLOSE (Constitution unchanged)', raw: dText.slice(0, 120) };
+                                }
+                            }
+
+                            // 2c. Check for Locality/Sub-Locality / Pin-Code warning ("Locality/Sub-Locality is not matching with the Pin-Code. Do you want to save details?")
+                            // Requirement: Click YES on this warning
+                            if (dText.includes('locality') || dText.includes('sub-locality') || dText.includes('pin-code') || dText.includes('pincode') || dText.includes('not matching with the pin') || (dText.includes('do you want to save') && (dText.includes('details') || dText.includes('locality')))) {
+                                const yesBtn = btns.find(b => {
+                                    const t = (b.innerText || b.value || b.textContent || '').trim().toLowerCase();
+                                    return t === 'yes' || /^\s*yes\s*$/i.test(t) || /\byes\b/i.test(t);
+                                }) || d.querySelector('button#btnYes, button[ng-click*="yes" i], .btn:has-text("YES")');
+                                if (yesBtn) {
+                                    yesBtn.removeAttribute('disabled');
+                                    yesBtn.disabled = false;
+                                    yesBtn.click();
+                                    return { action: 'clicked_yes', text: 'YES (Locality warning confirmed)', raw: dText.slice(0, 120) };
+                                }
+                            }
+
+                            // 2d. Check for Map service unavailable modal / error (REG-MP-400)
+                            if (dText.includes('maps services') || dText.includes('reg-mp-400') || dText.includes('map services')) {
+                                const closeBtn = btns.find(b => /close|ok/i.test(b.innerText || b.value || ''));
+                                if (closeBtn) {
+                                    closeBtn.click();
+                                    return { action: 'dismissed_map_warning', text: 'CLOSE (Map service modal dismissed)', raw: dText.slice(0, 120) };
+                                }
+                            }
+
+                            // 3. Check if this is an error alert modal (exclude informational/opted dialogs)
+                            if ((dText.includes('error') || dText.includes('mandatory') || dText.includes('invalid') || dText.includes('cannot')) && !dText.includes('opted')) {
                                 const closeBtn = btns.find(b => /close|ok/i.test(b.innerText || b.value || ''));
                                 const errSummary = dText.replace(/\s+/g, ' ').slice(0, 150);
                                 if (closeBtn) {
@@ -1642,7 +1706,7 @@ async function run() {
                                 return { action: 'error_alert', text: `ERROR_MODAL: ${errSummary}`, raw: dText };
                             }
 
-                            // 3. Normal confirmation modal (geocoding warning, save confirmation, proceed, have you entered all promoters, etc.):
+                            // 4. Normal confirmation modal (geocoding warning, save confirmation, proceed, have you entered all promoters, etc.):
                             const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|save|i agree/i.test(b.innerText || b.value || b.textContent || ''));
                             if (okBtn) {
                                 okBtn.removeAttribute('disabled');
@@ -1654,16 +1718,18 @@ async function run() {
                         return null;
                     });
                     if (result) {
+                        lastHandled = result;
                         sendUpdate(`Modal prompt handled: [${result.text}] (Dialog: "${result.raw}")`);
                         await page.waitForTimeout(800);
                     } else {
                         break;
                     }
                 }
+                return lastHandled;
             };
 
             // Common helper: Click Save & Continue and auto-confirm modals to grant tickmark (✓)
-            const saveAndAdvanceTab = async (stepLabel) => {
+            const saveAndAdvanceTab = async (stepLabel, nextUrl = '', nextTabLabel = '') => {
                 // Ensure buttons enabled
                 await page.evaluate(() => {
                     window.scrollTo(0, document.body.scrollHeight);
@@ -1680,12 +1746,12 @@ async function run() {
                 // Click Save & Continue button with highest priority on exact SAVE & CONTINUE
                 const exactSaveContinue = page.locator('button:has-text("SAVE & CONTINUE"):visible, button:has-text("Save & Continue"):visible, input[value="SAVE & CONTINUE"]:visible, input[value="Save & Continue"]:visible').last();
                 if (await exactSaveContinue.count() > 0) {
-                    await exactSaveContinue.click({ force: true, timeout: 3000 }).catch(() => {});
+                    await exactSaveContinue.click({ force: true, timeout: 3000 }).catch(() => { });
                     sendUpdate(`Clicked "Save & Continue" on ${stepLabel} to persist and complete step.`);
                 } else {
                     const saveLoc = page.locator('button:has-text("Continue"):visible, button.btn-primary:has-text("SAVE"):visible, input[value="Continue"]:visible').last();
                     if (await saveLoc.count() > 0) {
-                        await saveLoc.click({ force: true, timeout: 3000 }).catch(() => {});
+                        await saveLoc.click({ force: true, timeout: 3000 }).catch(() => { });
                         sendUpdate(`Clicked "Save / Continue" on ${stepLabel} to persist and complete step.`);
                     } else {
                         await page.evaluate(() => {
@@ -1698,24 +1764,103 @@ async function run() {
                     }
                 }
 
-                // Auto-confirm prompts smartly
-                await dismissAndConfirmModals(stepLabel);
-                await page.waitForTimeout(2000);
+                // Auto-confirm prompts smartly with polling for fade-in modals
+                for (let m = 0; m < 5; m++) {
+                    await page.waitForTimeout(600);
+                    const handled = await dismissAndConfirmModals(stepLabel);
+                    if (handled) {
+                        await page.waitForTimeout(800);
+                        break;
+                    }
+                }
 
                 // Check and log any visible validation errors on this step
                 const currentErrors = await page.evaluate(() => {
                     const errEls = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"]'));
-                    const staticIgnore = /only maximum file size|format is only allowed|file with pdf|jpeg format is only allowed|1 mb is allowed|upload photograph/i;
+                    const staticIgnore = /only maximum file size|format is only allowed|file with pdf|jpeg format is only allowed|1 mb is allowed|upload photograph|duplicate email address|another user exists with same email|exists with same email address in promoter/i;
                     return errEls.map(e => (e.innerText || '').trim()).filter(t => t.length > 3 && !staticIgnore.test(t));
                 });
                 if (currentErrors.length > 0) {
                     sendUpdate(`Validation note on ${stepLabel}: ${currentErrors.join(' | ')}`);
                 }
+
+                // Wait for tab or URL transition if portal is processing save
+                try {
+                    await page.waitForFunction((initialStep) => {
+                        const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
+                        const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
+                        return !bc.includes(initialStep.toLowerCase()) && !tab.includes(initialStep.toLowerCase());
+                    }, stepLabel, { timeout: 3000 });
+                } catch (e) { }
+
+                // Check if still on the same tab after saving
+                const stillOnStep = await page.evaluate((curr) => {
+                    const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
+                    const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
+                    return bc.includes(curr.toLowerCase()) || tab.includes(curr.toLowerCase());
+                }, stepLabel);
+
+                if (stillOnStep) {
+                    await dismissAndConfirmModals(stepLabel);
+                    await page.waitForTimeout(800);
+
+                    // If next tab label is provided, click the tab in the wizard navigation
+                    if (nextTabLabel) {
+                        const tabClicked = await page.evaluate((label) => {
+                            const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, .wizard-steps li, a, div')).filter(e => {
+                                const t = (e.innerText || '').trim().toLowerCase();
+                                return t.includes(label.toLowerCase());
+                            });
+                            const wizardTab = tabs.find(e => e.closest('ul.nav-tabs, .step-wizard, .wizard-steps, nav') || e.tagName === 'A' || e.tagName === 'LI');
+                            if (wizardTab) {
+                                wizardTab.click();
+                                return true;
+                            }
+                            return false;
+                        }, nextTabLabel);
+
+                        if (tabClicked) {
+                            sendUpdate(`Clicked wizard step "${nextTabLabel}" to advance.`);
+                            await page.waitForTimeout(1500);
+                        }
+                    }
+
+                    // If still on the step and nextUrl is provided, navigate directly to next official endpoint
+                    const stillSameUrl = page.url() && (!nextUrl || !page.url().includes(nextUrl.replace(/^https?:\/\/[^\/]+/, '')));
+                    if (nextUrl && stillSameUrl) {
+                        sendUpdate(`Advancing to endpoint: ${nextUrl}...`);
+                        await page.goto(nextUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => { });
+                        await page.waitForTimeout(1500);
+                        await dismissAndConfirmModals(stepLabel);
+                    }
+                }
             };
 
-            // Inspect active tab / current screen via Breadcrumb, Heading, and Form Content
-            const screenInfo = await page.evaluate(() => {
-                // 1. Breadcrumb: The most reliable indicator on the GST portal
+            // Inspect active tab / current screen via official GST Portal URL endpoints (Primary), Breadcrumb, and Headings
+            const currentUrl = page.url() || '';
+            let urlStepKey = '';
+            if (currentUrl.includes('/newappl/business/place')) urlStepKey = 'principal place';
+            else if (currentUrl.includes('/newappl/business/addlplace')) urlStepKey = 'additional places';
+            else if (currentUrl.includes('/newappl/business')) urlStepKey = 'business details';
+            else if (currentUrl.includes('/newappl/promoters')) urlStepKey = 'promoter';
+            else if (currentUrl.includes('/newappl/authsignatory')) urlStepKey = 'authorized signatory';
+            else if (currentUrl.includes('/newappl/authrepresentative')) urlStepKey = 'authorized representative';
+            else if (currentUrl.includes('/newappl/goodsservices')) urlStepKey = 'goods and services';
+            else if (currentUrl.includes('/newappl/statespecific')) urlStepKey = 'state specific';
+            else if (currentUrl.includes('/newappl/aadhar')) urlStepKey = 'aadhaar';
+            else if (currentUrl.includes('/newappl/verify')) urlStepKey = 'verification';
+
+            const screenInfo = await page.evaluate((detectedFromUrl) => {
+                if (detectedFromUrl) {
+                    return {
+                        stepKey: detectedFromUrl,
+                        breadcrumb: detectedFromUrl,
+                        headerText: detectedFromUrl,
+                        tabText: detectedFromUrl
+                    };
+                }
+
+                // 1. Breadcrumb fallback
                 const breadcrumbEl = document.querySelector('ol.breadcrumb, ul.breadcrumb, .breadcrumb, div[class*="breadcrumb"], [ng-bind*="breadCrumb"]');
                 let bcText = (breadcrumbEl ? breadcrumbEl.innerText : '').trim().replace(/^dashboard\s*>\s*/i, '').toLowerCase();
 
@@ -1786,14 +1931,14 @@ async function run() {
                     headerText: headingTexts[0] || '',
                     tabText: tabText
                 };
-            });
+            }, urlStepKey);
 
             const currentTabTitle = screenInfo.stepKey !== 'unknown' ? screenInfo.stepKey : (screenInfo.breadcrumb || screenInfo.headerText || screenInfo.tabText || `Step ${tabStep + 1}`);
             sendUpdate(`Processing step-by-step: Current tab is "${currentTabTitle}"...`);
 
             // Step 1: Business Details tab
-            if (screenInfo.stepKey === 'business details' || currentTabTitle.includes('business details') || await page.locator('#cmbzdt').count() > 0) {
-                sendUpdate('[પગલું ૧: Business Details] તારીખ અને ડિક્લેરેશન કન્ફર્મ કરી રહ્યા છીએ...');
+            if (screenInfo.stepKey === 'business details') {
+                sendUpdate('Business Details');
                 await page.evaluate(({ commVal, liabVal, r14Val }) => {
                     const parseDateObj = (str) => {
                         try {
@@ -1801,7 +1946,7 @@ async function run() {
                             if (parts.length === 3) {
                                 return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]), 12, 0, 0);
                             }
-                        } catch (e) {}
+                        } catch (e) { }
                         return new Date();
                     };
                     const commDateObj = parseDateObj(commVal);
@@ -1850,7 +1995,7 @@ async function run() {
                                         ngModel.$render();
                                         ngModel.$commitViewValue();
                                     }
-                                } catch (e) {}
+                                } catch (e) { }
                             }
                         }
                     }
@@ -1876,7 +2021,7 @@ async function run() {
                                     ngModel.$render();
                                     ngModel.$commitViewValue();
                                 }
-                            } catch (e) {}
+                            } catch (e) { }
                         }
                     }
 
@@ -1919,7 +2064,7 @@ async function run() {
                                 sc.chkDecl = true;
                                 if (!sc.$$phase) sc.$apply();
                             }
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                 }, { commVal: commDate, liabVal: liabDate, r14Val: rule14AVal });
 
@@ -1936,19 +2081,19 @@ async function run() {
                         }).catch(() => false);
                         if (isD) {
                             await cbLoc.check({ force: true }).catch(async () => {
-                                await cbLoc.click({ force: true }).catch(() => {});
+                                await cbLoc.click({ force: true }).catch(() => { });
                             });
                         }
                     }
-                } catch (e) {}
+                } catch (e) { }
 
-                await saveAndAdvanceTab('Business Details');
+                await saveAndAdvanceTab('Business Details', 'https://reg.gst.gov.in/registration/auth/newappl/promoters', 'Promoter / Partners');
                 continue;
             }
 
             // Step 2: Promoter / Partner tab
             if (screenInfo.stepKey === 'promoter') {
-                sendUpdate('[પગલું ૨: Promoter / Partner] વિગતો કન્ફર્મ કરી રહ્યા છીએ...');
+                sendUpdate('Promoter / Partner...');
 
                 // Check if table already has saved rows
                 const hasSavedTable = await page.evaluate(() => {
@@ -1957,8 +2102,123 @@ async function run() {
                 });
 
                 if (hasSavedTable) {
-                    sendUpdate('Promoter already present in table. Advancing via "SAVE & CONTINUE"...');
-                    await saveAndAdvanceTab('Promoter / Partner');
+                    sendUpdate('Promoter present in table. Ensuring "Also Authorized Signatory" is enabled...');
+                    try {
+                        const editClicked = await page.evaluate(() => {
+                            const rows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => (r.innerText || '').trim().length > 5 && !r.innerText.toLowerCase().includes('no records'));
+                            if (rows.length === 0) return false;
+                            const firstRow = rows[0];
+                            const editEl = Array.from(firstRow.querySelectorAll('button, a, i, span')).find(el => {
+                                const title = (el.getAttribute('title') || '').toLowerCase();
+                                const ngClick = (el.getAttribute('ng-click') || '').toLowerCase();
+                                const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                const cls = (el.className || '').toString().toLowerCase();
+                                return title.includes('edit') || ngClick.includes('edit') || text === 'edit' || cls.includes('fa-pencil') || cls.includes('edit') || cls.includes('pencil');
+                            });
+                            if (editEl) {
+                                editEl.click();
+                                return true;
+                            }
+                            return false;
+                        });
+
+                        if (!editClicked) {
+                            const editBtn = page.locator('table tbody tr').first().locator('button[title*="Edit" i], a[title*="Edit" i], [ng-click*="edit" i], i.fa-pencil, i.fa-edit, .fa-pencil, .glyphicon-pencil, button:has-text("Edit"), a:has-text("Edit")').first();
+                            if (await editBtn.count() > 0) {
+                                await editBtn.click({ force: true }).catch(() => { });
+                            }
+                        }
+                        await page.waitForTimeout(2000);
+
+                        // Scroll and enable "Also Authorized Signatory" switch via DOM & Angular
+                        await page.evaluate(() => {
+                            const labels = Array.from(document.querySelectorAll('label, div, p, span, h4, h5, td, th'));
+                            const asLbl = labels.find(el => {
+                                const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                return t.includes('also authorized signatory') || t.includes('also signatory');
+                            });
+                            if (asLbl) {
+                                const container = asLbl.closest('.form-group, .row, div, section') || asLbl.parentElement;
+                                if (container) {
+                                    container.scrollIntoView({ behavior: 'instant', block: 'center' });
+                                    const cb = container.querySelector('input[type="checkbox"]');
+                                    if (cb && !cb.checked) {
+                                        cb.checked = true;
+                                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                                        cb.dispatchEvent(new Event('input', { bubbles: true }));
+                                        cb.dispatchEvent(new Event('click', { bubbles: true }));
+                                    }
+                                    const toggle = container.querySelector('.switch, label.switch, span.slider, div.toggle, switch, ui-switch, [role="checkbox"]');
+                                    if (toggle) {
+                                        const isChecked = toggle.classList.contains('active') || 
+                                                          toggle.classList.contains('checked') || 
+                                                          toggle.classList.contains('switch-on') || 
+                                                          toggle.getAttribute('aria-checked') === 'true' ||
+                                                          (container.innerText || '').toLowerCase().includes('yes');
+                                        if (!isChecked) {
+                                            toggle.click();
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (window.angular) {
+                                try {
+                                    const formEls = Array.from(document.querySelectorAll('form, [ng-controller], [ng-view]'));
+                                    for (const el of formEls) {
+                                        const sc = window.angular.element(el).scope();
+                                        if (sc) {
+                                            if (sc.promoter) { sc.promoter.isasg = 'Y'; sc.promoter.isopas = 'Y'; }
+                                            if (sc.p) { sc.p.isasg = 'Y'; sc.p.isopas = 'Y'; }
+                                            if (sc.row) { sc.row.isasg = 'Y'; sc.row.isopas = 'Y'; }
+                                            if (sc.partner) { sc.partner.isasg = 'Y'; sc.partner.isopas = 'Y'; }
+                                            if (sc.x && sc.x.opdtls) {
+                                                sc.x.opdtls.forEach(o => { o.isasg = 'Y'; o.isopas = 'Y'; });
+                                            }
+                                            if (!sc.$$phase) sc.$apply();
+                                        }
+                                    }
+                                } catch (e) { }
+                            }
+                        });
+
+                        const asContainers = page.locator('div.form-group, .row, div, section').filter({ hasText: /also authorized signatory/i });
+                        if (await asContainers.count() > 0) {
+                            const switchContainer = asContainers.last();
+                            const isAlreadyYes = await switchContainer.evaluate(el => {
+                                const cb = el.querySelector('input[type="checkbox"]');
+                                if (cb && cb.checked) return true;
+                                const s = el.querySelector('.switch, label.switch, span.slider, div.toggle, switch, ui-switch');
+                                if (s && (s.classList.contains('active') || s.classList.contains('checked') || s.classList.contains('switch-on') || s.getAttribute('aria-checked') === 'true')) {
+                                    return true;
+                                }
+                                return false;
+                            }).catch(() => false);
+
+                            if (!isAlreadyYes) {
+                                const clickableSwitch = switchContainer.locator('.switch, label.switch, span.slider, div.toggle, switch, ui-switch, input[type="checkbox"]').first();
+                                if (await clickableSwitch.count() > 0) {
+                                    await clickableSwitch.click({ force: true, timeout: 2000 }).catch(() => { });
+                                    sendUpdate('Toggled "Also Authorized Signatory" to YES.');
+                                    await page.waitForTimeout(500);
+                                }
+                            }
+                        }
+
+                        await page.waitForTimeout(1000);
+
+                        // Click SAVE button on Promoter form
+                        const saveFormBtn = page.locator('button.btn-primary:has-text("SAVE"):not(:has-text("CONTINUE")), button:text-is("SAVE"), button:text-is("Save"), input[value="SAVE"], input[value="Save"]').first();
+                        if (await saveFormBtn.count() > 0 && await saveFormBtn.isVisible()) {
+                            await saveFormBtn.click({ force: true, timeout: 3000 }).catch(() => { });
+                            sendUpdate('Clicked SAVE on Promoter form.');
+                            await page.waitForTimeout(2000);
+                            await dismissAndConfirmModals('Promoter Form Save');
+                        }
+                    } catch (e) { }
+
+                    sendUpdate('Advancing Promoter / Partner via SAVE & CONTINUE...');
+                    await saveAndAdvanceTab('Promoter / Partner', 'https://reg.gst.gov.in/registration/auth/newappl/authsignatory', 'Authorized Signatory');
                     continue;
                 } else {
                     // Check if promoter form is open. If not, click "ADD NEW" to open it
@@ -1972,7 +2232,7 @@ async function run() {
                         try {
                             const addNewBtn = page.locator('button, input[type="button"], a.btn, a').filter({ hasText: /add\s*new/i }).first();
                             if (await addNewBtn.count() > 0 && await addNewBtn.isVisible()) {
-                                await addNewBtn.click({ force: true }).catch(() => {});
+                                await addNewBtn.click({ force: true }).catch(() => { });
                                 await page.waitForTimeout(2000);
                             } else {
                                 await page.evaluate(() => {
@@ -1982,30 +2242,31 @@ async function run() {
                                 });
                                 await page.waitForTimeout(2000);
                             }
-                        } catch (e) {}
+                        } catch (e) { }
                     }
 
                     sendUpdate('Populating Promoter / Partner (P1) details...');
                     const p = (data && data.p1) || {};
-                    const nameParts = ((data && data.legalName) || 'Parth Purushottam Bhagat').split(' ');
-                    const pFirst = (p.firstName || nameParts[0] || 'Parth').trim();
-                    const pMiddle = (p.middleName || (nameParts.length > 2 ? nameParts[1] : '') || 'Purushottam').trim();
-                    const pLast = (p.lastName || (nameParts.length > 2 ? nameParts.slice(2).join(' ') : nameParts[1] || '') || 'Bhagat').trim();
-                    const pFatherFirst = (p.fatherFirstName || 'Purushottam').trim();
-                    const pFatherMiddle = (p.fatherMiddleName || 'Vishram').trim();
-                    const pFatherLast = (p.fatherLastName || 'Bhagat').trim();
-                    const pDob = formatDDMMYYYY(p.dob || '29/01/1997');
-                    const pMobile = (p.mobile || data.mobile || '9011494385').trim();
-                    const pEmail = (p.email || data.email || 'parthpbhagat@gmail.com').trim().toLowerCase();
+                    const nameParts = ((data && data.legalName) || '').split(' ');
+                    const pFirst = (p.firstName || nameParts[0] || '').trim();
+                    const pMiddle = (p.middleName || (nameParts.length > 2 ? nameParts[1] : '') || '').trim();
+                    const pLast = (p.lastName || (nameParts.length > 2 ? nameParts.slice(2).join(' ') : nameParts[1] || '') || '').trim();
+                    const pFatherFirst = (p.fatherFirstName || '').trim();
+                    const pFatherMiddle = (p.fatherMiddleName || '').trim();
+                    const pFatherLast = (p.fatherLastName || '').trim();
+                    const pDob = formatDDMMYYYY(p.dob || '');
+                    const pMobile = (p.mobile || data.mobile || '').trim();
+                    const pEmail = (p.email || data.email || '').trim().toLowerCase();
                     const pDg = (p.designation || 'Proprietor').trim();
-                    const pPan = (p.pan || data.pan || 'AAQFH0648P').trim();
-                    const pPin = (p.res_pincode || data.ppob_pincode || '444906').trim();
-                    const pState = (p.res_state || data.state || 'Maharashtra').trim();
-                    const pDist = (p.res_district || data.district || 'Amravati').trim();
-                    const pCity = (p.res_city || data.ppob_city || 'warud').trim();
-                    const pRoad = (p.res_road || data.ppob_street || '9 giriraj vibhag 2').trim();
-                    const pBnm = (p.res_buildingName || data.ppob_building || 'Parth P Bhagat').trim();
-                    const pBno = (p.res_buildingNo || data.ppob_flatNo || '29').trim();
+                    const pPan = (p.pan || data.pan || '').trim();
+                    const pPin = (p.res_pincode || data.ppob_pincode || '').trim();
+                    const pState = (p.res_state || data.state || '').trim();
+                    const pDist = (p.res_district || data.district || '').trim();
+                    const pCity = (p.res_city || data.ppob_city || '').trim();
+                    const pLocality = (p.res_locality || p.res_city || data.ppob_locality || data.ppob_city || '').trim();
+                    const pRoad = (p.res_road || data.ppob_street || '').trim();
+                    const pBnm = (p.res_buildingName || data.ppob_building || '').trim();
+                    const pBno = (p.res_buildingNo || data.ppob_flatNo || '').trim();
                     const pGender = (p.gender || data.gender || 'Male').trim();
                     const pGenderCode = pGender.toLowerCase().startsWith('f') ? 'F' : 'M';
 
@@ -2018,142 +2279,170 @@ async function run() {
                         // Row 1: Person Name
                         if (await fnInputs.count() > 0) {
                             const val = await fnInputs.first().inputValue().catch(() => '');
-                            if (!val) await fnInputs.first().fill(pFirst, { timeout: 2000 }).catch(() => {});
+                            if (!val) await fnInputs.first().fill(pFirst, { timeout: 2000 }).catch(() => { });
                         }
                         if (await mnInputs.count() > 0) {
                             const val = await mnInputs.first().inputValue().catch(() => '');
-                            if (!val) await mnInputs.first().fill(pMiddle, { timeout: 2000 }).catch(() => {});
+                            if (!val) await mnInputs.first().fill(pMiddle, { timeout: 2000 }).catch(() => { });
                         }
                         if (await lnInputs.count() > 0) {
                             const val = await lnInputs.first().inputValue().catch(() => '');
-                            if (!val) await lnInputs.first().fill(pLast, { timeout: 2000 }).catch(() => {});
+                            if (!val) await lnInputs.first().fill(pLast, { timeout: 2000 }).catch(() => { });
                         }
 
                         // Row 2: Father's Name (2nd row of name inputs)
                         if (await fnInputs.count() > 1) {
-                            await fnInputs.nth(1).scrollIntoViewIfNeeded().catch(() => {});
-                            await fnInputs.nth(1).fill(pFatherFirst, { timeout: 2000 }).catch(() => {});
+                            await fnInputs.nth(1).scrollIntoViewIfNeeded().catch(() => { });
+                            await fnInputs.nth(1).fill(pFatherFirst, { timeout: 2000 }).catch(() => { });
                         } else {
                             const fLoc = page.locator('input[name*="fhfn" i], input[ng-model*="fhfn" i], #fhfn, #ffname').first();
-                            if (await fLoc.count() > 0) await fLoc.fill(pFatherFirst, { timeout: 2000 }).catch(() => {});
+                            if (await fLoc.count() > 0) await fLoc.fill(pFatherFirst, { timeout: 2000 }).catch(() => { });
                         }
 
                         if (await mnInputs.count() > 1) {
-                            await mnInputs.nth(1).fill(pFatherMiddle, { timeout: 2000 }).catch(() => {});
+                            await mnInputs.nth(1).fill(pFatherMiddle, { timeout: 2000 }).catch(() => { });
                         } else {
                             const mLoc = page.locator('input[name*="fhmn" i], input[ng-model*="fhmn" i], #fhmn, #pd_fmname').first();
-                            if (await mLoc.count() > 0) await mLoc.fill(pFatherMiddle, { timeout: 2000 }).catch(() => {});
+                            if (await mLoc.count() > 0) await mLoc.fill(pFatherMiddle, { timeout: 2000 }).catch(() => { });
                         }
 
                         if (await lnInputs.count() > 1) {
-                            await lnInputs.nth(1).fill(pFatherLast, { timeout: 2000 }).catch(() => {});
+                            await lnInputs.nth(1).fill(pFatherLast, { timeout: 2000 }).catch(() => { });
                         } else {
                             const lLoc = page.locator('input[name*="fhln" i], input[ng-model*="fhln" i], #fhln, #pd_flname').first();
-                            if (await lLoc.count() > 0) await lLoc.fill(pFatherLast, { timeout: 2000 }).catch(() => {});
+                            if (await lLoc.count() > 0) await lLoc.fill(pFatherLast, { timeout: 2000 }).catch(() => { });
                         }
 
                         // Date of Birth
                         const dobLoc = page.locator('input[placeholder*="DD/MM/YYYY" i], input[placeholder*="MM/DD/YYYY" i], input[id*="dob" i], input[name*="dob" i]').first();
                         if (await dobLoc.count() > 0) {
-                            await dobLoc.scrollIntoViewIfNeeded().catch(() => {});
-                            await dobLoc.click({ force: true, timeout: 2000 }).catch(() => {});
-                            await dobLoc.fill(pDob, { timeout: 2000 }).catch(() => {});
-                            await dobLoc.press('Tab').catch(() => {});
+                            await dobLoc.scrollIntoViewIfNeeded().catch(() => { });
+                            await dobLoc.click({ force: true, timeout: 2000 }).catch(() => { });
+                            await dobLoc.fill(pDob, { timeout: 2000 }).catch(() => { });
+                            await dobLoc.press('Tab').catch(() => { });
                         }
 
                         // Mobile Number
                         const mbLoc = page.locator('input[placeholder*="Mobile" i], input[name*="mbno" i], #mbno, #pd_mbno').first();
                         if (await mbLoc.count() > 0) {
-                            await mbLoc.scrollIntoViewIfNeeded().catch(() => {});
-                            await mbLoc.fill(pMobile, { timeout: 2000 }).catch(() => {});
-                            await mbLoc.press('Tab').catch(() => {});
+                            await mbLoc.scrollIntoViewIfNeeded().catch(() => { });
+                            await mbLoc.fill(pMobile, { timeout: 2000 }).catch(() => { });
+                            await mbLoc.press('Tab').catch(() => { });
                         }
 
                         // Email Address
                         const emLoc = page.locator('input[placeholder*="Email" i], input[type="email"], input[name*="em" i], #em, #pd_email').first();
                         if (await emLoc.count() > 0) {
-                            await emLoc.scrollIntoViewIfNeeded().catch(() => {});
-                            await emLoc.fill(pEmail, { timeout: 2000 }).catch(() => {});
-                            await emLoc.press('Tab').catch(() => {});
+                            await emLoc.scrollIntoViewIfNeeded().catch(() => { });
+                            await emLoc.fill(pEmail, { timeout: 2000 }).catch(() => { });
+                            await emLoc.press('Tab').catch(() => { });
                         }
 
-                        // Gender Radio
-                        const genderSelector = (pGenderCode === 'F') 
-                            ? 'label:has-text("Female"), input[type="radio"][value="F"], input[name="gender"][value="F"]'
-                            : 'label:has-text("Male"), input[type="radio"][value="M"], input[name="gender"][value="M"]';
+                        // Gender Radio & Select
+                        const genderSelector = (pGenderCode === 'F')
+                            ? 'input[type="radio"][value="F"], input[type="radio"][value="Female"], label:has-text("Female")'
+                            : 'input[type="radio"][value="M"], input[type="radio"][value="Male"], label:has-text("Male"):not(:has-text("Female"))';
                         const gLoc = page.locator(genderSelector).first();
                         if (await gLoc.count() > 0) {
-                            await gLoc.click({ force: true, timeout: 2000 }).catch(() => {});
+                            await gLoc.check({ force: true, timeout: 2000 }).catch(async () => {
+                                await gLoc.click({ force: true, timeout: 2000 }).catch(() => { });
+                            });
+                        }
+                        const gSelLoc = page.locator('select[ng-model*="gender" i], select[ng-model*="gd" i], select[name*="gender" i], select[name*="gd" i], #gender, #gd').first();
+                        if (await gSelLoc.count() > 0) {
+                            await gSelLoc.selectOption({ label: (pGenderCode === 'F' ? 'Female' : 'Male') }).catch(async () => {
+                                await gSelLoc.selectOption({ value: (pGenderCode === 'F' ? 'F' : 'M') }).catch(async () => {
+                                    await gSelLoc.selectOption({ index: 1 }).catch(() => { });
+                                });
+                            });
                         }
 
                         // Designation
                         const dgLoc = page.locator('input[placeholder*="Designation" i], input[name*="dg" i], #dg').first();
                         if (await dgLoc.count() > 0) {
-                            await dgLoc.scrollIntoViewIfNeeded().catch(() => {});
-                            await dgLoc.fill(pDg || 'Proprietor', { timeout: 2000 }).catch(() => {});
-                            await dgLoc.press('Tab').catch(() => {});
+                            await dgLoc.scrollIntoViewIfNeeded().catch(() => { });
+                            await dgLoc.fill(pDg || 'Proprietor', { timeout: 2000 }).catch(() => { });
+                            await dgLoc.press('Tab').catch(() => { });
                         }
 
                         // PAN
                         const panLoc = page.locator('input[placeholder*="PAN" i], input[name*="pan" i], #pan').first();
                         if (await panLoc.count() > 0) {
                             const pVal = await panLoc.inputValue().catch(() => '');
-                            if (!pVal) await panLoc.fill(pPan, { timeout: 2000 }).catch(() => {});
+                            if (!pVal) await panLoc.fill(pPan, { timeout: 2000 }).catch(() => { });
                         }
 
                         // Residential Address Fields
                         const pinLoc = page.locator('input[placeholder*="PIN Code" i], input[placeholder*="PIN" i], #pncd').first();
                         if (await pinLoc.count() > 0) {
-                            await pinLoc.scrollIntoViewIfNeeded().catch(() => {});
-                            await pinLoc.fill(pPin, { timeout: 2000 }).catch(() => {});
-                            await pinLoc.press('Tab').catch(() => {});
+                            await pinLoc.scrollIntoViewIfNeeded().catch(() => { });
+                            await pinLoc.fill(pPin, { timeout: 2000 }).catch(() => { });
+                            await pinLoc.press('Tab').catch(() => { });
                         }
 
                         const stateLoc = page.locator('input[placeholder*="State" i]').first();
                         if (await stateLoc.count() > 0) {
-                            await stateLoc.fill(pState, { timeout: 2000 }).catch(() => {});
+                            await stateLoc.fill(pState, { timeout: 2000 }).catch(() => { });
                         }
 
                         const distLoc = page.locator('input[placeholder*="District" i]').first();
                         if (await distLoc.count() > 0) {
-                            await distLoc.fill(pDist, { timeout: 2000 }).catch(() => {});
+                            await distLoc.fill(pDist, { timeout: 2000 }).catch(() => { });
                         }
 
                         const cityLoc = page.locator('input[placeholder*="City" i], input[placeholder*="Village" i]').first();
                         if (await cityLoc.count() > 0) {
-                            await cityLoc.fill(pCity, { timeout: 2000 }).catch(() => {});
+                            await cityLoc.fill(pCity, { timeout: 2000 }).catch(() => { });
+                        }
+
+                        const locLoc = page.locator('input[placeholder*="Locality" i], input[placeholder*="Sub-Locality" i], input[placeholder*="Sublocality" i], #subloc').first();
+                        if (await locLoc.count() > 0 && pLocality) {
+                            await locLoc.fill(pLocality, { timeout: 2000 }).catch(() => { });
                         }
 
                         const roadLoc = page.locator('input[placeholder*="Road" i], input[placeholder*="Street" i]').first();
                         if (await roadLoc.count() > 0) {
-                            await roadLoc.fill(pRoad, { timeout: 2000 }).catch(() => {});
+                            await roadLoc.fill(pRoad, { timeout: 2000 }).catch(() => { });
                         }
 
                         const bnmLoc = page.locator('input[placeholder*="Premises" i], input[placeholder*="Building Name" i]').first();
                         if (await bnmLoc.count() > 0) {
-                            await bnmLoc.fill(pBnm, { timeout: 2000 }).catch(() => {});
+                            await bnmLoc.fill(pBnm, { timeout: 2000 }).catch(() => { });
                         }
 
                         const bnoLoc = page.locator('input[placeholder*="Building No" i], input[placeholder*="Flat No" i], input[placeholder*="Door No" i]').first();
                         if (await bnoLoc.count() > 0) {
-                            await bnoLoc.fill(pBno, { timeout: 2000 }).catch(() => {});
+                            await bnoLoc.fill(pBno, { timeout: 2000 }).catch(() => { });
                         }
 
-                        // Toggle "Also Authorized Signatory" - verify state before click to prevent toggling off
+                        // Toggle "Also Authorized Signatory" - check current state to ensure it becomes YES without double-toggle
                         const asContainers = page.locator('div.form-group, .row, div').filter({ hasText: /also authorized signatory/i });
                         if (await asContainers.count() > 0) {
-                            const asSwitch = asContainers.last().locator('.switch, label.switch, input[type="checkbox"], span.slider, div.toggle').first();
-                            if (await asSwitch.count() > 0) {
-                                const isChecked = await asContainers.last().locator('input[type="checkbox"]').first().isChecked().catch(() => false);
-                                if (!isChecked) {
-                                    await asSwitch.click({ force: true, timeout: 2000 }).catch(() => {});
+                            const switchContainer = asContainers.last();
+                            const isCurrentlyNo = await switchContainer.evaluate(el => {
+                                const cb = el.querySelector('input[type="checkbox"]');
+                                if (cb && cb.checked) return false;
+                                const sw = el.querySelector('.switch, label.switch, span.slider, div.toggle, switch, ui-switch');
+                                if (sw) {
+                                    if (sw.classList.contains('active') || sw.classList.contains('checked') || sw.classList.contains('switch-on') || sw.getAttribute('aria-checked') === 'true') {
+                                        return false;
+                                    }
+                                }
+                                return (el.innerText || '').toLowerCase().includes('no');
+                            }).catch(() => false);
+
+                            if (isCurrentlyNo) {
+                                const clickableSwitch = switchContainer.locator('.switch, label.switch, span.slider, div.toggle, switch, ui-switch, input[type="checkbox"]').first();
+                                if (await clickableSwitch.count() > 0) {
+                                    await clickableSwitch.click({ force: true, timeout: 2000 }).catch(() => { });
+                                    sendUpdate('Toggled "Also Authorized Signatory" to YES.');
                                 }
                             }
                         }
-                    } catch (e) {}
+                    } catch (e) { }
 
                     // 2. DOM evaluate to ensure AngularJS scope & ngModel values are fully committed
-                    await page.evaluate(({ f, m, l, ff, fm, fl, dob, mob, em, dg, pan, pin, state, dist, city, road, bnm, bno, gd, gender }) => {
+                    await page.evaluate(({ f, m, l, ff, fm, fl, dob, mob, em, dg, pan, pin, state, dist, city, loc, road, bnm, bno, gd, gender }) => {
                         const setElem = (el, val) => {
                             if (!el || !val) return;
                             el.removeAttribute('disabled');
@@ -2174,7 +2463,7 @@ async function run() {
                                         ngModel.$render();
                                         ngModel.$commitViewValue();
                                     }
-                                } catch (e) {}
+                                } catch (e) { }
                             }
                         };
 
@@ -2198,101 +2487,98 @@ async function run() {
                         setElem(document.querySelector('input[placeholder*="State" i]'), state);
                         setElem(document.querySelector('input[placeholder*="District" i]'), dist);
                         setElem(document.querySelector('input[placeholder*="City" i], input[placeholder*="Village" i]'), city);
+                        setElem(document.querySelector('input[placeholder*="Locality" i], input[placeholder*="Sub-Locality" i], #subloc, input[name*="subloc" i]'), loc);
                         setElem(document.querySelector('input[placeholder*="Road" i], input[placeholder*="Street" i]'), road);
                         setElem(document.querySelector('input[placeholder*="Premises" i]'), bnm);
                         setElem(document.querySelector('input[placeholder*="Building No" i], input[placeholder*="Flat" i]'), bno);
 
-                        // Gender Radio
+                        // Gender Radio & Select Dropdown
                         const allRadios = Array.from(document.querySelectorAll('input[type="radio"]'));
-                        const rad = allRadios.find(r => {
+                        for (const r of allRadios) {
                             const val = (r.value || '').toUpperCase();
-                            const lbl = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || '').toLowerCase();
-                            if (gd === 'F') return val === 'F' || lbl.includes('female');
-                            return (val === 'M' || lbl.includes('male')) && !lbl.includes('female');
-                        });
-                        if (rad) {
-                            rad.checked = true;
-                            rad.dispatchEvent(new Event('change', { bubbles: true }));
-                            rad.dispatchEvent(new Event('click', { bubbles: true }));
-                            const l = rad.closest('label') || document.querySelector(`label[for="${rad.id}"]`);
-                            if (l) l.click();
+                            const lbl = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.closest('label')?.innerText || r.parentElement?.innerText || '').toLowerCase();
+                            const idName = ((r.id || '') + ' ' + (r.name || '')).toLowerCase();
+                            const isTarget = (gd === 'F')
+                                ? (val === 'F' || val === 'FEMALE' || lbl.includes('female') || idName.includes('female'))
+                                : (val === 'M' || val === 'MALE' || (lbl.includes('male') && !lbl.includes('female')) || (idName.includes('male') && !idName.includes('female')));
+                            if (isTarget) {
+                                r.checked = true;
+                                r.dispatchEvent(new Event('input', { bubbles: true }));
+                                r.dispatchEvent(new Event('change', { bubbles: true }));
+                                r.dispatchEvent(new Event('click', { bubbles: true }));
+                                if (window.angular) {
+                                    try {
+                                        const ngModel = window.angular.element(r).controller('ngModel');
+                                        if (ngModel) {
+                                            ngModel.$setViewValue(r.value || (gd === 'F' ? 'Female' : 'Male'));
+                                            ngModel.$modelValue = r.value || (gd === 'F' ? 'Female' : 'Male');
+                                            ngModel.$setValidity('required', true);
+                                            ngModel.$commitViewValue();
+                                            ngModel.$render();
+                                        }
+                                    } catch (e) { }
+                                }
+                            }
                         }
 
-                        // Also Authorized Signatory switch (ensure turned ON without double-clicking)
+                        // Gender Select Dropdown
+                        const allSelects = Array.from(document.querySelectorAll('select'));
+                        for (const s of allSelects) {
+                            const attr = ((s.id || '') + ' ' + (s.name || '') + ' ' + (s.getAttribute('ng-model') || '')).toLowerCase();
+                            const options = Array.from(s.options || []);
+                            const hasGenderOpts = options.some(o => /male|female|other/i.test(o.text || o.value || ''));
+                            if (attr.includes('gender') || attr.includes('gd') || attr.includes('sex') || hasGenderOpts) {
+                                const targetVal = (gd === 'F') ? 'female' : 'male';
+                                const opt = options.find(o => (o.text || '').trim().toLowerCase() === targetVal || (o.value || '').trim().toLowerCase() === targetVal || (o.value || '').toUpperCase() === gd);
+                                if (opt) {
+                                    s.value = opt.value;
+                                    s.selectedIndex = opt.index;
+                                } else if (options.length > 1) {
+                                    s.selectedIndex = 1;
+                                }
+                                s.dispatchEvent(new Event('input', { bubbles: true }));
+                                s.dispatchEvent(new Event('change', { bubbles: true }));
+                                if (window.angular) {
+                                    try {
+                                        const ngModel = window.angular.element(s).controller('ngModel');
+                                        if (ngModel) {
+                                            ngModel.$setViewValue(s.value);
+                                            ngModel.$modelValue = s.value;
+                                            ngModel.$setValidity('required', true);
+                                            ngModel.$commitViewValue();
+                                            ngModel.$render();
+                                        }
+                                    } catch (e) { }
+                                }
+                            }
+                        }
+
+                        // Also Authorized Signatory switch - DOM checkbox sync without double-clicking
                         const labels = Array.from(document.querySelectorAll('label, div, p, span'));
                         const asLbl = labels.find(el => (el.innerText || '').toLowerCase().includes('also authorized signatory'));
                         if (asLbl) {
                             const parent = asLbl.closest('.form-group, .row, div') || asLbl.parentElement;
                             if (parent) {
                                 const cb = parent.querySelector('input[type="checkbox"]');
-                                const sw = parent.querySelector('.switch, label.switch, span.slider, div.toggle');
-                                const isAlreadyOn = (cb && cb.checked) || (sw && (sw.classList.contains('active') || sw.classList.contains('checked') || sw.getAttribute('aria-checked') === 'true'));
-                                if (!isAlreadyOn) {
-                                    if (cb) {
-                                        cb.checked = true;
-                                        cb.dispatchEvent(new Event('change', { bubbles: true }));
-                                        cb.dispatchEvent(new Event('input', { bubbles: true }));
-                                    } else if (sw) {
-                                        sw.click();
-                                    }
+                                if (cb && !cb.checked) {
+                                    cb.checked = true;
+                                    cb.dispatchEvent(new Event('change', { bubbles: true }));
+                                    cb.dispatchEvent(new Event('input', { bubbles: true }));
                                 }
                             }
                         }
 
-                        // AngularJS scope models & form validation reset
+                        // Trigger Angular digest safely without tampering internal scopes or form controllers
                         if (window.angular) {
                             try {
-                                const forms = Array.from(document.querySelectorAll('form'));
-                                for (const frm of forms) {
-                                    const fc = window.angular.element(frm).controller('form');
-                                    if (fc) {
-                                        if (fc.$error && fc.$error.required) {
-                                            const reqs = [...fc.$error.required];
-                                            for (const c of reqs) {
-                                                c.$setValidity('required', true);
-                                                c.$invalid = false;
-                                                c.$valid = true;
-                                            }
-                                        }
-                                        fc.$valid = true;
-                                        fc.$invalid = false;
-                                    }
+                                const el = document.querySelector('form, [ng-controller]');
+                                if (el) {
+                                    const sc = window.angular.element(el).scope();
+                                    if (sc && !sc.$$phase) sc.$apply();
                                 }
-
-                                const scopes = Array.from(document.querySelectorAll('form, [ng-controller], [ng-view], [ui-view], body')).map(e => window.angular.element(e).scope()).filter(Boolean);
-                                for (const sc of scopes) {
-                                    const targets = [sc.op, sc.pd, sc.promoter, sc.proprietor, sc.opdtls, sc.p, sc.x].filter(Boolean);
-                                    for (const t of targets) {
-                                        t.fn = f;
-                                        t.mn = m;
-                                        t.ln = l;
-                                        t.fhfn = ff;
-                                        t.fhmn = fm;
-                                        t.fhln = fl;
-                                        t.dob = dob;
-                                        t.gd = gd;
-                                        t.gender = gender;
-                                        t.mbno = mob;
-                                        t.em = em;
-                                        t.email = em;
-                                        t.dg = dg;
-                                        t.pan = pan;
-                                        t.isasg = 'Y';
-                                        t.isopas = 'Y';
-                                        if (!t.rsad) t.rsad = {};
-                                        t.rsad.pncd = pin;
-                                        t.rsad.stcd = '27';
-                                        t.rsad.dst = dist;
-                                        t.rsad.loc = city;
-                                        t.rsad.st = road;
-                                        t.rsad.bnm = bnm;
-                                        t.rsad.bno = bno;
-                                    }
-                                    if (!sc.$$phase) sc.$apply();
-                                }
-                            } catch (e) {}
+                            } catch (e) { }
                         }
-                    }, { f: pFirst, m: pMiddle, l: pLast, ff: pFatherFirst, fm: pFatherMiddle, fl: pFatherLast, dob: pDob, mob: pMobile, em: pEmail, dg: pDg, pan: pPan, pin: pPin, state: pState, dist: pDist, city: pCity, road: pRoad, bnm: pBnm, bno: pBno, gd: pGenderCode, gender: pGender });
+                    }, { f: pFirst, m: pMiddle, l: pLast, ff: pFatherFirst, fm: pFatherMiddle, fl: pFatherLast, dob: pDob, mob: pMobile, em: pEmail, dg: pDg, pan: pPan, pin: pPin, state: pState, dist: pDist, city: pCity, loc: pLocality, road: pRoad, bnm: pBnm, bno: pBno, gd: pGenderCode, gender: pGender, stateCode: require('../backend/utils/gst_payload_builder').getStateCode(pState) });
 
                     await page.waitForTimeout(1000);
 
@@ -2316,9 +2602,9 @@ async function run() {
                                 const fileCount = await fileInputs.count();
                                 for (let fi = 0; fi < fileCount; fi++) {
                                     const fInput = fileInputs.nth(fi);
-                                    await fInput.setInputFiles(tempPhotoPath).catch(() => {});
-                                    await fInput.dispatchEvent('change').catch(() => {});
-                                    await fInput.dispatchEvent('input').catch(() => {});
+                                    await fInput.setInputFiles(tempPhotoPath).catch(() => { });
+                                    await fInput.dispatchEvent('change').catch(() => { });
+                                    await fInput.dispatchEvent('input').catch(() => { });
                                 }
                                 sendUpdate('Promoter photograph uploaded.');
                             }
@@ -2327,21 +2613,26 @@ async function run() {
                         sendUpdate(`Photo note: ${photoErr.message}`);
                     }
 
-                    await page.waitForTimeout(1000);
+                    // Click SAVE button on Promoter form
+                    const saveFormBtn = page.locator('button.btn-primary:has-text("SAVE"):not(:has-text("CONTINUE")), button:text-is("SAVE"), button:text-is("Save"), input[value="SAVE"], input[value="Save"]').first();
+                    if (await saveFormBtn.count() > 0 && await saveFormBtn.isVisible()) {
+                        await saveFormBtn.click({ force: true, timeout: 3000 }).catch(() => { });
+                        sendUpdate('Clicked SAVE on Promoter form.');
+                        await page.waitForTimeout(2000);
+                        await dismissAndConfirmModals('Promoter Form Save');
+                    }
 
-                    sendUpdate('Saved Promoter details.');
-                    await page.waitForTimeout(2000);
-                    await dismissAndConfirmModals();
-
-                    // Advance to next tab via SAVE & CONTINUE
-                    await saveAndAdvanceTab('Promoter / Partner');
+                    sendUpdate('Advancing Promoter / Partner via SAVE & CONTINUE...');
+                    await saveAndAdvanceTab('Promoter / Partner', 'https://reg.gst.gov.in/registration/auth/newappl/authsignatory', 'Authorized Signatory');
+                    await page.waitForTimeout(1500);
+                    await dismissAndConfirmModals('Promoter / Partner Post-Advance');
                     continue;
                 }
             }
 
             // Step 3: Authorized Signatory tab
             if (screenInfo.stepKey === 'authorized signatory') {
-                sendUpdate('[પગલું ૩: Authorized Signatory] પ્રાઇમરી સાઇન કરનાર કન્ફર્મ કરી રહ્યા છીએ...');
+                sendUpdate('Authorized Signatory...');
 
                 // A. Unconditionally find and check "Primary Authorized Signatory" checkbox / toggle across the page
                 try {
@@ -2359,19 +2650,19 @@ async function run() {
                         if (await loc.count() > 0) {
                             const isChecked = await loc.first().isChecked().catch(() => false);
                             if (!isChecked) {
-                                await loc.first().scrollIntoViewIfNeeded().catch(() => {});
+                                await loc.first().scrollIntoViewIfNeeded().catch(() => { });
                                 await loc.first().check({ force: true, timeout: 2000 }).catch(async () => {
-                                    await loc.first().click({ force: true, timeout: 2000 }).catch(() => {});
+                                    await loc.first().click({ force: true, timeout: 2000 }).catch(() => { });
                                 });
-                                sendUpdate('✅ "Primary Authorized Signatory" ચેકબોક્સ સફળતાપૂર્વક ટીક (Check) કર્યું.');
+                                sendUpdate('✅ "Primary Authorized Signatory" (Check)');
                                 break;
                             } else {
-                                sendUpdate('ℹ️ "Primary Authorized Signatory" ચેકબોક્સ પહેલેથી ટીક (Checked) છે.');
+                                sendUpdate('ℹ️ "Primary Authorized Signatory"(Checked)');
                                 break;
                             }
                         }
                     }
-                } catch (e) {}
+                } catch (e) { }
 
                 // B. Also confirm and sync via DOM & AngularJS
                 await page.evaluate(() => {
@@ -2418,7 +2709,7 @@ async function run() {
                 });
 
                 // 1. Inspect Tab 3 state (Table mode vs Form mode)
-                const asgState = await page.evaluate(({ em, mob }) => {
+                let asgState = await page.evaluate(() => {
                     const tableRows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => {
                         const t = (r.innerText || '').toLowerCase();
                         return t.length > 5 && !t.includes('no records') && !t.includes('no data');
@@ -2431,12 +2722,24 @@ async function run() {
                         hasForm: hasForm,
                         hasAddNew: addNewBtn
                     };
-                }, { em: (data.email || 'parthpbhagat@gmail.com').trim().toLowerCase(), mob: (data.mobile || '9011494385').trim() });
+                });
 
                 sendUpdate(`Authorized Signatory Screen: ${asgState.rowCount} signatories in table, Form visible: ${asgState.hasForm}`);
 
+                const p = (data && data.p1) || {};
+                const a = (data && data.a1 && data.a1.firstName && data.a1.firstName.trim().length > 0) ? data.a1 : p;
+                const pEmail = (p.email || data.email || '').trim().toLowerCase();
+                const aEmail = (a.email || pEmail).trim().toLowerCase();
+                const isPromoterSignatory = !data.a1 || !data.a1.firstName || aEmail === pEmail || (a.pan && p.pan && a.pan.trim().toUpperCase() === p.pan.trim().toUpperCase());
+
+                // Check if page already has duplicate email error visible
+                const hasDuplicateEmailError = await page.evaluate(() => {
+                    const text = (document.body.innerText || '').toLowerCase();
+                    return text.includes('duplicate email') || text.includes('exists with same email address in promoter') || text.includes('another user exists with same email');
+                });
+
                 // Case 1: Signatories are present in Table mode
-                if (asgState.rowCount > 0) {
+                if (asgState.rowCount > 0 && !hasDuplicateEmailError) {
                     // Check Primary Authorized Signatory checkbox/radio in the table
                     try {
                         const rowLoc = page.locator('table tbody tr').first();
@@ -2445,12 +2748,12 @@ async function run() {
                             const isChk = await primaryInput.isChecked().catch(() => false);
                             if (!isChk) {
                                 await primaryInput.check({ force: true, timeout: 2000 }).catch(async () => {
-                                    await primaryInput.click({ force: true, timeout: 2000 }).catch(() => {});
+                                    await primaryInput.click({ force: true, timeout: 2000 }).catch(() => { });
                                 });
                                 sendUpdate('Designated row 1 as Primary Authorized Signatory.');
                             }
                         }
-                    } catch (e) {}
+                    } catch (e) { }
 
                     // Also set via DOM & AngularJS scope
                     await page.evaluate(() => {
@@ -2473,7 +2776,7 @@ async function run() {
                                         if (sc.item) { sc.item.ispas = 'Y'; sc.item.isasg = 'Y'; }
                                         if (sc.signatory) { sc.signatory.ispas = 'Y'; sc.signatory.isasg = 'Y'; }
                                     }
-                                } catch (e) {}
+                                } catch (e) { }
                             }
                         }
 
@@ -2492,81 +2795,515 @@ async function run() {
                                     }
                                     if (!sc.$$phase) sc.$apply();
                                 }
-                            } catch (e) {}
+                            } catch (e) { }
                         }
                     });
-                } else if (asgState.hasForm) {
-                    // Case 2: Form view is open - Fill in Authorized Signatory details
-                    sendUpdate('Filling Authorized Signatory form details...');
-                    const pFirst = (data.p1 && data.p1.firstName) || 'Parth';
-                    const pMiddle = (data.p1 && data.p1.middleName) || 'Purushottam';
-                    const pLast = (data.p1 && data.p1.lastName) || 'Bhagat';
-                    const pMobile = (data.mobile || '9011494385').trim();
-                    const pEmail = (data.email || 'parthpbhagat@gmail.com').trim().toLowerCase();
+                } else if (asgState.rowCount === 0 && (isPromoterSignatory || hasDuplicateEmailError)) {
+                    // Case 2: Promoter is the Authorized Signatory, but not yet present in Tab 3 table.
+                    // On GST portal REG-01, entering the promoter's details on Tab 3's form throws:
+                    // "Duplicate email address, another user exists with same email address in Promoter/ Partners tab."
+                    // The portal requires enabling "Also Authorized Signatory" in Tab 2!
+                    sendUpdate('Promoter is not yet linked as Authorized Signatory in Tab 3. Navigating back to "Promoter / Partners" tab...');
 
-                    await page.evaluate(({ f, m, l, mob, em }) => {
-                        const setVal = (el, val) => {
+                    await page.evaluate(() => {
+                        const tabs = Array.from(document.querySelectorAll('a, li, div, button, span')).filter(e => {
+                            const t = (e.innerText || '').trim().toLowerCase();
+                            return (t.includes('promoter') || t.includes('partner')) && !t.includes('representative');
+                        });
+                        const wizardTab = tabs.find(e => e.closest('ul.nav-tabs, .step-wizard, .wizard-steps, nav') || e.tagName === 'A' || e.tagName === 'LI');
+                        if (wizardTab) {
+                            wizardTab.click();
+                            return true;
+                        } else if (tabs.length > 0) {
+                            tabs[0].click();
+                            return true;
+                        }
+                        const backBtn = Array.from(document.querySelectorAll('button, a.btn, input[type="button"]')).find(b => {
+                            const t = (b.innerText || b.value || '').trim().toLowerCase();
+                            return t === 'back' || /^\s*back\s*$/i.test(t);
+                        });
+                        if (backBtn) {
+                            backBtn.click();
+                            return true;
+                        }
+                        return false;
+                    });
+
+                    await page.waitForTimeout(2500);
+                    continue;
+                } else if (asgState.hasForm) {
+                    // Case 3: Form view is open for distinct Authorized Signatory - Fill in form details
+                    sendUpdate('Filling distinct Authorized Signatory form details...');
+                    const p = (data && data.p1) || {};
+                    const a = (data && data.a1 && data.a1.firstName && data.a1.firstName.trim().length > 0) ? data.a1 : p;
+                    const nameParts = ((data && data.legalName) || '').split(' ');
+                    const asgFirst = (a.firstName || p.firstName || nameParts[0] || '').trim();
+                    const asgMiddle = (a.middleName || p.middleName || (nameParts.length > 2 ? nameParts[1] : '') || '').trim();
+                    const asgLast = (a.lastName || p.lastName || (nameParts.length > 2 ? nameParts.slice(2).join(' ') : nameParts[1] || '') || '').trim();
+                    const asgFatherFirst = (a.fatherFirstName || p.fatherFirstName || (data.fatherName ? data.fatherName.split(' ')[0] : '') || '').trim();
+                    const asgFatherMiddle = (a.fatherMiddleName || p.fatherMiddleName || (data.fatherName && data.fatherName.split(' ').length > 2 ? data.fatherName.split(' ')[1] : '') || '').trim();
+                    const asgFatherLast = (a.fatherLastName || p.fatherLastName || (data.fatherName && data.fatherName.split(' ').length > 1 ? data.fatherName.split(' ').slice(1).join(' ') : '') || '').trim();
+                    const asgDob = formatDDMMYYYY(a.dob || p.dob || data.dob || '');
+                    const asgMobile = (a.mobile || p.mobile || data.mobile || '').trim();
+                    const asgEmail = (a.email || p.email || data.email || '').trim().toLowerCase();
+                    const asgDg = (a.designation || p.designation || data.designation || 'Proprietor').trim();
+                    const asgPan = (a.pan || p.pan || data.pan || '').trim();
+                    const asgPin = (a.res_pincode || p.res_pincode || data.ppob_pincode || '').trim();
+                    const asgStateName = (a.res_state || p.res_state || data.state || '').trim();
+                    const asgDist = (a.res_district || p.res_district || data.district || data.businessDistrict || '').trim();
+                    const asgCity = (a.res_city || p.res_city || data.ppob_city || '').trim();
+                    const asgLocality = (a.res_locality || p.res_locality || a.res_city || p.res_city || data.ppob_city || '').trim();
+                    const asgRoad = (a.res_road || p.res_road || data.ppob_street || '').trim();
+                    const asgBnm = (a.res_buildingName || p.res_buildingName || data.ppob_building || '').trim();
+                    const asgBno = (a.res_buildingNo || p.res_buildingNo || data.ppob_flatNo || '').trim();
+                    const asgGender = (a.gender || p.gender || data.gender || 'Male').trim();
+                    const asgGenderCode = asgGender.toLowerCase().startsWith('f') ? 'F' : 'M';
+
+                    // 1. Playwright interactions
+                    try {
+                        // Check Primary Signatory
+                        const primLoc = page.locator('label:has-text("Primary Authorized Signatory") input[type="checkbox"], input[type="checkbox"][id*="primary" i], input[type="checkbox"][id*="ispas" i], label:has-text("Primary Authorized Signatory")').first();
+                        if (await primLoc.count() > 0) {
+                            await primLoc.check({ force: true, timeout: 1500 }).catch(async () => {
+                                await primLoc.click({ force: true, timeout: 1500 }).catch(() => { });
+                            });
+                        }
+
+                        // Names
+                        const fnInputs = page.locator('input[placeholder*="First Name" i]');
+                        if (await fnInputs.count() > 0) await fnInputs.first().fill(asgFirst, { timeout: 1000 }).catch(() => { });
+                        if (await fnInputs.count() > 1) await fnInputs.nth(1).fill(asgFatherFirst, { timeout: 1000 }).catch(() => { });
+
+                        const mnInputs = page.locator('input[placeholder*="Middle Name" i]');
+                        if (await mnInputs.count() > 0) await mnInputs.first().fill(asgMiddle, { timeout: 1000 }).catch(() => { });
+                        if (await mnInputs.count() > 1) await mnInputs.nth(1).fill(asgFatherMiddle, { timeout: 1000 }).catch(() => { });
+
+                        const lnInputs = page.locator('input[placeholder*="Last Name" i]');
+                        if (await lnInputs.count() > 0) await lnInputs.first().fill(asgLast, { timeout: 1000 }).catch(() => { });
+                        if (await lnInputs.count() > 1) await lnInputs.nth(1).fill(asgFatherLast, { timeout: 1000 }).catch(() => { });
+
+                        const dobLoc = page.locator('input[placeholder*="DD/MM/YYYY" i], input[placeholder*="dd/mm/yyyy" i], input[id*="dob" i], input[name*="dob" i]').first();
+                        if (await dobLoc.count() > 0) await dobLoc.fill(asgDob, { timeout: 1000 }).catch(() => { });
+
+                        const mbLoc = page.locator('input[placeholder*="Mobile" i], input[name*="mbno" i], #mbno').first();
+                        if (await mbLoc.count() > 0) await mbLoc.fill(asgMobile, { timeout: 1000 }).catch(() => { });
+
+                        const emLoc = page.locator('input[placeholder*="Email" i], input[type="email"], input[name*="em" i], #em').first();
+                        if (await emLoc.count() > 0) await emLoc.fill(asgEmail, { timeout: 1000 }).catch(() => { });
+
+                        // Gender Radio
+                        const genderContainer = page.locator('.form-group, div, [class*="col-"]').filter({ hasText: /^Gender/i }).first();
+                        if (await genderContainer.count() > 0) {
+                            if (asgGenderCode === 'F') {
+                                const fBtn = genderContainer.locator('label:has-text("Female"), input[value="F"]').first();
+                                await fBtn.click({ force: true, timeout: 1000 }).catch(() => { });
+                            } else {
+                                const mBtn = genderContainer.locator('label:has-text("Male"), input[value="M"]').first();
+                                await mBtn.click({ force: true, timeout: 1000 }).catch(() => { });
+                            }
+                        } else {
+                            const mRad = page.locator('label:has-text("Male"), input[type="radio"][value="M"], #male').first();
+                            if (await mRad.count() > 0) await mRad.click({ force: true, timeout: 1000 }).catch(() => { });
+                        }
+
+                        const dgLoc = page.locator('input[placeholder*="Designation" i], input[name*="dg" i], #dg').first();
+                        if (await dgLoc.count() > 0) await dgLoc.fill(asgDg, { timeout: 1000 }).catch(() => { });
+
+                        const panLoc = page.locator('input[placeholder*="PAN" i], input[name*="pan" i], #pan').first();
+                        if (await panLoc.count() > 0) await panLoc.fill(asgPan, { timeout: 1000 }).catch(() => { });
+
+                        // PIN Code typeahead
+                        const pinLoc = page.locator('input[placeholder*="PIN Code" i], #pncd').first();
+                        if (await pinLoc.count() > 0) {
+                            await pinLoc.click({ timeout: 1000 }).catch(() => { });
+                            await pinLoc.fill('', { timeout: 500 }).catch(() => { });
+                            await pinLoc.type(asgPin, { delay: 40, timeout: 1500 }).catch(() => { });
+                            await page.waitForTimeout(500);
+
+                            const pinOption = page.locator('ul.dropdown-menu:visible li, .uib-typeahead-match:visible, li[id*="typeahead"]:visible, [role="option"]:visible')
+                                .filter({ hasText: new RegExp(asgPin) }).first();
+                            if (await pinOption.count() > 0 && await pinOption.isVisible()) {
+                                await pinOption.click({ force: true, timeout: 1000 }).catch(() => { });
+                            } else {
+                                await pinLoc.press('ArrowDown').catch(() => { });
+                                await pinLoc.press('Enter').catch(() => { });
+                            }
+                            await page.waitForTimeout(600);
+                        }
+
+                        // State & District input fields
+                        const stateLoc = page.locator('input[placeholder*="State" i]:visible, #stcd:visible').last();
+                        if (await stateLoc.count() > 0) {
+                            await stateLoc.scrollIntoViewIfNeeded().catch(() => { });
+                            await stateLoc.click({ force: true, timeout: 1000 }).catch(() => { });
+                            await stateLoc.fill('', { timeout: 300 }).catch(() => { });
+                            await stateLoc.type(asgStateName, { delay: 30, timeout: 1000 }).catch(() => { });
+                            await page.waitForTimeout(300);
+                            const stOpt = page.locator('ul.dropdown-menu:visible li, .uib-typeahead-match:visible, li[id*="typeahead"]:visible, [role="option"]:visible')
+                                .filter({ hasText: new RegExp(asgStateName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }).first();
+                            if (await stOpt.count() > 0 && await stOpt.isVisible()) await stOpt.click({ force: true, timeout: 1000 }).catch(() => { });
+                            else {
+                                await stateLoc.press('ArrowDown').catch(() => { });
+                                await stateLoc.press('Enter').catch(() => { });
+                            }
+                        }
+
+                        const distLoc = page.locator('input[placeholder*="District" i]:visible, #dst:visible').last();
+                        if (await distLoc.count() > 0) {
+                            await distLoc.scrollIntoViewIfNeeded().catch(() => { });
+                            await distLoc.click({ force: true, timeout: 1000 }).catch(() => { });
+                            await distLoc.fill('', { timeout: 300 }).catch(() => { });
+                            await distLoc.type(asgDist, { delay: 30, timeout: 1000 }).catch(() => { });
+                            await page.waitForTimeout(300);
+                            const dstOpt = page.locator('ul.dropdown-menu:visible li, .uib-typeahead-match:visible, li[id*="typeahead"]:visible, [role="option"]:visible')
+                                .filter({ hasText: new RegExp(asgDist.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }).first();
+                            if (await dstOpt.count() > 0 && await dstOpt.isVisible()) await dstOpt.click({ force: true, timeout: 1000 }).catch(() => { });
+                            else {
+                                await distLoc.press('ArrowDown').catch(() => { });
+                                await distLoc.press('Enter').catch(() => { });
+                            }
+                        }
+
+                        // City / Town / Village
+                        const cityLoc = page.locator('input[placeholder*="City" i]:visible, input[placeholder*="Village" i]:visible, #loc:visible').last();
+                        if (await cityLoc.count() > 0) {
+                            await cityLoc.scrollIntoViewIfNeeded().catch(() => { });
+                            await cityLoc.click({ force: true, timeout: 1000 }).catch(() => { });
+                            await cityLoc.fill('', { timeout: 500 }).catch(() => { });
+                            await page.waitForTimeout(200);
+                            await cityLoc.type(asgCity, { delay: 50, timeout: 1500 }).catch(() => { });
+                            await page.waitForTimeout(600);
+                            const cityOpt = page.locator('ul.dropdown-menu:visible li, .uib-typeahead-match:visible, li[id*="typeahead"]:visible, [role="option"]:visible')
+                                .filter({ hasText: new RegExp(`^\\s*${asgCity}\\b`, 'i') }).first();
+                            if (await cityOpt.count() > 0 && await cityOpt.isVisible()) {
+                                await cityOpt.click({ force: true, timeout: 1000 }).catch(() => { });
+                            } else {
+                                await cityLoc.press('ArrowDown').catch(() => { });
+                                await cityLoc.press('Enter').catch(() => { });
+                            }
+                        }
+
+                        // Locality & Street
+                        const locLoc = page.locator('input[placeholder*="Locality" i]:visible, input[placeholder*="Sub-Locality" i]:visible, input[name*="subloc" i]:visible, #subloc:visible').last();
+                        if (await locLoc.count() > 0) await locLoc.fill(asgLocality, { timeout: 1000 }).catch(() => { });
+
+                        const roadLoc = page.locator('input[placeholder*="Road" i]:visible, input[placeholder*="Street" i]:visible, input[placeholder*="Lane" i]:visible, #st:visible').last();
+                        if (await roadLoc.count() > 0) await roadLoc.fill(asgRoad, { timeout: 1000 }).catch(() => { });
+
+                        // Premises / Building Name
+                        const bnmLoc = page.locator('input[placeholder*="Premises" i]:visible, input[placeholder*="Name of the Premises" i]:visible, #bnm:visible').last();
+                        if (await bnmLoc.count() > 0 && asgBnm) await bnmLoc.fill(asgBnm, { timeout: 1000 }).catch(() => { });
+
+                        // Building No / Flat No (29)
+                        const bnoLoc = page.locator('input[placeholder*="Building No" i]:visible, input[placeholder*="Flat No" i]:visible, input[placeholder*="Door No" i]:visible, #bno:visible').last();
+                        if (await bnoLoc.count() > 0 && asgBno) await bnoLoc.fill(asgBno, { timeout: 1000 }).catch(() => { });
+
+                        // Proof of details of authorized signatory - Select Document Type
+                        const proofContainer = page.locator('.form-group, div, section').filter({ hasText: /proof of details of authorized signatory/i }).last();
+                        const docSelectLoc = (await proofContainer.count() > 0) ? proofContainer.locator('select').first() : page.locator('select:visible').last();
+                        if (await docSelectLoc.count() > 0) {
+                            const opts = await docSelectLoc.locator('option').allTextContents().catch(() => []);
+                            const match = opts.find(o => /letter of authorisation|authorisation|resolution/i.test(o));
+                            if (match) {
+                                await docSelectLoc.selectOption({ label: match }).catch(() => { });
+                            } else if (opts.length > 1) {
+                                await docSelectLoc.selectOption({ index: 1 }).catch(() => { });
+                            }
+                        }
+
+                        // Upload Document File (PDF)
+                        const fs = require('fs');
+                        const path = require('path');
+                        const hasExistingProof = (await proofContainer.count() > 0) && (await proofContainer.locator('button:has-text("DELETE"), a:has-text("DELETE"), button:has-text("Delete")').count() > 0);
+                        if (!hasExistingProof) {
+                            let authProofPath = '';
+                            const authSigProof = (a && a.authSigProofFile) || (data && data.authSigProofFile) || (data.p1 && data.p1.authSigProofFile) || '';
+                            if (authSigProof) {
+                                if (typeof authSigProof === 'string' && authSigProof.startsWith('data:')) {
+                                    const cleanB64 = authSigProof.replace(/^data:.*?;base64,/, '');
+                                    authProofPath = path.join(__dirname, 'temp_auth_sig_doc.pdf');
+                                    fs.writeFileSync(authProofPath, cleanB64, 'base64');
+                                } else if (typeof authSigProof === 'string' && fs.existsSync(authSigProof)) {
+                                    authProofPath = authSigProof;
+                                }
+                            }
+                            if (!authProofPath || !fs.existsSync(authProofPath)) {
+                                const fallbackDoc = path.join(__dirname, 'temp_ppob_doc.pdf');
+                                if (fs.existsSync(fallbackDoc)) authProofPath = fallbackDoc;
+                            }
+                            if (authProofPath && fs.existsSync(authProofPath)) {
+                                const docFileInput = (await proofContainer.count() > 0 && await proofContainer.locator('input[type="file"]').count() > 0)
+                                    ? proofContainer.locator('input[type="file"]').first()
+                                    : page.locator('input[type="file"]').last();
+                                if (await docFileInput.count() > 0) {
+                                    await docFileInput.setInputFiles(authProofPath).catch(() => { });
+                                    await docFileInput.dispatchEvent('change').catch(() => { });
+                                    await docFileInput.dispatchEvent('input').catch(() => { });
+                                    sendUpdate('Attached Authorized Signatory Proof Document (PDF).');
+                                }
+                            }
+                        }
+
+                        // Upload Photograph (Mandatory on Authorized Signatory)
+                        try {
+                            const photoData = (a && (a.authSigPhotoFile || a.photoFile)) || (p && (p.promoterPhotoFile || p.photoFile)) || (data && data.promoterPhotoFile) || '';
+                            let asgPhotoPath = '';
+                            if (photoData) {
+                                if (typeof photoData === 'string' && photoData.startsWith('data:image')) {
+                                    const cleanB64 = photoData.replace(/^data:.*?;base64,/, '');
+                                    asgPhotoPath = path.join(__dirname, 'temp_asg_photo.jpg');
+                                    fs.writeFileSync(asgPhotoPath, cleanB64, 'base64');
+                                } else if (typeof photoData === 'string' && fs.existsSync(photoData)) {
+                                    asgPhotoPath = photoData;
+                                }
+                            }
+                            if (!asgPhotoPath || !fs.existsSync(asgPhotoPath)) {
+                                const fallbackPhoto = path.join(__dirname, 'temp_promoter_photo_1.jpg');
+                                if (fs.existsSync(fallbackPhoto)) asgPhotoPath = fallbackPhoto;
+                            }
+
+                            if (asgPhotoPath && fs.existsSync(asgPhotoPath)) {
+                                const photoSection = page.locator('div, section, .form-group').filter({ hasText: /upload photograph/i }).last();
+                                const photoFileInput = (await photoSection.count() > 0 && await photoSection.locator('input[type="file"]').count() > 0)
+                                    ? photoSection.locator('input[type="file"]').first()
+                                    : page.locator('input[type="file"][accept*="image" i], input[type="file"]').first();
+                                if (await photoFileInput.count() > 0) {
+                                    await photoFileInput.setInputFiles(asgPhotoPath).catch(() => { });
+                                    await photoFileInput.dispatchEvent('change').catch(() => { });
+                                    await photoFileInput.dispatchEvent('input').catch(() => { });
+                                    sendUpdate('Attached Authorized Signatory Photograph (JPEG).');
+                                }
+                            }
+                        } catch (photoErr) {
+                            sendUpdate(`Photo attach note: ${photoErr.message}`);
+                        }
+                    } catch (e) { }
+
+                    // 2. DOM evaluate for Angular synchronization
+                    await page.evaluate(({ f, m, l, ff, fm, fl, dob, mob, em, dg, pan, pin, state, dist, city, loc, road, bnm, bno, gd }) => {
+                        const setElem = (el, val) => {
                             if (!el || !val) return;
-                            el.value = val;
+                            el.removeAttribute('disabled');
+                            el.removeAttribute('readonly');
+                            if (el.tagName && el.tagName.toLowerCase() === 'select') {
+                                const options = Array.from(el.options);
+                                const opt = options.find(o => (o.text || '').toLowerCase().includes(val.toLowerCase()) || (o.value || '').toLowerCase().includes(val.toLowerCase()));
+                                if (opt) {
+                                    el.value = opt.value;
+                                    el.selectedIndex = opt.index;
+                                } else if (options.length > 1) {
+                                    el.selectedIndex = 1;
+                                }
+                            } else {
+                                el.value = val;
+                            }
                             el.dispatchEvent(new Event('input', { bubbles: true }));
                             el.dispatchEvent(new Event('change', { bubbles: true }));
+                            el.dispatchEvent(new Event('blur', { bubbles: true }));
+                            if (window.angular) {
+                                try {
+                                    const ngModel = window.angular.element(el).controller('ngModel');
+                                    if (ngModel) {
+                                        ngModel.$setViewValue(el.value);
+                                        ngModel.$modelValue = el.value;
+                                        ngModel.$setValidity('required', true);
+                                        ngModel.$render();
+                                        ngModel.$commitViewValue();
+                                    }
+                                } catch (e) { }
+                            }
                         };
-                        const fn = document.querySelector('input[placeholder*="First Name" i], #fn, #fnm');
-                        const mn = document.querySelector('input[placeholder*="Middle Name" i], #mn');
-                        const ln = document.querySelector('input[placeholder*="Last Name" i], #ln, #lnm');
-                        if (fn && !fn.value) setVal(fn, f);
-                        if (mn && !mn.value) setVal(mn, m);
-                        if (ln && !ln.value) setVal(ln, l);
 
-                        // Check primary signatory checkbox/radio
-                        const prim = document.querySelector('input[type="checkbox"][id*="primary" i], input[type="radio"][id*="primary" i], input[id*="ispas" i]');
-                        if (prim && !prim.checked) {
-                            prim.checked = true;
-                            prim.dispatchEvent(new Event('change', { bubbles: true }));
+                        const fnEls = Array.from(document.querySelectorAll('input[placeholder*="First Name" i]'));
+                        if (fnEls.length > 0) setElem(fnEls[0], f);
+                        if (fnEls.length > 1) setElem(fnEls[1], ff);
+
+                        const mnEls = Array.from(document.querySelectorAll('input[placeholder*="Middle Name" i]'));
+                        if (mnEls.length > 0) setElem(mnEls[0], m);
+                        if (mnEls.length > 1) setElem(mnEls[1], fm);
+
+                        const lnEls = Array.from(document.querySelectorAll('input[placeholder*="Last Name" i]'));
+                        if (lnEls.length > 0) setElem(lnEls[0], l);
+                        if (lnEls.length > 1) setElem(lnEls[1], fl);
+
+                        setElem(document.querySelector('input[placeholder*="DD/MM/YYYY" i], input[placeholder*="dd/mm/yyyy" i], #dob'), dob);
+                        setElem(document.querySelector('input[placeholder*="Mobile" i], #mbno'), mob);
+                        setElem(document.querySelector('input[placeholder*="Email" i], input[type="email"], #em'), em);
+                        setElem(document.querySelector('input[placeholder*="Designation" i], #dg'), dg);
+                        setElem(document.querySelector('input[placeholder*="PAN" i], #pan'), pan);
+                        setElem(document.querySelector('input[placeholder*="PIN Code" i], #pncd'), pin);
+
+                        const stateInp = Array.from(document.querySelectorAll('input[placeholder*="State" i], #stcd')).filter(e => e.offsetParent !== null).pop();
+                        if (stateInp && state) setElem(stateInp, state);
+
+                        const distInp = Array.from(document.querySelectorAll('input[placeholder*="District" i], #dst')).filter(e => e.offsetParent !== null).pop();
+                        if (distInp && dist) setElem(distInp, dist);
+
+                        const cityInp = Array.from(document.querySelectorAll('input[placeholder*="City" i], input[placeholder*="Village" i], #loc')).filter(e => e.offsetParent !== null).pop();
+                        if (cityInp && (!cityInp.value || !cityInp.value.toLowerCase().includes(city.toLowerCase()))) {
+                            cityInp.value = city;
+                            cityInp.dispatchEvent(new Event('input', { bubbles: true }));
+                            cityInp.dispatchEvent(new Event('change', { bubbles: true }));
                         }
-                    }, { f: pFirst, m: pMiddle, l: pLast, mob: pMobile, em: pEmail });
 
-                    // Click Save button on form
-                    const saveFormBtn = page.locator('button.btn-primary:has-text("SAVE"), button:has-text("Save Details"), button:has-text("SAVE")').first();
-                    if (await saveFormBtn.count() > 0) {
-                        await saveFormBtn.click({ force: true, timeout: 3000 }).catch(() => {});
-                        sendUpdate('Saved Authorized Signatory form.');
-                        await page.waitForTimeout(1500);
-                    }
+                        const locInp = Array.from(document.querySelectorAll('input[placeholder*="Locality" i], input[placeholder*="Sub-Locality" i], #subloc, input[name*="subloc" i]')).filter(e => e.offsetParent !== null).pop();
+                        if (locInp) setElem(locInp, loc || city);
+
+                        const roadInp = Array.from(document.querySelectorAll('input[placeholder*="Road" i], input[placeholder*="Street" i], input[placeholder*="Lane" i], #st')).filter(e => e.offsetParent !== null).pop();
+                        if (roadInp) setElem(roadInp, road);
+
+                        const bnmInp = Array.from(document.querySelectorAll('input[placeholder*="Premises" i], input[placeholder*="Name of the Premises" i], #bnm')).filter(e => e.offsetParent !== null).pop();
+                        if (bnmInp && bnm) setElem(bnmInp, bnm);
+
+                        const bnoInp = Array.from(document.querySelectorAll('input[placeholder*="Building No" i], input[placeholder*="Flat" i], input[placeholder*="Door No" i], #bno')).filter(e => e.offsetParent !== null).pop();
+                        if (bnoInp && bno) setElem(bnoInp, bno);
+
+                        // Gender Radio
+                        const allRadios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                        for (const r of allRadios) {
+                            const val = (r.value || '').toUpperCase();
+                            const lbl = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.closest('label')?.innerText || r.parentElement?.innerText || '').trim().toLowerCase();
+                            const idName = ((r.id || '') + ' ' + (r.name || '')).toLowerCase();
+                            const isTarget = (gd === 'F')
+                                ? (val === 'F' || lbl === 'female' || idName.includes('female'))
+                                : (val === 'M' || lbl === 'male' || (lbl.includes('male') && !lbl.includes('female')) || (idName.includes('male') && !idName.includes('female')));
+                            if (isTarget) {
+                                r.checked = true;
+                                r.dispatchEvent(new Event('input', { bubbles: true }));
+                                r.dispatchEvent(new Event('change', { bubbles: true }));
+                                r.dispatchEvent(new Event('click', { bubbles: true }));
+                                if (window.angular) {
+                                    try {
+                                        const ngModel = window.angular.element(r).controller('ngModel');
+                                        if (ngModel) {
+                                            ngModel.$setViewValue(r.value || gd);
+                                            ngModel.$modelValue = r.value || gd;
+                                            ngModel.$setValidity('required', true);
+                                            ngModel.$commitViewValue();
+                                            ngModel.$render();
+                                        }
+                                    } catch (e) { }
+                                }
+                            }
+                        }
+
+                        // Primary signatory checkbox
+                        const primCb = document.querySelector('input[type="checkbox"][id*="primary" i], input[type="checkbox"][id*="ispas" i], input[ng-model*="ispas" i]');
+                        if (primCb && !primCb.checked) {
+                            primCb.checked = true;
+                            primCb.dispatchEvent(new Event('change', { bubbles: true }));
+                            primCb.dispatchEvent(new Event('click', { bubbles: true }));
+                        }
+
+                        // Select Document Type (Letter of Authorisation)
+                        const allSelects = Array.from(document.querySelectorAll('select')).filter(s => s.offsetParent !== null);
+                        for (const s of allSelects) {
+                            const optTexts = Array.from(s.options || []).map(o => (o.text || '').toLowerCase());
+                            if (optTexts.some(t => t.includes('letter') || t.includes('authorisation') || t.includes('resolution'))) {
+                                if (s.options.length > 1) {
+                                    s.selectedIndex = 1;
+                                    s.value = s.options[1].value;
+                                    s.dispatchEvent(new Event('change', { bubbles: true }));
+                                    s.dispatchEvent(new Event('input', { bubbles: true }));
+                                    if (window.angular) {
+                                        try {
+                                            const ngModel = window.angular.element(s).controller('ngModel');
+                                            if (ngModel) {
+                                                ngModel.$setViewValue(s.value);
+                                                ngModel.$modelValue = s.value;
+                                                ngModel.$setValidity('required', true);
+                                                ngModel.$commitViewValue();
+                                            }
+                                        } catch (e) { }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Trigger Angular digest safely
+                        if (window.angular) {
+                            try {
+                                const el = document.querySelector('form, [ng-controller]');
+                                if (el) {
+                                    const sc = window.angular.element(el).scope();
+                                    if (sc && !sc.$$phase) sc.$apply();
+                                }
+                            } catch (e) { }
+                        }
+                    }, { f: asgFirst, m: asgMiddle, l: asgLast, ff: asgFatherFirst, fm: asgFatherMiddle, fl: asgFatherLast, dob: asgDob, mob: asgMobile, em: asgEmail, dg: asgDg, pan: asgPan, pin: asgPin, state: asgStateName, dist: asgDist, city: asgCity, loc: asgLocality, road: asgRoad, bnm: asgBnm, bno: asgBno, gd: asgGenderCode });
+
+                    // Click inner Save button on Authorized Signatory form if present
+                    try {
+                        const clicked = await page.evaluate(() => {
+                            const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn')).filter(b => b.offsetParent !== null);
+                            const saveBtn = btns.find(b => {
+                                const t = (b.innerText || b.value || '').trim();
+                                return /^save$/i.test(t) || (/save/i.test(t) && !/continue/i.test(t));
+                            });
+                            if (saveBtn) {
+                                saveBtn.removeAttribute('disabled');
+                                saveBtn.disabled = false;
+                                saveBtn.click();
+                                return true;
+                            }
+                            return false;
+                        });
+                        if (clicked) {
+                            sendUpdate('Clicked Save on Authorized Signatory form.');
+                        } else {
+                            const saveFormBtn = page.locator('button:has-text("SAVE"):not(:has-text("CONTINUE")), button:has-text("Save"):not(:has-text("Continue")), input[value*="Save" i]:not([value*="Continue" i])').first();
+                            if (await saveFormBtn.count() > 0 && await saveFormBtn.isVisible()) {
+                                await saveFormBtn.click({ force: true, timeout: 3000 }).catch(() => { });
+                                sendUpdate('Clicked Save on Authorized Signatory form.');
+                            }
+                        }
+                        await page.waitForTimeout(2000);
+                        await dismissAndConfirmModals('Authorized Signatory Form Save');
+                    } catch (e) { }
+
+                    await page.waitForTimeout(1000);
                 } else if (asgState.hasAddNew) {
                     // Case 3: Table is empty and Add New button is available
                     sendUpdate('Clicking Add New Authorized Signatory...');
                     const addBtn = page.locator('button:has-text("ADD NEW"), a:has-text("ADD NEW"), button:has-text("Add New")').first();
                     if (await addBtn.count() > 0) {
-                        await addBtn.click({ force: true, timeout: 3000 }).catch(() => {});
+                        await addBtn.click({ force: true, timeout: 3000 }).catch(() => { });
                         await page.waitForTimeout(1000);
                     }
                 }
 
-                await page.waitForTimeout(800);
-                await dismissAndConfirmModals('Authorized Signatory');
+                // Ensure Primary Authorized Signatory checkbox in table is checked
+                try {
+                    const rowCb = page.locator('table tbody tr input[type="checkbox"], table tbody tr input[type="radio"]').first();
+                    if (await rowCb.count() > 0) {
+                        if (!(await rowCb.isChecked().catch(() => false))) {
+                            await rowCb.check({ force: true, timeout: 2000 }).catch(async () => {
+                                await rowCb.click({ force: true, timeout: 2000 }).catch(() => { });
+                            });
+                            sendUpdate('Ensured row 1 checked as Primary Authorized Signatory.');
+                        }
+                    }
+                } catch (e) { }
+
+                await page.waitForTimeout(1000);
+                await dismissAndConfirmModals('Authorized Signatory Pre-Advance');
 
                 // Save & Continue on Authorized Signatory
-                await saveAndAdvanceTab('Authorized Signatory');
+                await saveAndAdvanceTab('Authorized Signatory', 'https://reg.gst.gov.in/registration/auth/newappl/authrepresentative', 'Authorized Representative');
 
-                // Fallback check: If the page didn't advance, attempt direct navigation to Tab 4 (Authorized Representative) in the wizard
+                // If still on Authorized Signatory, retry Save & Continue and then advance
                 const stillOnAsg = await page.evaluate(() => {
+                    const url = window.location.href || '';
+                    if (url.includes('/newappl/authrepresentative')) return false;
                     const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
                     const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
-                    return bc.includes('authorized signatory') || tab.includes('authorized signatory');
+                    return bc.includes('authorized signatory') || tab.includes('authorized signatory') || url.includes('/newappl/authsignatory');
                 });
 
                 if (stillOnAsg) {
-                    sendUpdate('Attempting direct navigation to Tab 4 (Authorized Representative)...');
-                    await page.evaluate(() => {
-                        const tabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) li a, ul.step-wizard li a, .wizard-steps li a, .tabs a'));
-                        const tab4 = tabs.find(t => (t.innerText || '').toLowerCase().includes('authorized representative'));
-                        if (tab4) {
-                            tab4.click();
-                        }
-                    });
-                    await page.waitForTimeout(1500);
-                    await dismissAndConfirmModals('Tab 4 Navigation');
+                    await dismissAndConfirmModals('Authorized Signatory Final Modal');
+                    await page.waitForTimeout(1000);
+                    await saveAndAdvanceTab('Authorized Signatory', 'https://reg.gst.gov.in/registration/auth/newappl/authrepresentative', 'Authorized Representative');
                 }
 
                 continue;
@@ -2574,57 +3311,67 @@ async function run() {
 
             // Step 4: Authorized Representative tab
             if (screenInfo.stepKey === 'authorized representative') {
-                sendUpdate('[પગલું ૪: Authorized Representative] પ્રતિનિધિ ઓપ્શન (No) કન્ફર્મ કરી રહ્યા છીએ...');
+                sendUpdate('Authorized Representative - Ensuring switch is OFF (No)...');
                 await page.evaluate(() => {
+                    // Turn OFF any active switch for Authorized Representative
+                    const switches = Array.from(document.querySelectorAll('.switch, label.switch, switch, ui-switch, input[type="checkbox"]'));
+                    for (const sw of switches) {
+                        const txt = (sw.closest('.form-group, .row, div')?.innerText || '').toLowerCase();
+                        if (txt.includes('authorized representative') || txt.includes('representative')) {
+                            const cb = sw.querySelector('input[type="checkbox"]') || (sw.tagName === 'INPUT' ? sw : null);
+                            if (cb && cb.checked) {
+                                cb.click();
+                                cb.checked = false;
+                                cb.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                            if (sw.classList.contains('active') || sw.classList.contains('checked') || sw.getAttribute('aria-checked') === 'true') {
+                                sw.click();
+                            }
+                        }
+                    }
                     const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
                     const noR = radios.find(r => {
                         const t = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || r.value || '').toLowerCase();
                         return t.includes('no') || r.value === 'N' || r.value === 'No';
                     });
-                    if (noR) {
-                        noR.removeAttribute('disabled');
+                    if (noR && !noR.checked) {
                         noR.click();
                         noR.checked = true;
                         noR.dispatchEvent(new Event('change', { bubbles: true }));
-                        noR.dispatchEvent(new Event('input', { bubbles: true }));
                     }
                 });
 
-                try {
-                    const noRadioLoc = page.locator('input[type="radio"][value="N"], input[type="radio"][value="No"], label:has-text("No")').first();
-                    if (await noRadioLoc.count() > 0) {
-                        await noRadioLoc.click({ force: true }).catch(() => {});
-                    }
-                } catch (e) {}
-
                 await page.waitForTimeout(600);
-                await saveAndAdvanceTab('Authorized Representative');
+                await dismissAndConfirmModals('Authorized Representative');
+                await saveAndAdvanceTab('Authorized Representative', 'https://reg.gst.gov.in/registration/auth/newappl/business/place', 'Principal Place of Business');
                 continue;
             }
 
             // Step 5: Principal Place of Business tab
             if (screenInfo.stepKey === 'principal place') {
-                sendUpdate('[પગલું ૫: Principal Place of Business] મુખ્ય વેપાર સ્થળ વિગતો કન્ફર્મ કરી રહ્યા છીએ...');
+                sendUpdate('Principal Place of Business...');
 
-                const ppobEm = (data.email || 'parthpbhagat@gmail.com').trim().toLowerCase();
-                const ppobMob = (data.mobile || '9011494385').trim();
-                const ppobPin = (data.ppob_pincode || (data.p1 && data.p1.res_pincode) || '444906').trim();
-                const ppobCity = (data.ppob_city || (data.p1 && data.p1.res_city) || 'warud').trim();
-                const ppobDist = (data.ppob_district || data.district || data.businessDistrict || 'Amravati').trim();
-                const ppobStreet = (data.ppob_street || (data.p1 && data.p1.res_road) || 'ntr road').trim();
-                const ppobBno = (data.ppob_flatNo || (data.p1 && data.p1.res_buildingNo) || '29').trim();
-                const ppobBnm = (data.ppob_building || (data.p1 && data.p1.res_buildingName) || data.legalName || 'Parth P Bhagat').trim();
+                const ppobEm = (data.email || '').trim().toLowerCase();
+                const ppobMob = (data.mobile || '').trim();
+                const ppobPin = (data.ppob_pincode || (data.p1 && data.p1.res_pincode) || '').trim();
+                const ppobCity = (data.ppob_city || (data.p1 && data.p1.res_city) || '').trim();
+                const ppobLocality = (data.ppob_locality || data.ppob_subLocality || data.locality || '').trim();
+                const ppobDist = (data.ppob_district || data.district || data.businessDistrict || '').trim();
+                const ppobStreet = (data.ppob_street || (data.p1 && data.p1.res_road) || '').trim();
+                const ppobBno = (data.ppob_flatNo || (data.p1 && data.p1.res_buildingNo) || '').trim();
+                const ppobBnm = (data.ppob_building || (data.p1 && data.p1.res_buildingName) || data.legalName || '').trim();
                 const ppobFloor = (data.ppob_floor || '').trim();
                 const ppobLandmark = (data.ppob_landmark || '').trim();
-                const ppobStateJurisdiction = (data.ppob_stateJurisdiction || data.state_jurisdiction || 'AMRAVATI_701').trim();
-                const ppobComm = (data.ppob_commissionerate || data.central_commissionerate || 'VH').trim();
-                const ppobDiv = (data.ppob_division || data.central_division || 'VH03').trim();
-                const ppobRange = (data.ppob_range || data.central_range || 'VH0302').trim();
+                const ppobStateJurisdictionCode = (data.ppob_stateJurisdictionCode || (data.sj && data.sj.stjdno) || '').trim();
+                const ppobStateJurisdiction = (data.ppob_stateJurisdiction || data.state_jurisdiction || '').trim();
+                const ppobComm = (data.ppob_commissionerate || data.central_commissionerate || '').trim();
+                const ppobDiv = (data.ppob_division || data.central_division || '').trim();
+                const ppobRange = (data.ppob_range || data.central_range || '').trim();
                 const ppobPossession = (data.ppob_natureOfPossession || 'Consent').trim();
                 const ppobDocType = (data.ppob_doc || 'Electricity Bill').trim();
 
                 // 1. Fill all Address fields via DOM & Angular
-                await page.evaluate(({ pin, city, dist, street, bno, bnm, flno, landmark, em, mob }) => {
+                await page.evaluate(({ pin, city, dist, street, bno, bnm, flno, landmark, em, mob, locality }) => {
                     const findVisible = (selectors) => {
                         const list = Array.isArray(selectors) ? selectors : selectors.split(',').map(s => s.trim());
                         for (const sel of list) {
@@ -2654,7 +3401,7 @@ async function run() {
                                         ngModel.$setValidity('required', true);
                                         ngModel.$commitViewValue();
                                     }
-                                } catch (e) {}
+                                } catch (e) { }
                             }
                         }
                     };
@@ -2662,6 +3409,7 @@ async function run() {
                     setField(['input[placeholder*="Enter PIN Code" i]', 'input[placeholder*="PIN Code" i]', '#pncd'], pin);
                     setField(['input[placeholder*="Enter District Name" i]', 'input[placeholder*="District" i]', '#dst'], dist);
                     setField(['input[placeholder*="Enter City" i]', 'input[placeholder*="City" i]', '#loc'], city);
+                    setField(['input[placeholder*="Locality" i]', 'input[placeholder*="Sub-Locality" i]', 'input[name*="subloc" i]', '#subloc'], locality);
                     setField(['input[placeholder*="Enter Road" i]', 'input[placeholder*="Road" i]', 'input[placeholder*="Street" i]', 'input[placeholder*="Lane" i]', '#st'], street);
                     setField(['input[placeholder*="Enter Building No" i]', 'input[placeholder*="Building No" i]', 'input[placeholder*="Flat No" i]', 'input[placeholder*="Door No" i]', '#bno'], bno);
                     setField(['input[placeholder*="Enter Name of Premises" i]', 'input[placeholder*="Premises" i]', 'input[placeholder*="Building" i]', '#bnm'], bnm);
@@ -2680,20 +3428,20 @@ async function run() {
                                 for (const obj of objs) {
                                     if (obj.add || typeof obj === 'object') {
                                         const add = obj.add || obj;
-                                        add.bno = bno;
-                                        add.st = street;
-                                        add.bnm = bnm;
-                                        add.pncd = pin;
-                                        add.loc = city;
-                                        add.dst = dist;
-                                        add.stcd = '27';
+                                        if (bno) add.bno = bno;
+                                        if (street) add.st = street;
+                                        if (bnm) add.bnm = bnm;
+                                        if (pin) add.pncd = pin;
+                                        if (city) add.loc = city;
+                                        if (dist) add.dst = dist;
+                                        if (locality) add.subloc = locality;
                                     }
                                 }
                                 if (!sc.$$phase) sc.$apply();
                             }
-                        } catch (e) {}
+                        } catch (e) { }
                     }
-                }, { pin: ppobPin, city: ppobCity, dist: ppobDist, street: ppobStreet, bno: ppobBno, bnm: ppobBnm, flno: ppobFloor, landmark: ppobLandmark, em: ppobEm, mob: ppobMob });
+                }, { pin: ppobPin, city: ppobCity, dist: ppobDist, street: ppobStreet, bno: ppobBno, bnm: ppobBnm, flno: ppobFloor, landmark: ppobLandmark, em: ppobEm, mob: ppobMob, locality: ppobLocality });
 
                 await page.waitForTimeout(600);
 
@@ -2701,9 +3449,9 @@ async function run() {
                 try {
                     const pinLoc = page.locator('input[placeholder*="Enter PIN Code" i]:visible, #pncd:visible').last();
                     if (await pinLoc.count() > 0) {
-                        await pinLoc.click({ timeout: 2000 }).catch(() => {});
-                        await pinLoc.fill('', { timeout: 2000 }).catch(() => {});
-                        await pinLoc.type(ppobPin, { delay: 50, timeout: 3000 }).catch(() => {});
+                        await pinLoc.click({ timeout: 2000 }).catch(() => { });
+                        await pinLoc.fill('', { timeout: 2000 }).catch(() => { });
+                        await pinLoc.type(ppobPin, { delay: 50, timeout: 3000 }).catch(() => { });
                         await page.waitForTimeout(600);
 
                         await page.evaluate(({ pin }) => {
@@ -2717,15 +3465,15 @@ async function run() {
                         }, { pin: ppobPin });
                         sendUpdate(`Selected PIN suggestion: ${ppobPin}`);
                     }
-                } catch (e) {}
+                } catch (e) { }
 
                 // 3. City: Playwright fill + suggestion click
                 try {
                     const cityLoc = page.locator('input[placeholder*="Enter City" i]:visible, input[placeholder*="City" i]:visible, #loc:visible').last();
                     if (await cityLoc.count() > 0) {
-                        await cityLoc.click({ timeout: 2000 }).catch(() => {});
-                        await cityLoc.fill('', { timeout: 2000 }).catch(() => {});
-                        await cityLoc.type(ppobCity, { delay: 50, timeout: 3000 }).catch(() => {});
+                        await cityLoc.click({ timeout: 2000 }).catch(() => { });
+                        await cityLoc.fill('', { timeout: 2000 }).catch(() => { });
+                        await cityLoc.type(ppobCity, { delay: 50, timeout: 3000 }).catch(() => { });
                         await page.waitForTimeout(600);
 
                         await page.evaluate(({ city }) => {
@@ -2739,34 +3487,44 @@ async function run() {
                         }, { city: ppobCity });
                         sendUpdate(`Selected City suggestion: ${ppobCity}`);
                     }
-                } catch (e) {}
+                } catch (e) { }
 
                 // 4. Building No, Road, Premises
                 try {
                     const bnoLoc = page.locator('input[placeholder*="Building No" i]:visible, input[placeholder*="Flat No" i]:visible, input[placeholder*="Door No" i]:visible, #bno:visible').last();
                     if (await bnoLoc.count() > 0) {
-                        await bnoLoc.click({ timeout: 2000 }).catch(() => {});
-                        await bnoLoc.fill(ppobBno, { timeout: 2000 }).catch(() => {});
-                        await bnoLoc.dispatchEvent('change').catch(() => {});
+                        await bnoLoc.click({ timeout: 2000 }).catch(() => { });
+                        await bnoLoc.fill(ppobBno, { timeout: 2000 }).catch(() => { });
+                        await bnoLoc.dispatchEvent('change').catch(() => { });
                     }
                     const stLoc = page.locator('input[placeholder*="Enter Road" i]:visible, input[placeholder*="Road" i]:visible, input[placeholder*="Street" i]:visible, input[placeholder*="Lane" i]:visible, #st:visible').last();
                     if (await stLoc.count() > 0) {
-                        await stLoc.click({ timeout: 2000 }).catch(() => {});
-                        await stLoc.fill(ppobStreet, { timeout: 2000 }).catch(() => {});
-                        await stLoc.dispatchEvent('change').catch(() => {});
+                        await stLoc.click({ timeout: 2000 }).catch(() => { });
+                        await stLoc.fill(ppobStreet, { timeout: 2000 }).catch(() => { });
+                        await stLoc.dispatchEvent('change').catch(() => { });
                     }
                     const bnmLoc = page.locator('input[placeholder*="Enter Name of Premises" i]:visible, input[placeholder*="Premises" i]:visible, #bnm:visible').last();
                     if (await bnmLoc.count() > 0) {
-                        await bnmLoc.click({ timeout: 2000 }).catch(() => {});
-                        await bnmLoc.fill(ppobBnm, { timeout: 2000 }).catch(() => {});
+                        await bnmLoc.click({ timeout: 2000 }).catch(() => { });
+                        await bnmLoc.fill(ppobBnm, { timeout: 2000 }).catch(() => { });
                     }
-                } catch (e) {}
+                    const sublocLoc = page.locator('input[placeholder*="Locality" i]:visible, input[placeholder*="Sub-Locality" i]:visible, #subloc:visible').last();
+                    if (await sublocLoc.count() > 0 && ppobLocality) {
+                        const cur = await sublocLoc.inputValue().catch(() => '');
+                        if (!cur) {
+                            await sublocLoc.click({ timeout: 2000 }).catch(() => { });
+                            await sublocLoc.fill(ppobLocality, { timeout: 2000 }).catch(() => { });
+                            await sublocLoc.dispatchEvent('input').catch(() => { });
+                            await sublocLoc.dispatchEvent('change').catch(() => { });
+                        }
+                    }
+                } catch (e) { }
 
                 // Wait for AJAX jurisdiction calls to finish
                 await page.waitForTimeout(1500);
 
                 // 5. Select State Jurisdiction (Sector / Circle / Ward / Charge / Unit)
-                await page.evaluate(({ sjCode }) => {
+                await page.evaluate(({ sjCode, sjText }) => {
                     const visibleSelects = Array.from(document.querySelectorAll('select')).filter(s => s.offsetParent !== null && !s.disabled);
                     const sjSelect = visibleSelects.find(s => {
                         const txt = (s.closest('.form-group, [class*="col-"], div')?.innerText || '').toLowerCase();
@@ -2774,21 +3532,36 @@ async function run() {
                         return txt.includes('sector') || txt.includes('circle') || txt.includes('ward') || txt.includes('charge') || txt.includes('unit') || ng.includes('stjd');
                     });
                     if (sjSelect && sjSelect.options.length > 1) {
-                        let matchedIdx = Array.from(sjSelect.options).findIndex(o => 
-                            (o.value || '').toUpperCase().includes(sjCode.toUpperCase()) || 
-                            (o.text || '').toUpperCase().includes('AMRAVATI') || 
-                            (o.text || '').toUpperCase().includes('701')
-                        );
-                        sjSelect.selectedIndex = matchedIdx > 0 ? matchedIdx : 1;
+                        let matchedIdx = -1;
+                        if (sjCode) {
+                            matchedIdx = Array.from(sjSelect.options).findIndex(o => {
+                                const val = (o.value || '').toUpperCase();
+                                const txt = (o.text || '').toUpperCase();
+                                return val === sjCode.toUpperCase() || val.includes(sjCode.toUpperCase()) || txt.includes(sjCode.toUpperCase());
+                            });
+                        }
+                        if (matchedIdx <= 0 && sjText) {
+                            matchedIdx = Array.from(sjSelect.options).findIndex(o => {
+                                const val = (o.value || '').toUpperCase();
+                                const txt = (o.text || '').toUpperCase();
+                                return txt.includes(sjText.toUpperCase()) || val.includes(sjText.toUpperCase());
+                            });
+                        }
+                        if (matchedIdx <= 0 && sjSelect.selectedIndex > 0) {
+                            matchedIdx = sjSelect.selectedIndex;
+                        } else if (matchedIdx <= 0) {
+                            matchedIdx = 1;
+                        }
+                        sjSelect.selectedIndex = matchedIdx;
                         sjSelect.dispatchEvent(new Event('change', { bubbles: true }));
                         if (window.angular) {
                             try {
                                 const ngModel = window.angular.element(sjSelect).controller('ngModel');
                                 if (ngModel) { ngModel.$setViewValue(sjSelect.value); ngModel.$commitViewValue(); }
-                            } catch (e) {}
+                            } catch (e) { }
                         }
                     }
-                }, { sjCode: ppobStateJurisdiction });
+                }, { sjCode: ppobStateJurisdictionCode, sjText: ppobStateJurisdiction });
 
                 await page.waitForTimeout(800);
 
@@ -2802,14 +3575,22 @@ async function run() {
                         return txt.includes('commissionerate') || ng.includes('comrt');
                     });
                     if (commSelect && commSelect.options.length > 1) {
-                        let cIdx = Array.from(commSelect.options).findIndex(o => o.value === comm || o.text.includes(comm) || o.text.includes('NAGPUR') || o.text.includes('AMRAVATI'));
-                        commSelect.selectedIndex = cIdx > 0 ? cIdx : 1;
+                        let cIdx = -1;
+                        if (comm) {
+                            cIdx = Array.from(commSelect.options).findIndex(o => o.value === comm || (o.text || '').toLowerCase().includes(comm.toLowerCase()));
+                        }
+                        if (cIdx <= 0 && commSelect.selectedIndex > 0) {
+                            cIdx = commSelect.selectedIndex;
+                        } else if (cIdx <= 0) {
+                            cIdx = 1;
+                        }
+                        commSelect.selectedIndex = cIdx;
                         commSelect.dispatchEvent(new Event('change', { bubbles: true }));
                         if (window.angular) {
                             try {
                                 const ngModel = window.angular.element(commSelect).controller('ngModel');
                                 if (ngModel) { ngModel.$setViewValue(commSelect.value); ngModel.$commitViewValue(); }
-                            } catch (e) {}
+                            } catch (e) { }
                         }
                     }
                 }, { comm: ppobComm });
@@ -2825,14 +3606,22 @@ async function run() {
                         return txt.includes('division') || ng.includes('divsn');
                     });
                     if (divSelect && divSelect.options.length > 1) {
-                        let dIdx = Array.from(divSelect.options).findIndex(o => o.value === div || o.text.includes(div) || o.text.includes('AMRAVATI') || o.text.includes('WARUD'));
-                        divSelect.selectedIndex = dIdx > 0 ? dIdx : 1;
+                        let dIdx = -1;
+                        if (div) {
+                            dIdx = Array.from(divSelect.options).findIndex(o => o.value === div || (o.text || '').toLowerCase().includes(div.toLowerCase()));
+                        }
+                        if (dIdx <= 0 && divSelect.selectedIndex > 0) {
+                            dIdx = divSelect.selectedIndex;
+                        } else if (dIdx <= 0) {
+                            dIdx = 1;
+                        }
+                        divSelect.selectedIndex = dIdx;
                         divSelect.dispatchEvent(new Event('change', { bubbles: true }));
                         if (window.angular) {
                             try {
                                 const ngModel = window.angular.element(divSelect).controller('ngModel');
                                 if (ngModel) { ngModel.$setViewValue(divSelect.value); ngModel.$commitViewValue(); }
-                            } catch (e) {}
+                            } catch (e) { }
                         }
                     }
                 }, { div: ppobDiv });
@@ -2848,14 +3637,22 @@ async function run() {
                         return txt.includes('range') || ng.includes('range');
                     });
                     if (rangeSelect && rangeSelect.options.length > 1) {
-                        let rIdx = Array.from(rangeSelect.options).findIndex(o => o.value === range || o.text.includes(range) || o.text.includes('WARUD') || o.text.includes('AMRAVATI'));
-                        rangeSelect.selectedIndex = rIdx > 0 ? rIdx : 1;
+                        let rIdx = -1;
+                        if (range) {
+                            rIdx = Array.from(rangeSelect.options).findIndex(o => o.value === range || (o.text || '').toLowerCase().includes(range.toLowerCase()));
+                        }
+                        if (rIdx <= 0 && rangeSelect.selectedIndex > 0) {
+                            rIdx = rangeSelect.selectedIndex;
+                        } else if (rIdx <= 0) {
+                            rIdx = 1;
+                        }
+                        rangeSelect.selectedIndex = rIdx;
                         rangeSelect.dispatchEvent(new Event('change', { bubbles: true }));
                         if (window.angular) {
                             try {
                                 const ngModel = window.angular.element(rangeSelect).controller('ngModel');
                                 if (ngModel) { ngModel.$setViewValue(rangeSelect.value); ngModel.$commitViewValue(); }
-                            } catch (e) {}
+                            } catch (e) { }
                         }
                     }
                 }, { range: ppobRange });
@@ -2925,7 +3722,7 @@ async function run() {
                             fs.writeFileSync(tempDocPath, cleanB64, 'base64');
                             const ppobFileInput = page.locator('#pp_doc, input[type="file"]').last();
                             if (await ppobFileInput.count() > 0) {
-                                await ppobFileInput.setInputFiles(tempDocPath).catch(() => {});
+                                await ppobFileInput.setInputFiles(tempDocPath).catch(() => { });
                                 sendUpdate('Uploaded Proof of Principal Place of Business document.');
                             }
                         }
@@ -2947,12 +3744,12 @@ async function run() {
                     ];
                     for (const loc of activityLocators) {
                         if (await loc.count() > 0) {
-                            await loc.first().scrollIntoViewIfNeeded().catch(() => {});
-                            await loc.first().click({ force: true, timeout: 2000 }).catch(() => {});
+                            await loc.first().scrollIntoViewIfNeeded().catch(() => { });
+                            await loc.first().click({ force: true, timeout: 2000 }).catch(() => { });
                             break;
                         }
                     }
-                } catch (e) {}
+                } catch (e) { }
 
                 await page.evaluate(() => {
                     // Check Retail Business or Supplier of Services
@@ -3006,7 +3803,7 @@ async function run() {
                                 }
                                 if (!sc.$$phase) sc.$apply();
                             }
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                 });
 
@@ -3016,14 +3813,14 @@ async function run() {
                 try {
                     const noRadioLoc = page.locator('label:has-text("Have Additional Place of Business")').locator('..').locator('label:has-text("No"), input[value="N"]').first();
                     if (await noRadioLoc.count() > 0) {
-                        await noRadioLoc.click({ force: true, timeout: 2000 }).catch(() => {});
+                        await noRadioLoc.click({ force: true, timeout: 2000 }).catch(() => { });
                     } else {
                         const genericNo = page.locator('input[type="radio"][value="N"]:visible, label:has-text("No"):visible').last();
                         if (await genericNo.count() > 0) {
-                            await genericNo.click({ force: true, timeout: 2000 }).catch(() => {});
+                            await genericNo.click({ force: true, timeout: 2000 }).catch(() => { });
                         }
                     }
-                } catch (e) {}
+                } catch (e) { }
 
                 await page.evaluate(() => {
                     const radios = Array.from(document.querySelectorAll('input[type="radio"]')).filter(r => r.offsetParent !== null);
@@ -3040,13 +3837,13 @@ async function run() {
 
                 await page.waitForTimeout(800);
                 await dismissAndConfirmModals('Principal Place of Business');
-                await saveAndAdvanceTab('Principal Place of Business');
+                await saveAndAdvanceTab('Principal Place of Business', 'https://reg.gst.gov.in/registration/auth/newappl/business/addlplace', 'Additional Places of Business');
                 continue;
             }
 
             // Step 6: Additional Places of Business tab
             if (screenInfo.stepKey === 'additional places') {
-                sendUpdate('[પગલું ૬: Additional Places] વધારાના વેપાર સ્થળ (No) કન્ફર્મ કરી રહ્યા છીએ...');
+                sendUpdate('Additional Places...');
                 await page.evaluate(() => {
                     const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
                     const noR = radios.find(r => {
@@ -3060,13 +3857,13 @@ async function run() {
                     }
                 });
                 await page.waitForTimeout(600);
-                await saveAndAdvanceTab('Additional Places of Business');
+                await saveAndAdvanceTab('Additional Places of Business', 'https://reg.gst.gov.in/registration/auth/newappl/goodsservices', 'Goods and Services');
                 continue;
             }
 
             // Step 7: Goods and Services tab
             if (screenInfo.stepKey === 'goods and services') {
-                sendUpdate('[પગલું ૭: Goods and Services] HSN કોડ કન્ફર્મ કરી રહ્યા છીએ...');
+                sendUpdate('Goods and Services...');
 
                 // 1. Check if goods or services are already populated in the table
                 let hasItems = await page.evaluate(() => {
@@ -3078,141 +3875,396 @@ async function run() {
                 });
 
                 if (!hasItems) {
-                    sendUpdate('Searching and adding HSN Code 1001 (WHEAT AND MESLIN)...');
-                    const hsnTargetCode = (data.hsn || data.hsnCode || '1001').trim();
+                    const userHsnList = (Array.isArray(data.goods_hsn) ? data.goods_hsn : (data.hsn || data.hsnCode ? [data.hsn || data.hsnCode] : []))
+                        .map(x => typeof x === 'object' ? (x.hsn || x.hsncd || x.code || '') : String(x).trim())
+                        .filter(x => x && x.length >= 2);
+                    const userSacList = (Array.isArray(data.goods_sac) ? data.goods_sac : (data.sac || data.sacCode ? [data.sac || data.sacCode] : []))
+                        .map(x => typeof x === 'object' ? (x.sac || x.saccd || x.code || '') : String(x).trim())
+                        .filter(x => x && x.length >= 2);
 
-                    // Locate the HSN Search input field
-                    const hsnInput = page.locator('input[placeholder*="Search HSN" i], input[placeholder*="Chapter" i], input[placeholder*="Code" i], #gs_hsn_value, input[ng-model*="hsn" i]').first();
-                    if (await hsnInput.count() > 0) {
-                        await hsnInput.scrollIntoViewIfNeeded().catch(() => {});
-                        await hsnInput.click({ force: true, timeout: 2000 }).catch(() => {});
-                        await hsnInput.fill('').catch(() => {});
-                        await page.waitForTimeout(300);
+                    if (userHsnList.length > 0) {
+                        for (const hsnCode of userHsnList) {
+                            sendUpdate(`Adding user HSN Code: ${hsnCode}...`);
+                            const hsnInput = page.locator('input[placeholder*="Search HSN" i], input[placeholder*="Chapter" i], input[placeholder*="Code" i], #gs_hsn_value, input[ng-model*="hsn" i]').first();
+                            if (await hsnInput.count() > 0) {
+                                await hsnInput.scrollIntoViewIfNeeded().catch(() => { });
+                                await hsnInput.click({ force: true, timeout: 2000 }).catch(() => { });
+                                await hsnInput.fill('').catch(() => { });
+                                await page.waitForTimeout(300);
+                                await hsnInput.pressSequentially(hsnCode, { delay: 120 });
+                                await page.waitForTimeout(1500);
 
-                        // Type character-by-character to trigger UI-Bootstrap typeahead event
-                        await hsnInput.pressSequentially(hsnTargetCode, { delay: 150 });
-                        await page.waitForTimeout(1500);
+                                await hsnInput.press('ArrowDown').catch(() => { });
+                                await page.waitForTimeout(300);
+                                await hsnInput.press('Enter').catch(() => { });
+                                await page.waitForTimeout(600);
 
-                        // Method A: Press ArrowDown and Enter to select first typeahead suggestion
-                        await hsnInput.press('ArrowDown').catch(() => {});
-                        await page.waitForTimeout(400);
-                        await hsnInput.press('Enter').catch(() => {});
-                        await page.waitForTimeout(800);
-
-                        // Method B: Click visible suggestion dropdown item if present
-                        try {
-                            const sugLoc = page.locator('.typeahead-popup li a, .dropdown-menu li:not(.disabled) a, ul[role="listbox"] li, .uib-typeahead-match a, li[id*="typeahead"] a').first();
-                            if (await sugLoc.count() > 0 && await sugLoc.isVisible()) {
-                                await sugLoc.click({ force: true, timeout: 2000 }).catch(() => {});
-                                sendUpdate('✅ Selected HSN suggestion from dropdown.');
-                                await page.waitForTimeout(1000);
+                                try {
+                                    const sugLoc = page.locator('.typeahead-popup li a, .dropdown-menu li:not(.disabled) a, ul[role="listbox"] li, .uib-typeahead-match a, li[id*="typeahead"] a').first();
+                                    if (await sugLoc.count() > 0 && await sugLoc.isVisible()) {
+                                        await sugLoc.click({ force: true, timeout: 2000 }).catch(() => { });
+                                        sendUpdate(`Selected HSN suggestion for ${hsnCode}.`);
+                                        await page.waitForTimeout(800);
+                                    }
+                                } catch (e) { }
                             }
-                        } catch (e) {}
+                        }
                     }
 
-                    // Check again if item was added
-                    hasItems = await page.evaluate(() => {
-                        const rows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => {
-                            const t = (r.innerText || '').trim().toLowerCase();
-                            return t.length > 5 && !t.includes('no record') && !t.includes('no data');
-                        });
-                        return rows.length > 0;
-                    });
-
-                    // Fallback to Services tab if Goods did not register
-                    if (!hasItems) {
-                        sendUpdate('Attempting Services tab fallback (SAC 998314)...');
+                    if (userSacList.length > 0) {
                         const servicesTab = page.locator('a:has-text("Services"), li:has-text("Services") a, button:has-text("Services")').first();
                         if (await servicesTab.count() > 0) {
-                            await servicesTab.click({ force: true }).catch(() => {});
+                            await servicesTab.click({ force: true }).catch(() => { });
                             await page.waitForTimeout(1000);
 
-                            const sacInput = page.locator('input[placeholder*="SAC" i], input[placeholder*="Search" i], input[placeholder*="Service" i], #gs_sac_value, input[ng-model*="sac" i]').first();
-                            if (await sacInput.count() > 0) {
-                                await sacInput.click({ force: true }).catch(() => {});
-                                await sacInput.fill('').catch(() => {});
-                                await sacInput.pressSequentially('998314', { delay: 150 });
-                                await page.waitForTimeout(1500);
-                                await sacInput.press('ArrowDown').catch(() => {});
-                                await sacInput.press('Enter').catch(() => {});
-                                await page.waitForTimeout(800);
-                                const sacSug = page.locator('.typeahead-popup li a, .dropdown-menu li a, .uib-typeahead-match a').first();
-                                if (await sacSug.count() > 0 && await sacSug.isVisible()) {
-                                    await sacSug.click({ force: true }).catch(() => {});
+                            for (const sacCode of userSacList) {
+                                sendUpdate(`Adding user SAC Code: ${sacCode}...`);
+                                const sacInput = page.locator('input[placeholder*="SAC" i], input[placeholder*="Search" i], input[placeholder*="Service" i], #gs_sac_value, input[ng-model*="sac" i]').first();
+                                if (await sacInput.count() > 0) {
+                                    await sacInput.click({ force: true }).catch(() => { });
+                                    await sacInput.fill('').catch(() => { });
+                                    await sacInput.pressSequentially(sacCode, { delay: 120 });
+                                    await page.waitForTimeout(1500);
+                                    await sacInput.press('ArrowDown').catch(() => { });
+                                    await sacInput.press('Enter').catch(() => { });
+                                    await page.waitForTimeout(600);
+                                    const sacSug = page.locator('.typeahead-popup li a, .dropdown-menu li a, .uib-typeahead-match a').first();
+                                    if (await sacSug.count() > 0 && await sacSug.isVisible()) {
+                                        await sacSug.click({ force: true }).catch(() => { });
+                                        sendUpdate(`Selected SAC suggestion for ${sacCode}.`);
+                                    }
                                 }
                             }
                         }
                     }
-
-                    // Direct AngularJS Scope injection fallback
-                    await page.evaluate(() => {
-                        if (window.angular) {
-                            try {
-                                const scopes = Array.from(document.querySelectorAll('.tab-pane.active, [ng-controller], form, body')).map(e => window.angular.element(e).scope()).filter(Boolean);
-                                for (const sc of scopes) {
-                                    const gItem = { eid: 1, hsncd: '1001', gdes: 'WHEAT AND MESLIN', hsnDesc: 'WHEAT AND MESLIN', desc: 'WHEAT AND MESLIN', cd: '1001' };
-                                    const sItem = { eid: 1, saccd: '998314', sdes: 'IT consulting and support services', sacDesc: 'IT consulting and support services', cd: '998314' };
-                                    if (sc.bzgddtls && Array.isArray(sc.bzgddtls) && sc.bzgddtls.length === 0) sc.bzgddtls.push(gItem);
-                                    if (sc.bzsdtls && Array.isArray(sc.bzsdtls) && sc.bzsdtls.length === 0) sc.bzsdtls.push(sItem);
-                                    if (sc.gdssvcdtls) {
-                                        if (sc.gdssvcdtls.bzgddtls && sc.gdssvcdtls.bzgddtls.length === 0) sc.gdssvcdtls.bzgddtls.push(gItem);
-                                        if (sc.gdssvcdtls.bzsdtls && sc.gdssvcdtls.bzsdtls.length === 0) sc.gdssvcdtls.bzsdtls.push(sItem);
-                                    }
-                                    if (sc.gdsList && Array.isArray(sc.gdsList) && sc.gdsList.length === 0) sc.gdsList.push(gItem);
-                                    if (sc.commodityList && Array.isArray(sc.commodityList) && sc.commodityList.length === 0) sc.commodityList.push(gItem);
-                                    if (typeof sc.addCommodity === 'function') { try { sc.addCommodity(gItem); } catch (e) {} }
-                                    if (typeof sc.addHsn === 'function') { try { sc.addHsn(gItem); } catch (e) {} }
-                                    if (!sc.$$phase) sc.$apply();
-                                }
-                            } catch (e) {}
-                        }
-                    });
                 } else {
-                    sendUpdate('✅ HSN Goods/Services already present in table.');
+                    sendUpdate('Goods/Services already present on screen.');
                 }
 
                 await page.waitForTimeout(800);
                 await dismissAndConfirmModals('Goods and Services');
-                await saveAndAdvanceTab('Goods and Services');
+                await saveAndAdvanceTab('Goods and Services', 'https://reg.gst.gov.in/registration/auth/newappl/statespecific', 'State Specific Information');
                 continue;
             }
 
             // Step 8: State Specific Information tab
             if (screenInfo.stepKey === 'state specific') {
-                sendUpdate('[પગલું ૮: State Specific Information] રાજ્ય સંબંધિત વિગતો કન્ફર્મ કરી રહ્યા છીએ...');
+                sendUpdate('[AUTOMATION] Step 8: State Specific Information - Selecting Electricity Board & Consumer Number...');
+
+                const { resolveElectricityBoard } = require('../backend/utils/gst_payload_builder');
+                const userState = (data.state || data.ppob_state || '').trim();
+                const rawConsumerNo = (data.stateSpecific_electricityConsumerNo || (data.stsidtls && data.stsidtls.ebdtls && data.stsidtls.ebdtls.canum) || data.consumerNo || data.caNumber || data.consumer_no || data.ca_number || '').trim();
+                const rawBoardName = (data.stateSpecific_electricityBoard || (data.stsidtls && data.stsidtls.ebdtls && data.stsidtls.ebdtls.ebdes) || '').trim();
+                const rawBoardCode = (data.stateSpecific_electricityBoardCode || (data.stsidtls && data.stsidtls.ebdtls && data.stsidtls.ebdtls.ebcd) || '').trim();
+                const resolvedEb = resolveElectricityBoard(rawBoardName, rawBoardCode, userState);
+                const targetBoard = resolvedEb ? resolvedEb.desc : rawBoardName;
+                const targetBoardCode = resolvedEb ? resolvedEb.code : rawBoardCode;
+                const targetPtEc = (data.stateSpecific_ptEcNo || '').trim();
+                const targetPtRc = (data.stateSpecific_ptRcNo || '').trim();
+                const targetExciseNo = (data.stateSpecific_exciseLicenseNo || '').trim();
+                const targetExciseHolder = (data.stateSpecific_exciseLicenseHolder || '').trim();
+
+                // Wait for EB dropdown to load
+                await page.waitForTimeout(1500);
+
+                // Select Electricity Board dropdown
+                sendUpdate(`Selecting Electricity Board: "${targetBoard}" (code: ${targetBoardCode})...`);
+                try {
+                    const ebSelectLocator = await page.evaluate(({ targetBd, targetCd }) => {
+                        const clean = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+                        const allSelects = Array.from(document.querySelectorAll('select')).filter(s =>
+                            s.offsetParent !== null && !s.disabled && s.options.length > 1
+                        );
+
+                        let ebSel = allSelects.find(s => {
+                            const ngm = (s.getAttribute('ng-model') || s.getAttribute('data-ng-model') || '').toLowerCase();
+                            return ngm.includes('ebcd') || ngm.includes('ebdes') || ngm.includes('stsidtls');
+                        });
+
+                        if (!ebSel) {
+                            ebSel = allSelects.find(s => {
+                                const optTexts = Array.from(s.options).map(o => clean(o.text));
+                                return optTexts.some(t => t.includes('electricity') || t.includes('electric') || t.includes('vij') || t.includes('torrent') || t.includes('bescom') || t.includes('msedcl') || t.includes('tata power'));
+                            });
+                        }
+
+                        if (!ebSel) {
+                            const allLabels = Array.from(document.querySelectorAll('label'));
+                            const ebLabel = allLabels.find(l => /electricity board/i.test(l.innerText || ''));
+                            if (ebLabel) {
+                                const container = ebLabel.closest('.form-group, .row, div, td') || ebLabel.parentElement;
+                                if (container) ebSel = container.querySelector('select');
+                            }
+                        }
+
+                        if (!ebSel) return null;
+
+                        const optTexts = Array.from(ebSel.options).map(o => o.text);
+                        const optValues = Array.from(ebSel.options).map(o => o.value);
+
+                        let pickIdx = -1;
+                        if (targetCd) {
+                            pickIdx = optValues.findIndex((v, i) => i > 0 && v.toUpperCase() === targetCd.toUpperCase());
+                        }
+
+                        if (pickIdx <= 0 && targetBd) {
+                            const cleanTarget = clean(targetBd);
+                            pickIdx = optTexts.findIndex((t, i) => {
+                                if (i === 0) return false;
+                                const c = clean(t);
+                                return c.includes(cleanTarget) || cleanTarget.includes(c);
+                            });
+
+                            if (pickIdx <= 0) {
+                                const words = cleanTarget.split(' ').filter(w => w.length > 2);
+                                pickIdx = optTexts.findIndex((t, i) => {
+                                    if (i === 0) return false;
+                                    const c = clean(t);
+                                    return words.some(w => c.includes(w));
+                                });
+                            }
+                        }
+
+                        if (pickIdx <= 0 && optTexts.length > 1) {
+                            pickIdx = 1;
+                        }
+
+                        if (pickIdx > 0) {
+                            return { found: true, pickIdx, optText: optTexts[pickIdx], optValue: optValues[pickIdx] };
+                        }
+                        return { found: false, optTexts };
+                    }, { targetBd: targetBoard, targetCd: targetBoardCode });
+
+                    if (ebSelectLocator && ebSelectLocator.found) {
+                        const { pickIdx, optText, optValue } = ebSelectLocator;
+                        const ebSel = page.locator(
+                            'select[ng-model*="ebcd" i], select[ng-model*="ebdes" i], select[ng-model*="stsidtls" i], ' +
+                            'select[ng-model*="eb" i]:not([ng-model*="aadhaar" i]):not([ng-model*="cobz" i]), ' +
+                            'select[id*="eb" i]:not([id*="cobz" i]), select[name*="eb" i]'
+                        ).first();
+
+                        const selCount = await ebSel.count();
+                        if (selCount > 0) {
+                            await ebSel.selectOption({ index: pickIdx }).catch(() => { });
+                            await ebSel.dispatchEvent('change').catch(() => { });
+                            await page.waitForTimeout(400);
+                        }
+
+                        await page.evaluate(({ idx, val, text }) => {
+                            const allSelects = Array.from(document.querySelectorAll('select')).filter(s =>
+                                s.offsetParent !== null && !s.disabled && s.options.length > 1
+                            );
+                            let ebSel = allSelects.find(s => {
+                                const ngm = (s.getAttribute('ng-model') || s.getAttribute('data-ng-model') || '').toLowerCase();
+                                return ngm.includes('ebcd') || ngm.includes('ebdes') || ngm.includes('stsidtls');
+                            });
+                            if (!ebSel) return;
+
+                            if (ebSel.options[idx]) {
+                                ebSel.selectedIndex = idx;
+                                ebSel.value = ebSel.options[idx].value;
+                                ebSel.dispatchEvent(new Event('change', { bubbles: true }));
+                                ebSel.dispatchEvent(new Event('input', { bubbles: true }));
+                            }
+
+                            if (window.angular) {
+                                try {
+                                    const el = window.angular.element(ebSel);
+                                    const ngModel = el.controller('ngModel');
+                                    if (ngModel) {
+                                        ngModel.$setViewValue(ebSel.value);
+                                        ngModel.$commitViewValue();
+                                    }
+                                    const sc = el.scope();
+                                    if (sc) {
+                                        const paths = [sc.stsidtls, sc.x && sc.x.stsidtls, sc.stsi].filter(Boolean);
+                                        for (const p of paths) {
+                                            if (!p.ebdtls) p.ebdtls = {};
+                                            p.ebdtls.ebcd = val;
+                                            p.ebdtls.ebdes = text;
+                                            p.ebdtls.hasebconn = 'Y';
+                                        }
+                                        if (!sc.$$phase) sc.$apply();
+                                    }
+                                } catch (e) { }
+                            }
+                        }, { idx: pickIdx, val: optValue, text: optText });
+
+                        sendUpdate(`✅ Selected Electricity Board: "${optText}"`);
+                    }
+                } catch (e) {
+                    sendUpdate(`EB selection note: ${e.message}`);
+                }
+
                 await page.waitForTimeout(600);
-                await saveAndAdvanceTab('State Specific Information');
+
+                // Fill CA Number / Electricity Consumer Number
+                if (rawConsumerNo) {
+                    try {
+                        const caLoc = page.locator('input[placeholder*="Consumer Number" i], input[placeholder*="CA Number" i], input[placeholder*="Consumer" i], input[ng-model*="canum" i], #canum').first();
+                        if (await caLoc.count() > 0) {
+                            await caLoc.scrollIntoViewIfNeeded().catch(() => { });
+                            await caLoc.click({ force: true }).catch(() => { });
+                            await caLoc.fill(rawConsumerNo, { timeout: 2000 }).catch(() => { });
+                            await caLoc.dispatchEvent('input').catch(() => { });
+                            await caLoc.dispatchEvent('change').catch(() => { });
+                        }
+                        await page.evaluate((cNum) => {
+                            const inp = document.querySelector('input[placeholder*="Consumer Number" i], input[placeholder*="CA Number" i], input[placeholder*="Consumer" i], input[ng-model*="canum" i], #canum');
+                            if (inp) {
+                                inp.removeAttribute('disabled');
+                                inp.removeAttribute('readonly');
+                                inp.value = cNum;
+                                inp.dispatchEvent(new Event('input', { bubbles: true }));
+                                inp.dispatchEvent(new Event('change', { bubbles: true }));
+                                inp.dispatchEvent(new Event('blur', { bubbles: true }));
+                                if (window.angular) {
+                                    try {
+                                        const ngModel = window.angular.element(inp).controller('ngModel');
+                                        if (ngModel) {
+                                            ngModel.$setViewValue(cNum);
+                                            ngModel.$modelValue = cNum;
+                                            ngModel.$setValidity('required', true);
+                                            ngModel.$commitViewValue();
+                                        }
+                                        const sc = window.angular.element(inp).scope();
+                                        if (sc) {
+                                            const paths = [sc.stsidtls, sc.x && sc.x.stsidtls, sc.stsi].filter(Boolean);
+                                            for (const p of paths) {
+                                                if (p.ebdtls) p.ebdtls.canum = cNum;
+                                            }
+                                            if (!sc.$$phase) sc.$apply();
+                                        }
+                                    } catch (e) { }
+                                }
+                            }
+                        }, rawConsumerNo);
+                        sendUpdate(`✅ Filled CA / Consumer Number: ${rawConsumerNo}`);
+                    } catch (e) { }
+                }
+
+                // Fill Optional Fields: Professional Tax and State Excise if provided
+                if (targetPtEc || targetPtRc || targetExciseNo || targetExciseHolder) {
+                    await page.evaluate(({ ptEc, ptRc, exNo, exHld }) => {
+                        const setField = (sel, val) => {
+                            if (!val) return;
+                            const el = document.querySelector(sel);
+                            if (el) {
+                                el.value = val;
+                                el.dispatchEvent(new Event('input', { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                if (window.angular) {
+                                    try {
+                                        const ngModel = window.angular.element(el).controller('ngModel');
+                                        if (ngModel) {
+                                            ngModel.$setViewValue(val);
+                                            ngModel.$commitViewValue();
+                                        }
+                                    } catch (e) { }
+                                }
+                            }
+                        };
+                        setField('input[placeholder*="E.C" i], input[placeholder*="Employee Code" i], input[ng-model*="ptec" i]', ptEc);
+                        setField('input[placeholder*="R.C" i], input[placeholder*="Registration Certificate" i], input[ng-model*="ptrc" i]', ptRc);
+                        setField('input[placeholder*="Excise License" i], input[placeholder*="Excise Licence" i], input[ng-model*="excise" i]', exNo);
+                        setField('input[placeholder*="License is held" i], input[placeholder*="Licence is held" i]', exHld);
+                    }, { ptEc: targetPtEc, ptRc: targetPtRc, exNo: targetExciseNo, exHld: targetExciseHolder });
+                }
+
+                await page.waitForTimeout(800);
+                await dismissAndConfirmModals('State Specific Information');
+                await saveAndAdvanceTab('State Specific Information', 'https://reg.gst.gov.in/registration/auth/newappl/aadhar', 'Aadhaar Authentication');
+
+                // Check if the portal raised a validation block regarding electricity board or consumer number
+                await page.waitForTimeout(1000);
+                const isEbBlocked = await page.evaluate(() => {
+                    const errEls = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error, div[role="alert"]'));
+                    return errEls.some(e => /electricity board|ebcd|canum/i.test(e.innerText || ''));
+                });
+
+                if (isEbBlocked) {
+                    sendUpdate('⚠️ Detected electricity board validation block. Clearing consumer number and resaving State Specific tab...');
+                    await clearElectricityFields();
+                    await page.waitForTimeout(500);
+                    await saveAndAdvanceTab('State Specific Information (Retry without EB)', 'https://reg.gst.gov.in/registration/auth/newappl/aadhar', 'Aadhaar Authentication');
+                }
+
                 continue;
             }
 
             // Step 9: Aadhaar Authentication tab
             if (screenInfo.stepKey === 'aadhaar') {
-                sendUpdate('[પગલું ૯: Aadhaar Authentication] આધાર પ્રમાણીકરણ ઓપ્શન (Yes) કન્ફર્મ કરી રહ્યા છીએ...');
-                await page.evaluate(() => {
-                    const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
-                    const yesR = radios.find(r => {
-                        const t = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || r.value || '').toLowerCase();
-                        return t.includes('yes') || r.value === 'Y' || r.value === 'Yes';
+                sendUpdate('Aadhaar Authentication - Ensuring switch is ON (Yes)...');
+
+                try {
+                    // 1. Turn ON the Aadhaar opt-in switch (Yes)
+                    await page.evaluate(() => {
+                        const switches = Array.from(document.querySelectorAll('.switch, label.switch, switch, ui-switch, input[type="checkbox"]'));
+                        for (const sw of switches) {
+                            const txt = (sw.closest('.form-group, .row, div')?.innerText || '').toLowerCase();
+                            if (txt.includes('aadhaar authentication') || txt.includes('opt for aadhaar')) {
+                                const cb = sw.querySelector('input[type="checkbox"]') || (sw.tagName === 'INPUT' ? sw : null);
+                                if (cb && !cb.checked) {
+                                    cb.click();
+                                    cb.checked = true;
+                                    cb.dispatchEvent(new Event('change', { bubbles: true }));
+                                }
+                                if (!sw.classList.contains('active') && !sw.classList.contains('checked') && sw.getAttribute('aria-checked') !== 'true') {
+                                    sw.click();
+                                }
+                            }
+                        }
+                        const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                        const yesR = radios.find(r => {
+                            const t = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || r.value || '').toLowerCase();
+                            return t.includes('yes') || r.value === 'Y' || r.value === 'Yes';
+                        });
+                        if (yesR && !yesR.checked) {
+                            yesR.click();
+                            yesR.checked = true;
+                            yesR.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
                     });
-                    if (yesR && !yesR.checked) {
-                        yesR.click();
-                        yesR.checked = true;
-                        yesR.dispatchEvent(new Event('change', { bubbles: true }));
+
+                    // Playwright fallback for switch
+                    const yesSwitch = page.locator('.switch:has-text("No"), label.switch:has-text("No"), span.slider:has-text("No"), input[type="radio"][value="Y"], label:has-text("Yes")').first();
+                    if (await yesSwitch.count() > 0) {
+                        await yesSwitch.click({ force: true, timeout: 2000 }).catch(() => { });
                     }
 
-                    // Check any promoter/signatory selection checkbox in Aadhaar table
-                    const checkboxes = Array.from(document.querySelectorAll('table tbody tr input[type="checkbox"], input[type="checkbox"][id*="aadhaar" i], input[type="checkbox"][id*="adhr" i]'));
-                    for (const cb of checkboxes) {
-                        if (!cb.checked) {
-                            cb.click();
-                            cb.checked = true;
-                            cb.dispatchEvent(new Event('change', { bubbles: true }));
+                    await page.waitForTimeout(800);
+                    await dismissAndConfirmModals('Aadhaar Opted Yes');
+
+                    // 2. Select Promoter / Primary Authorized Signatory checkbox in table
+                    const adhrCheckboxes = page.locator('table tbody tr input[type="checkbox"]');
+                    const cbCount = await adhrCheckboxes.count();
+                    for (let c = 0; c < cbCount; c++) {
+                        const cb = adhrCheckboxes.nth(c);
+                        if (!(await cb.isChecked().catch(() => false))) {
+                            await cb.check({ force: true, timeout: 2000 }).catch(async () => {
+                                await cb.click({ force: true, timeout: 2000 }).catch(() => { });
+                            });
                         }
                     }
-                });
-                await page.waitForTimeout(800);
-                await dismissAndConfirmModals('Aadhaar Authentication');
-                await saveAndAdvanceTab('Aadhaar Authentication');
+
+                    await page.evaluate(() => {
+                        const checkboxes = Array.from(document.querySelectorAll('table tbody tr input[type="checkbox"], input[type="checkbox"][id*="aadhaar" i], input[type="checkbox"][id*="adhr" i]'));
+                        for (const cb of checkboxes) {
+                            if (!cb.checked) {
+                                cb.click();
+                                cb.checked = true;
+                                cb.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                        }
+                    });
+
+                    await page.waitForTimeout(800);
+                    await dismissAndConfirmModals('Aadhaar Table Check');
+                } catch (e) { }
+
+                await saveAndAdvanceTab('Aadhaar Authentication', 'https://reg.gst.gov.in/registration/auth/newappl/verify', 'Verification');
+                await page.waitForTimeout(1500);
+                await dismissAndConfirmModals('Aadhaar Authentication Post-Advance');
                 continue;
             }
 
@@ -3241,14 +4293,16 @@ async function run() {
             try {
                 const fs = require('fs');
                 const path = require('path');
-                await page.screenshot({ path: path.join(__dirname, 'debug_verification_stall.png'), fullPage: true }).catch(() => {});
-            } catch (e) {}
+                await page.screenshot({ path: path.join(__dirname, 'debug_verification_stall.png'), fullPage: true }).catch(() => { });
+            } catch (e) { }
             const screenErrors = await page.evaluate(() => {
                 const errs = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"], .err, .error'));
                 return errs.map(e => (e.innerText || '').trim()).filter(t => t.length > 2);
             });
             const currentTab = await page.evaluate(() => {
-                const active = document.querySelector('ul.nav-tabs li.active, .step-wizard .active, .step.active, .wizard-step.active, li.active');
+                const bc = document.querySelector('ol.breadcrumb, ul.breadcrumb, .breadcrumb');
+                if (bc && bc.innerText.trim()) return bc.innerText.trim().replace(/^dashboard\s*>\s*/i, '');
+                const active = document.querySelector('ul.nav-tabs:not(.navbar-nav) li.active, .step-wizard .active, .wizard-steps li.active');
                 if (active) return active.innerText.trim();
                 const panel = document.querySelector('.panel-title, .card-title, h2, h3, h4');
                 return panel ? panel.innerText.trim() : 'Active Form Tab';
@@ -3260,17 +4314,16 @@ async function run() {
         }
 
         // Fill Verification details
-        sendUpdate('Filling Verification Details (Declaration, Signatory & Place)...');
-        const place = (data.verification_place || data.ppob_city || data.district || 'warud').trim();
-        const sigTargetName = ((data.verification_signatory || (data.p1 && data.p1.firstName) || (data.legalName) || 'Parth')).trim();
+        const place = (data.verification_place || data.ppob_city || data.district || data.state || '').trim();
+        const sigTargetName = ((data.verification_signatory || (data.p1 && data.p1.firstName) || (data.legalName) || '')).trim();
 
         try {
             // A. Check Declaration Checkbox via both Playwright and DOM
             const chkLoc = page.locator('#chkVerify, input[type="checkbox"][id*="chk" i], input[type="checkbox"][ng-model*="chkVerify" i], input[type="checkbox"][ng-model*="verify" i]').first();
             if (await chkLoc.count() > 0) {
-                await chkLoc.scrollIntoViewIfNeeded().catch(() => {});
+                await chkLoc.scrollIntoViewIfNeeded().catch(() => { });
                 await chkLoc.check({ force: true }).catch(async () => {
-                    await chkLoc.click({ force: true }).catch(() => {});
+                    await chkLoc.click({ force: true }).catch(() => { });
                 });
             }
 
@@ -3315,7 +4368,7 @@ async function run() {
                         }
                     }
                 }
-            } catch (e) {}
+            } catch (e) { }
 
             // DOM fallback for Signatory selection
             await page.evaluate((sig) => {
@@ -3346,7 +4399,7 @@ async function run() {
                                 }
                                 if (!sc.$$phase) sc.$apply();
                             }
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                 }
             }, sigTargetName);
@@ -3356,8 +4409,8 @@ async function run() {
             // C. Fill Place
             const placeLoc = page.locator('#place, input[name*="place" i], input[placeholder*="place" i], input[ng-model*="place" i]').first();
             if (await placeLoc.count() > 0) {
-                await placeLoc.fill(place).catch(() => {});
-                await placeLoc.press('Tab').catch(() => {});
+                await placeLoc.fill(place).catch(() => { });
+                await placeLoc.press('Tab').catch(() => { });
             }
 
             await page.evaluate((placeVal) => {
@@ -3377,7 +4430,7 @@ async function run() {
                             }
                             if (!sc.$$phase) sc.$apply();
                         }
-                    } catch(e) {}
+                    } catch (e) { }
                 }
             }, place);
 
@@ -3416,13 +4469,13 @@ async function run() {
             try {
                 const btn = page.locator(sel).first();
                 if (await btn.count() > 0) {
-                    await btn.scrollIntoViewIfNeeded().catch(() => {});
+                    await btn.scrollIntoViewIfNeeded().catch(() => { });
                     await btn.click({ force: true });
                     evcClicked = true;
                     sendUpdate('Clicked SUBMIT WITH EVC button.');
                     break;
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
 
         if (!evcClicked) {
@@ -3443,7 +4496,7 @@ async function run() {
                                 else if (typeof sc.submit === 'function') sc.submit('EVC');
                                 if (!sc.$$phase) sc.$apply();
                             }
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                     return true;
                 }
@@ -3467,11 +4520,11 @@ async function run() {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*' },
                             body: JSON.stringify(ep.body)
-                        }).catch(() => {});
-                    } catch (e) {}
+                        }).catch(() => { });
+                    } catch (e) { }
                 }
             }, capturedDraftId);
-        } catch (e) {}
+        } catch (e) { }
 
         // Wait for EVC OTP Verification modal (and automatically handle any intermediate confirmation popups)
         sendUpdate('Waiting for GST Portal to dispatch EVC OTP...');
@@ -3572,7 +4625,7 @@ async function run() {
         // [પગલું ૫: Manual OTP Entry & ARN Generate]
         // તમે OTP દાખલ કરશો એટલે તરત જ ફાઇનલ સબમિશન થશે અને ARN નંબર મળી જશે!
         // =========================================================================
-        sendUpdate('[પગલું ૫: Manual OTP Entry & ARN Generate] તમે OTP દાખલ કરશો એટલે તરત જ ફાઇનલ સબમિશન થશે અને ARN નંબર મળી જશે!');
+        sendUpdate('Manual OTP Entry & ARN Generate');
 
         let evcOtpSuccess = false;
         while (!evcOtpSuccess) {
@@ -3602,7 +4655,7 @@ async function run() {
                             }
                             const sc = window.angular.element(input).scope();
                             if (sc && !sc.$$phase) sc.$apply();
-                        } catch (e) {}
+                        } catch (e) { }
                     }
                 }
             }, evcOtp);
@@ -3627,7 +4680,7 @@ async function run() {
                         validateClicked = true;
                         break;
                     }
-                } catch(e) {}
+                } catch (e) { }
             }
 
             if (!validateClicked) {
@@ -3667,12 +4720,12 @@ async function run() {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*' },
                                     body: JSON.stringify(p)
-                                }).catch(() => {});
-                            } catch (e) {}
+                                }).catch(() => { });
+                            } catch (e) { }
                         }
                     }
                 }, { dId: capturedDraftId, otp: evcOtp });
-            } catch (e) {}
+            } catch (e) { }
 
             await page.waitForTimeout(5000);
 
@@ -3687,8 +4740,8 @@ async function run() {
                 const bodyText = document.body ? document.body.innerText : '';
                 let arn = null;
                 const arnMatch = bodyText.match(/\b([A-Z]{2}[0-9]{11,15}[A-Z0-9]?)\b/) ||
-                                 bodyText.match(/\bARN\s*[:\-]?\s*([A-Za-z0-9]{12,18})\b/i) ||
-                                 bodyText.match(/\b([0-9]{14,16})\b/);
+                    bodyText.match(/\bARN\s*[:\-]?\s*([A-Za-z0-9]{12,18})\b/i) ||
+                    bodyText.match(/\b([0-9]{14,16})\b/);
                 if (arnMatch) {
                     const candidate = (arnMatch[1] || arnMatch[0]).trim();
                     if (candidate && candidate.length >= 8 && /\d{4,}/.test(candidate) && !/warning/i.test(candidate)) {
@@ -3696,9 +4749,9 @@ async function run() {
                     }
                 }
                 const isSuccess = bodyText.toLowerCase().includes('success') ||
-                                  bodyText.toLowerCase().includes('acknowledgment') ||
-                                  bodyText.toLowerCase().includes('submitted successfully') ||
-                                  !modal || modal.offsetParent === null;
+                    bodyText.toLowerCase().includes('acknowledgment') ||
+                    bodyText.toLowerCase().includes('submitted successfully') ||
+                    !modal || modal.offsetParent === null;
                 return { isError: false, isSuccess, arn, bodySnippet: bodyText.substring(0, 300) };
             });
 
@@ -3720,16 +4773,16 @@ async function run() {
                         const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/status`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-                        }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
+                        }, (res) => { res.on('data', () => { }); res.on('end', resolve); });
                         req.on('error', () => resolve());
-                        req.write(JSON.stringify({ 
-                            status: 'Registered', 
-                            arn: checkStatus.arn || null 
+                        req.write(JSON.stringify({
+                            status: 'Registered',
+                            arn: checkStatus.arn || null
                         }));
                         req.end();
                     });
                     sendUpdate('Application status updated to Registered in database.');
-                } catch (e) {}
+                } catch (e) { }
             }
         }
 
@@ -3749,7 +4802,7 @@ async function run() {
                 sendUpdate('Browser will remain open for 15 minutes for inspection.');
                 await page.waitForTimeout(900000);
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 }
 

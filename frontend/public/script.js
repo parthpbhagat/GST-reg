@@ -62,7 +62,7 @@ window.startNewRegistration = function () {
     window.currentAppForMissingFields = null;
 
     window.form = {
-        goods_hsn: [{ hsn: '1001', description: 'WHEAT AND MESLIN' }], goods_sac: [],
+        goods_hsn: [], goods_sac: [],
         taxpayerType: "Regular Taxpayer", legalName: "", tradeName: "", pan: "", email: "", mobile: "", state: "", district: "",
         businessConstitution: "Proprietorship", dateOfCommencement: "", dateOfLiability: "", reasonToObtainRegistration: "Voluntary Basis", businessDistrict: "",
         rule14A: "No",
@@ -873,12 +873,22 @@ const EXISTING_REGISTRATION_TYPES = [
 
 const ELECTRICITY_BOARDS = {
     "Gujarat": ["Dakshin Gujarat Vij Company Limited", "Gift Power Company Limited", "Madhya Gujarat Vij Company Limited", "Paschim Gujarat Vij Company Limited", "Torrent Power Limited", "Uttar Gujarat Vij Company Limited"],
+    "Maharashtra": ["Adani Electricity mumbai Limited", "Maharashtra State Electricity Distribution Co.Ltd", "Tata Power", "The Brihanmumbai Electric Supply and Transport Undertaking", "Torrent Power Limited"],
     "Andhra Pradesh": ["Central Power Distribution Company of Andra Pradesh Limited", "Eastern Power Distribution Company of Andra Pradesh Limited", "Southern Power Distribution Company of Andra Pradesh Limited"],
     "Assam": ["Assam Power Distribution Company Limited"],
-    "Maharashtra": ["Adani Electricity mumbai Limited", "Maharashtra State Electricity Distribution Co.Ltd", "Tata Power", "The Brihanmumbai Electric Supply and Transport Undertaking", "Torrent Power Limited"],
     "Madhya Pradesh": ["MP Madhya Kshetra Vidyut Vitaran Co.Ltd", "MP Paschim Kshetra Vidyut Vitaran Co.Ltd", "MP Poorva Kshetra Vidyut Vitaran Co.Ltd"],
     "Odisha": ["TP Central Odisha Distribution Limited", "TP Northern Odisha Distribution Limited", "TP Southern Odisha Distribution Limited", "TP Western Odisha Distribution Limited"],
-    "Rajasthan": ["Ajmer Vidyut Vitran Nigam Limited", "Jaipur Vidyut Vitran Nigam Limited", "Jodhpur Vidyut Vitran Nigam Limited"]
+    "Rajasthan": ["Ajmer Vidyut Vitran Nigam Limited", "Jaipur Vidyut Vitran Nigam Limited", "Jodhpur Vidyut Vitran Nigam Limited"],
+    "Delhi": ["BSES Rajdhani Power Limited", "BSES Yamuna Power Limited", "Tata Power Delhi Distribution Limited", "New Delhi Municipal Council"],
+    "Karnataka": ["Bangalore Electricity Supply Company Limited (BESCOM)", "Mangalore Electricity Supply Company Limited (MESCOM)", "Hubli Electricity Supply Company Limited (HESCOM)", "Gulbarga Electricity Supply Company Limited (GESCOM)", "Chamundeshwari Electricity Supply Corporation (CESC)"],
+    "Tamil Nadu": ["Tamil Nadu Generation and Distribution Corporation (TANGEDCO)"],
+    "Telangana": ["Northern Power Distribution Company of Telangana Limited (TSNPDCL)", "Southern Power Distribution Company of Telangana Limited (TSSPDCL)"],
+    "Uttar Pradesh": ["Madhyanchal Vidyut Vitaran Nigam Limited", "Paschimanchal Vidyut Vitaran Nigam Limited", "Purvanchal Vidyut Vitaran Nigam Limited", "Dakshinanchal Vidyut Vitaran Nigam Limited", "Kanpur Electricity Supply Company (KESCO)", "Noida Power Company Limited (NPCL)"],
+    "West Bengal": ["West Bengal State Electricity Distribution Company Limited (WBSEDCL)", "Calcutta Electric Supply Corporation (CESC)"],
+    "Punjab": ["Punjab State Power Corporation Limited (PSPCL)"],
+    "Haryana": ["Dakshin Haryana Bijli Vitran Nigam (DHBVN)", "Uttar Haryana Bijli Vitran Nigam (UHBVN)"],
+    "Kerala": ["Kerala State Electricity Board Limited (KSEBL)"],
+    "Bihar": ["North Bihar Power Distribution Company Limited (NBPDCL)", "South Bihar Power Distribution Company Limited (SBPDCL)"]
 };
 
 const STEPS = [
@@ -1208,6 +1218,13 @@ function setStep(newStep) {
             window.isViewingPromoter = false;
         }
     }
+    if (newStep === 4) {
+        if (window.fetchStateJurisdictions && window.form && window.form.ppob_pincode && window.form.ppob_pincode.length === 6) {
+            window.fetchStateJurisdictions(() => {
+                try { renderContent(); } catch(e) {}
+            });
+        }
+    }
 
     step = newStep;
     const header = document.querySelector('header.top');
@@ -1476,8 +1493,7 @@ window.checkMissingGstPortalData = function (data) {
     // Step 6: Goods and Services
     const hasGoods = (data.goods_hsn && data.goods_hsn.length > 0) || (data.goods_sac && data.goods_sac.length > 0);
     if (!hasGoods) {
-        if (!data.goods_hsn) data.goods_hsn = [];
-        data.goods_hsn.push({ hsn: '1001', description: 'WHEAT AND MESLIN' });
+        missing.push({ step: 6, key: 'goods_hsn', label: 'At least one Goods (HSN) or Services (SAC) Code' });
     }
 
     // Step 9: Verification
@@ -2768,13 +2784,14 @@ window.startAutomationPipeline = async function (id, mode = 'regular', multiStat
             }
         });
 
-        socket.on('automation_screenshot', (data) => {
-            const img = document.getElementById('live-preview-img');
-            if (img) {
-                img.src = 'data:image/jpeg;base64,' + data.image;
-                img.style.opacity = '1';
-            }
-        });
+        // Live browser preview screenshot listener disabled
+        // socket.on('automation_screenshot', (data) => {
+        //     const img = document.getElementById('live-preview-img');
+        //     if (img) {
+        //         img.src = 'data:image/jpeg;base64,' + data.image;
+        //         img.style.opacity = '1';
+        //     }
+        // });
 
         socket.on('automation_warning', () => {
             const badge = document.getElementById('auto-status-badge');
@@ -4423,7 +4440,7 @@ function renderContent() {
             <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 24px;">
                 <div>
                     <h3 style="font-size: 15px; font-weight: 600; color: var(--text-main); margin-bottom: 12px;">State Jurisdiction</h3>
-                    ${field('SECTOR / WARD <span style="color: #ef4444">*</span>', `<select onchange="window.updateForm('ppob_stateJurisdiction', this.value)" style=""><option value="">Select</option>${(window.fetchedStateJurisdictions || []).map(j => `<option value="${j}" ${form.ppob_stateJurisdiction === j ? 'selected' : ''}>${j}</option>`).join('')}</select>`)}
+                    ${field('SECTOR / WARD <span style="color: #ef4444">*</span>', `<select onchange="const sel=this.options[this.selectedIndex]; window.form.ppob_stateJurisdictionCode=this.value; window.form.ppob_stateJurisdiction=sel.text; window.updateForm('ppob_stateJurisdiction', sel.text);" style=""><option value="">Select</option>${(window.fetchedStateJurisdictions || []).map(j => { const val = typeof j === 'object' ? (j.c || j.n) : j; const label = typeof j === 'object' ? (j.n || j.c) : j; const isSel = (form.ppob_stateJurisdictionCode === val || form.ppob_stateJurisdiction === label); return `<option value="${val}" ${isSel ? 'selected' : ''}>${label}</option>`; }).join('')}</select>`)}
                 </div>
                 <div>
                     <h3 style="font-size: 15px; font-weight: 600; color: var(--text-main); margin-bottom: 12px;">Center Jurisdiction</h3>
@@ -4522,7 +4539,7 @@ function renderContent() {
         </section>`;
     } else if (step === 6) {
         html = `<section class="card" style="padding: 32px; overflow: hidden; border: 1px solid var(--border-color);">
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 32px; align-items: start;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;">
                 
                 <!-- Goods Column -->
                 <div style="border-right: 1px solid var(--border-color); padding-right: 32px; min-height: 400px;">
@@ -4545,7 +4562,7 @@ function renderContent() {
                 </div>
 
                 <!-- Services Column -->
-                <div style="border-right: 1px solid var(--border-color); padding-right: 32px; min-height: 400px;">
+                <div style="min-height: 400px;">
                     <h2 style="font-size: 18px; color: #1e3a8a; margin: 0 0 16px 0; font-weight: 700;">Details of Services</h2>
                     <div style="font-size: 14px; color: var(--text-main); margin-bottom: 16px;">Please specify top 5 Services</div>
                     <hr style="border: none; border-top: 1px solid var(--border-color); margin-bottom: 12px;" />
@@ -4564,31 +4581,74 @@ function renderContent() {
                     </div>
                 </div>
 
-                <!-- State Specific Column -->
-                <div style="min-height: 400px;">
-                    <h2 style="font-size: 18px; color: #1e3a8a; margin: 0 0 16px 0; font-weight: 700;">State Specific Info</h2>
-                    <div style="font-size: 14px; color: var(--text-main); margin-bottom: 16px;">Provide state-specific details</div>
-                    <hr style="border: none; border-top: 1px solid var(--border-color); margin-bottom: 12px;" />
-                    
-                    <div style="display: flex; flex-direction: column; gap: 20px;">
+            </div>
+        </section>`;
+    } else if (step === 7) {
+        const activeState = form.ppob_state || form.state || form.res_state || 'Gujarat';
+        const boardsList = (ELECTRICITY_BOARDS && ELECTRICITY_BOARDS[activeState]) ? ELECTRICITY_BOARDS[activeState] : ((ELECTRICITY_BOARDS && ELECTRICITY_BOARDS['Gujarat']) || []);
 
-                        ${ELECTRICITY_BOARDS[form.state] ? field('<span style="font-size: 13px; font-weight: 600;">Electricity Board <span style="color: #ef4444">*</span></span>', `<select onchange="window.updateForm('stateSpecific_electricityBoard', this.value)" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 14px; height: 44px; box-sizing: border-box;"><option value="">Select</option>${(ELECTRICITY_BOARDS[form.state]).map(board => `<option value="${board}" ${form.stateSpecific_electricityBoard === board ? 'selected' : ''}>${board}</option>`).join('')}</select>`) : ''}
-                        ${ELECTRICITY_BOARDS[form.state] ? field('<span style="font-size: 13px; font-weight: 600;">Consumer Number <span style="color: #ef4444">*</span></span>', `<input type="text" placeholder="Enter Consumer Number" value="${form.stateSpecific_electricityConsumerNo || ''}" onchange="window.updateForm('stateSpecific_electricityConsumerNo', this.value)" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 14px; height: 44px; box-sizing: border-box;" />`) : ''}
-                        ${field('<span style="font-size: 13px; font-weight: 600;">PT Employee Code (EC)</span>', `<input type="text" placeholder="Enter PT E.C Number" value="${form.stateSpecific_ptEcNo || ''}" onchange="window.updateForm('stateSpecific_ptEcNo', this.value)" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 14px; height: 44px; box-sizing: border-box;" />`)}
-                        ${field('<span style="font-size: 13px; font-weight: 600;">PT Registration (RC)</span>', `<input type="text" placeholder="Enter PT R.C Number" value="${form.stateSpecific_ptRcNo || ''}" onchange="window.updateForm('stateSpecific_ptRcNo', this.value)" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 14px; height: 44px; box-sizing: border-box;" />`)}
-                        ${field('<span style="font-size: 13px; font-weight: 600;">State Excise License No.</span>', `<input type="text" placeholder="Enter Excise License Number" value="${form.stateSpecific_exciseLicenseNo || ''}" onchange="window.updateForm('stateSpecific_exciseLicenseNo', this.value)" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 14px; height: 44px; box-sizing: border-box;" />`)}
-                        ${field('<span style="font-size: 13px; font-weight: 600;">Excise Licence Holder</span>', `<input type="text" placeholder="Enter Name" value="${form.stateSpecific_exciseLicenseHolder || ''}" onchange="window.updateForm('stateSpecific_exciseLicenseHolder', this.value)" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 14px; height: 44px; box-sizing: border-box;" />`)}
+        html = `<section class="card" style="padding: 28px 32px; border: 1px solid var(--border-color); background: #ffffff;">
+            <!-- Header matching Portal -->
+            <div style="border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end;">
+                <div>
+                    <h2 style="font-size: 20px; font-weight: 700; color: #1e3a8a; margin: 0 0 6px 0;">State Specific Information</h2>
+                    <p style="font-size: 13.5px; color: #64748b; margin: 0;">Specify Professional Tax, State Excise License, and Electricity Connection details relevant to your state.</p>
+                </div>
+                <div style="font-size: 12px; color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 5px 12px; border-radius: 6px; font-weight: 600;">
+                    ✓ Applicable State: ${activeState}
+                </div>
+            </div>
+
+            <!-- Helpful Guidance Notice -->
+            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-left: 4px solid #3b82f6; border-radius: 6px; padding: 12px 18px; margin-bottom: 24px; font-size: 13px; color: #1e40af; line-height: 1.5;">
+                <strong>ℹ State Regulatory Registrations:</strong> These fields are state-level regulatory details. If these registrations are not applicable to your business or not yet obtained, you may leave them blank and click <strong>Next</strong> to proceed.
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 24px;">
+                
+                <!-- Section 1: Professional Tax Details -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px 24px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;">
+                        <span style="font-size: 16px;">💼</span>
+                        <h3 style="font-size: 15px; font-weight: 700; color: #0f172a; margin: 0;">Professional Tax Details</h3>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        ${field('PROFESSIONAL TAX EMPLOYEE CODE (EC) NO.', `<input type="text" id="stateSpecific_ptEcNo" name="stateSpecific_ptEcNo" placeholder="Enter PT Employee Code (EC)" value="${form.stateSpecific_ptEcNo || ''}" onchange="window.updateForm('stateSpecific_ptEcNo', this.value)" style="width: 100%; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 14px; height: 44px; box-sizing: border-box;" />`)}
+                        ${field('PROFESSIONAL TAX REGISTRATION CERTIFICATE (RC) NO.', `<input type="text" id="stateSpecific_ptRcNo" name="stateSpecific_ptRcNo" placeholder="Enter PT Registration (RC) Number" value="${form.stateSpecific_ptRcNo || ''}" onchange="window.updateForm('stateSpecific_ptRcNo', this.value)" style="width: 100%; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 14px; height: 44px; box-sizing: border-box;" />`)}
+                    </div>
+                </div>
+
+                <!-- Section 2: State Excise License Details -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px 24px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;">
+                        <span style="font-size: 16px;">📜</span>
+                        <h3 style="font-size: 15px; font-weight: 700; color: #0f172a; margin: 0;">State Excise License Details</h3>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        ${field('STATE EXCISE LICENSE NO.', `<input type="text" id="stateSpecific_exciseLicenseNo" name="stateSpecific_exciseLicenseNo" placeholder="Enter State Excise License Number" value="${form.stateSpecific_exciseLicenseNo || ''}" onchange="window.updateForm('stateSpecific_exciseLicenseNo', this.value)" style="width: 100%; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 14px; height: 44px; box-sizing: border-box;" />`)}
+                        ${field('NAME OF PERSON IN WHOSE NAME EXCISE LICENSE IS HELD', `<input type="text" id="stateSpecific_exciseLicenseHolder" name="stateSpecific_exciseLicenseHolder" placeholder="Enter Full Name of License Holder" value="${form.stateSpecific_exciseLicenseHolder || ''}" onchange="window.updateForm('stateSpecific_exciseLicenseHolder', this.value)" style="width: 100%; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 14px; height: 44px; box-sizing: border-box;" />`)}
+                    </div>
+                </div>
+
+                <!-- Section 3: Electricity Connection Details -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px 24px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px;">
+                        <span style="font-size: 16px;">⚡</span>
+                        <h3 style="font-size: 15px; font-weight: 700; color: #0f172a; margin: 0;">Electricity Connection Details</h3>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                        ${field('ELECTRICITY DISTRIBUTION BOARD / COMPANY', `
+                            <select id="stateSpecific_electricityBoard" name="stateSpecific_electricityBoard" onchange="window.updateForm('stateSpecific_electricityBoard', this.value)" style="width: 100%; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 14px; height: 44px; box-sizing: border-box; background: white;">
+                                <option value="">-- Select Electricity Board --</option>
+                                ${boardsList.map(board => `<option value="${board}" ${form.stateSpecific_electricityBoard === board ? 'selected' : ''}>${board}</option>`).join('')}
+                                ${(!boardsList.includes(form.stateSpecific_electricityBoard) && form.stateSpecific_electricityBoard) ? `<option value="${form.stateSpecific_electricityBoard}" selected>${form.stateSpecific_electricityBoard}</option>` : ''}
+                            </select>
+                        `)}
+                        ${field('CONSUMER / CA NUMBER', `<input type="text" id="stateSpecific_electricityConsumerNo" name="stateSpecific_electricityConsumerNo" placeholder="Enter Electricity Consumer / Account No." value="${form.stateSpecific_electricityConsumerNo || ''}" onchange="window.updateForm('stateSpecific_electricityConsumerNo', this.value)" style="width: 100%; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 14px; height: 44px; box-sizing: border-box;" />`)}
                     </div>
                 </div>
 
             </div>
-        </section>`;
-    } else if (step === 7) {
-        html = `<section class="card">
-        <h2 style="font-size: 18px; margin: 0 0 16px 0; color: #1e3a8a; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">State Specific Information</h2>
-        <div style="margin-bottom: 16px;">
-            <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">No specific state information required for now.</p>
-        </div>
         </section>`;
     } else if (step === 8) {
         html = `<section class="card">
@@ -4717,7 +4777,7 @@ function renderContent() {
                     <div style="display: flex; flex-direction: column; gap: 18px;">
                         <div class="field">
                             <label style="display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px;">Place <span style="color: #ef4444;">*</span></label>
-                            <input type="text" id="verification_place" value="${placeVal}" placeholder="Enter place (e.g. Ahmedabad, Warud)..." onchange="updateForm('verification_place', this.value); renderContent();" style="width: 100%; padding: 8px 12px; border: 1.5px solid #3b82f6; border-radius: 4px; font-size: 14px; box-sizing: border-box;" />
+                            <input type="text" id="verification_place" value="${placeVal}" placeholder="Enter place of declaration..." onchange="updateForm('verification_place', this.value); renderContent();" style="width: 100%; padding: 8px 12px; border: 1.5px solid #3b82f6; border-radius: 4px; font-size: 14px; box-sizing: border-box;" />
                         </div>
 
                         <div class="field">
@@ -5023,7 +5083,7 @@ window.fetchAndSetDistricts = function (stateName, callback) {
         if (callback) callback();
         return;
     }
-    fetch(`https://reg.gst.gov.in/master/st/${stateCode}/activedistrict`)
+    fetch(`${API_BASE_URL}/api/master/districts/${stateCode}`)
         .then(r => r.json())
         .then(data => {
             let items = [];
@@ -5053,7 +5113,7 @@ window.fetchSezNames = function (stateName, callback) {
         if (callback) callback();
         return;
     }
-    fetch(`https://reg.gst.gov.in/master/sez/${stateCode}`)
+    fetch(`${API_BASE_URL}/api/master/sez/${stateCode}`)
         .then(r => r.json())
         .then(data => {
             let items = [];
@@ -5092,14 +5152,24 @@ window.fetchStateJurisdictions = function (callback) {
         return;
     }
 
-    fetch(`https://reg.gst.gov.in/master/jursd/bypincode/state/${stateCode}/${pincode}`)
+    fetch(`${API_BASE_URL}/api/master/jurisdiction/state/${stateCode}/${pincode}`)
         .then(r => r.json())
         .then(data => {
             let items = [];
             if (data && data.data && data.data[0] && Array.isArray(data.data[0].n)) {
                 items = data.data[0].n;
+                if (data.data[0].c) {
+                    window.form.ppob_stateJurisdictionType = data.data[0].c;
+                }
+            } else if (data && Array.isArray(data.data)) {
+                items = data.data;
             }
-            window.fetchedStateJurisdictions = items.map(item => item.n || item.name || item).filter(Boolean);
+            window.fetchedStateJurisdictions = items.map(item => {
+                if (typeof item === 'object') {
+                    return { c: item.c || item.code, n: item.n || item.name || item.c };
+                }
+                return { c: item, n: item };
+            }).filter(Boolean);
         })
         .catch(err => console.error("Error fetching state jurisdictions:", err))
         .finally(() => {
@@ -5127,7 +5197,7 @@ window.fetchCommissionerates = function (callback) {
         return;
     }
 
-    fetch(`https://reg.gst.gov.in/master/jursd/bypincode/commisionerate/${stateCode}/${pincode}`)
+    fetch(`${API_BASE_URL}/api/master/jurisdiction/commissionerate/${stateCode}/${pincode}`)
         .then(r => r.json())
         .then(data => {
             let items = [];
@@ -5135,14 +5205,19 @@ window.fetchCommissionerates = function (callback) {
                 items = data.data;
             }
             window.fetchedCommissionerates = items;
-            window.form.ppob_commissionerate = '';
-            window.fetchedDivisions = [];
-            window.form.ppob_division = '';
-            window.fetchedRanges = [];
-            window.form.ppob_range = '';
+            if (window.form.ppob_commissionerate && !items.some(x => x.c === window.form.ppob_commissionerate)) {
+                window.form.ppob_commissionerate = items.length > 0 ? items[0].c : '';
+            } else if (!window.form.ppob_commissionerate && items.length === 1) {
+                window.form.ppob_commissionerate = items[0].c;
+            }
+            if (window.form.ppob_commissionerate && window.fetchDivisions) {
+                window.fetchDivisions(callback);
+            } else if (callback) {
+                callback();
+            }
         })
-        .catch(err => console.error("Error fetching commissionerates:", err))
-        .finally(() => {
+        .catch(err => {
+            console.error("Error fetching commissionerates:", err);
             if (callback) callback();
         });
 };
@@ -5161,18 +5236,27 @@ window.fetchDivisions = function (callback) {
         return;
     }
 
-    fetch(`https://reg.gst.gov.in/master/jursd/bypincode/division/${stateCode}/${commCode}/${pincode}`)
+    fetch(`${API_BASE_URL}/api/master/jurisdiction/division/${stateCode}/${commCode}/${pincode}`)
         .then(r => r.json())
         .then(data => {
             let items = [];
             if (data && Array.isArray(data.data)) { items = data.data; }
             window.fetchedDivisions = items;
-            window.form.ppob_division = '';
-            window.fetchedRanges = [];
-            window.form.ppob_range = '';
+            if (window.form.ppob_division && !items.some(x => x.c === window.form.ppob_division)) {
+                window.form.ppob_division = items.length > 0 ? items[0].c : '';
+            } else if (!window.form.ppob_division && items.length === 1) {
+                window.form.ppob_division = items[0].c;
+            }
+            if (window.form.ppob_division && window.fetchRanges) {
+                window.fetchRanges(callback);
+            } else if (callback) {
+                callback();
+            }
         })
-        .catch(err => console.error("Error fetching divisions:", err))
-        .finally(() => { if (callback) callback(); });
+        .catch(err => {
+            console.error("Error fetching divisions:", err);
+            if (callback) callback();
+        });
 };
 
 window.fetchedRanges = [];
@@ -5189,19 +5273,23 @@ window.fetchRanges = function (callback) {
         return;
     }
 
-    fetch(`https://reg.gst.gov.in/master/jursd/bypincode/range/${stateCode}/${divCode}/${pincode}`)
+    fetch(`${API_BASE_URL}/api/master/jurisdiction/range/${stateCode}/${divCode}/${pincode}`)
         .then(r => r.json())
         .then(data => {
             let items = [];
             if (data && Array.isArray(data.data)) { items = data.data; }
             window.fetchedRanges = items;
-            window.form.ppob_range = '';
+            if (window.form.ppob_range && !items.some(x => x.c === window.form.ppob_range)) {
+                window.form.ppob_range = items.length > 0 ? items[0].c : '';
+            } else if (!window.form.ppob_range && items.length === 1) {
+                window.form.ppob_range = items[0].c;
+            }
         })
         .catch(err => console.error("Error fetching ranges:", err))
         .finally(() => { if (callback) callback(); });
 };
 
-fetch('https://reg.gst.gov.in/master/states')
+fetch(`${API_BASE_URL}/api/master/states`)
     .then(r => r.json())
     .then(data => {
         let items = [];
@@ -5557,7 +5645,7 @@ window.searchHSN = function (query) {
     clearTimeout(hsnTimeout);
     hsnTimeout = setTimeout(async () => {
         try {
-            const response = await fetch(`https://reg.gst.gov.in/master/hsn/l1/${encodeURIComponent(query)}`);
+            const response = await fetch(`${API_BASE_URL}/api/hsn/${encodeURIComponent(query)}`);
             const json = await response.json();
             const data = json.data || [];
 
@@ -5575,7 +5663,7 @@ window.searchHSN = function (query) {
                      onmouseover="this.style.backgroundColor='#f1f5f9'" onmouseout="this.style.backgroundColor='transparent'"
                      data-code="${codeAttr}" data-name="${nameAttr}"
                      onmousedown="window.selectHSN(this)">
-                    <strong style="color: #0f172a;">${item.c}</strong> - <span style="color: #475569;">${item.n}</span>
+                     <strong style="color: #0f172a;">${item.c}</strong> - <span style="color: #475569;">${item.n}</span>
                 </div>
             `}).join('');
             dropdown.style.display = 'block';
@@ -5598,7 +5686,7 @@ window.searchSAC = function (query) {
     clearTimeout(sacTimeout);
     sacTimeout = setTimeout(async () => {
         try {
-            const response = await fetch(`https://reg.gst.gov.in/master/sac/${encodeURIComponent(query)}`);
+            const response = await fetch(`${API_BASE_URL}/api/sac/${encodeURIComponent(query)}`);
             const json = await response.json();
             const data = json.data || [];
 
@@ -5616,7 +5704,7 @@ window.searchSAC = function (query) {
                      onmouseover="this.style.backgroundColor='#f1f5f9'" onmouseout="this.style.backgroundColor='transparent'"
                      data-code="${codeAttr}" data-name="${nameAttr}"
                      onmousedown="window.selectSAC(this)">
-                    <strong style="color: #0f172a;">${item.c}</strong> - <span style="color: #475569;">${item.n}</span>
+                     <strong style="color: #0f172a;">${item.c}</strong> - <span style="color: #475569;">${item.n}</span>
                 </div>
             `}).join('');
             dropdown.style.display = 'block';

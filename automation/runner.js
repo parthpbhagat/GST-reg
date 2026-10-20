@@ -2799,6 +2799,7 @@ async function run() {
                         if (lnEls.length > 0 && !lnEls[0].value) setElem(lnEls[0], l);
                         if (lnEls.length > 1) setElem(lnEls[1], fl);
 
+                        setElem(document.querySelector('input[placeholder*="PAN" i], #pan, input[name="pan"], input[ng-model*="pan" i]'), pan);
                         setElem(document.querySelector('input[placeholder*="DD/MM/YYYY" i], input[placeholder*="dd/mm/yyyy" i], #dob, input[name="dob"]'), dob);
                         setElem(document.querySelector('input[placeholder*="Mobile" i], #mbno, input[name="mbno"]'), mob);
                         setElem(document.querySelector('input[placeholder*="Email" i], input[type="email"], #em, input[name="em"]'), em);
@@ -2934,12 +2935,35 @@ async function run() {
                     }
 
                     // Click SAVE button on Promoter form
-                    const saveFormBtn = page.locator('button.btn-primary:has-text("SAVE"):not(:has-text("CONTINUE")), button:text-is("SAVE"), button:text-is("Save"), input[value="SAVE"], input[value="Save"]').first();
-                    if (await saveFormBtn.count() > 0 && await saveFormBtn.isVisible()) {
-                        await saveFormBtn.click({ force: true, timeout: 3000 }).catch(() => { });
+                    const clickedSave = await page.evaluate(() => {
+                        const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
+                        const saveBtn = btns.find(b => {
+                            const t = (b.innerText || b.value || '').trim();
+                            return /^save$/i.test(t) || (/save/i.test(t) && !/continue/i.test(t));
+                        });
+                        if (saveBtn) {
+                            saveBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+                            saveBtn.removeAttribute('disabled');
+                            saveBtn.disabled = false;
+                            saveBtn.click();
+                            return true;
+                        }
+                        return false;
+                    });
+
+                    if (clickedSave) {
                         sendUpdate('Clicked SAVE on Promoter form.');
                         await page.waitForTimeout(2000);
                         await dismissAndConfirmModals('Promoter Form Save');
+                    } else {
+                        const saveFormBtn = page.locator('button.btn-primary:has-text("SAVE"):not(:has-text("CONTINUE")), button:text-is("SAVE"), button:text-is("Save"), input[value="SAVE"], input[value="Save"]').first();
+                        if (await saveFormBtn.count() > 0) {
+                            await saveFormBtn.scrollIntoViewIfNeeded().catch(() => { });
+                            await saveFormBtn.click({ force: true, timeout: 3000 }).catch(() => { });
+                            sendUpdate('Clicked SAVE on Promoter form.');
+                            await page.waitForTimeout(2000);
+                            await dismissAndConfirmModals('Promoter Form Save');
+                        }
                     }
 
                     sendUpdate('Advancing Promoter / Partner via SAVE & CONTINUE...');
@@ -3121,12 +3145,9 @@ async function run() {
                             } catch (e) { }
                         }
                     });
-                } else if (asgState.rowCount === 0 && (isPromoterSignatory || hasDuplicateEmailError)) {
-                    // Case 2: Promoter is the Authorized Signatory, but not yet present in Tab 3 table.
-                    // On GST portal REG-01, entering the promoter's details on Tab 3's form throws:
-                    // "Duplicate email address, another user exists with same email address in Promoter/ Partners tab."
-                    // The portal requires enabling "Also Authorized Signatory" in Tab 2!
-                    sendUpdate('Promoter is not yet linked as Authorized Signatory in Tab 3. Navigating back to "Promoter / Partners" tab...');
+                } else if (hasDuplicateEmailError) {
+                    // Only navigate back if the portal explicitly threw duplicate email error
+                    sendUpdate('Duplicate email detected on Authorized Signatory. Re-linking via Promoter tab...');
 
                     await page.evaluate(() => {
                         const tabs = Array.from(document.querySelectorAll('a, li, div, button, span')).filter(e => {

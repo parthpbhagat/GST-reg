@@ -624,22 +624,50 @@ async function run() {
         await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForTimeout(1500);
 
-        // Click TRN radio button and wait for TRN fields to appear
-        const radioTrn = page.locator('#radiotrn, input[type="radio"][value="T"]').first();
-        await radioTrn.waitFor({ state: 'visible', timeout: 30000 });
-        await radioTrn.click({ force: true });
+        // Helper to select TRN radio button using label and Angular scope
+        const selectTrnRadio = async () => {
+            // 1. Click label (Bootstrap custom radio requires label click)
+            const label = page.locator('label[for="radiotrn"], label:has-text("Temporary Reference Number")').first();
+            if (await label.isVisible().catch(() => false)) {
+                await label.click().catch(() => {});
+            } else {
+                await page.click('#radiotrn').catch(() => {});
+            }
+
+            // 2. Angular scope sync for typ = 'T'
+            await page.evaluate(() => {
+                const rTrn = document.querySelector('#radiotrn');
+                if (rTrn) {
+                    rTrn.checked = true;
+                    rTrn.dispatchEvent(new Event('change', { bubbles: true }));
+                    rTrn.dispatchEvent(new Event('input', { bubbles: true }));
+                    if (window.angular) {
+                        try {
+                            const sc = window.angular.element(rTrn).scope();
+                            if (sc) {
+                                sc.typ = 'T';
+                                if (!sc.$$phase) sc.$apply();
+                            }
+                        } catch (e) {}
+                    }
+                }
+            });
+        };
+
+        // Select TRN tab and wait for #trnno
+        await selectTrnRadio();
+        await page.waitForTimeout(500);
         await page.waitForSelector('#trnno', { state: 'visible', timeout: 15000 });
         await page.waitForTimeout(500);
 
         // Dedicated helper to ensure TRN radio is checked and #trnno & #email are filled
         const fillTrnLoginForm = async () => {
-            // 1. Ensure radio is selected
-            const isChecked = await page.$eval('#radiotrn', el => el.checked).catch(() => false);
-            if (!isChecked) {
-                await page.click('#radiotrn').catch(() => {});
-                await page.waitForTimeout(400);
+            // 1. Ensure TRN tab is visible
+            const isTrnVisible = await page.$eval('#trnno', el => el.offsetParent !== null).catch(() => false);
+            if (!isTrnVisible) {
+                await selectTrnRadio();
+                await page.waitForSelector('#trnno', { state: 'visible', timeout: 8000 }).catch(() => {});
             }
-            await page.waitForSelector('#trnno', { state: 'visible', timeout: 8000 }).catch(() => {});
 
             // 2. Fill TRN via Playwright
             if (trnText) {

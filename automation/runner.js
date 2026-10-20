@@ -69,6 +69,55 @@ function extractValidTrn(text) {
     return m ? m[1].toUpperCase() : '';
 }
 
+async function getCaptchaDataUrl(page, selector = '#imgCaptcha') {
+    await page.waitForSelector(selector, { state: 'visible', timeout: 20000 });
+    await page.waitForTimeout(300);
+
+    // 1. Instant HTML5 Canvas pixel extraction (bypasses Playwright compositor animation locks)
+    try {
+        const canvasData = await page.evaluate(async (sel) => {
+            const img = document.querySelector(sel);
+            if (!img) return null;
+            if (!img.complete) {
+                await new Promise((r) => { img.onload = r; img.onerror = r; setTimeout(r, 2000); });
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || img.width || 200;
+            canvas.height = img.naturalHeight || img.height || 50;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            return canvas.toDataURL('image/png');
+        }, selector);
+        if (canvasData && canvasData.length > 100) {
+            return canvasData;
+        }
+    } catch (_) {}
+
+    // 2. Playwright element screenshot with animations: 'disabled' and 5s timeout
+    try {
+        const el = await page.$(selector);
+        if (el) {
+            const buf = await el.screenshot({ animations: 'disabled', timeout: 5000 });
+            if (buf && buf.length > 0) {
+                return `data:image/png;base64,${buf.toString('base64')}`;
+            }
+        }
+    } catch (_) {}
+
+    // 3. Playwright bounding-box clip screenshot
+    try {
+        const box = await page.locator(selector).boundingBox();
+        if (box && box.width > 0 && box.height > 0) {
+            const buf = await page.screenshot({ clip: box, animations: 'disabled', timeout: 5000 });
+            if (buf && buf.length > 0) {
+                return `data:image/png;base64,${buf.toString('base64')}`;
+            }
+        }
+    } catch (_) {}
+
+    throw new Error('Timeout or failure locating Captcha image on GST portal');
+}
+
 function extractCleanErrorMessage(raw) {
     if (!raw) return 'Validation error from GST portal';
     const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
@@ -387,11 +436,8 @@ async function run() {
             let initialCaptchaSuccess = false;
             while (!initialCaptchaSuccess) {
                 sendUpdate('Locating Captcha Image...');
-                const captchaEl = await page.waitForSelector('#imgCaptcha', { state: 'visible' });
-                await page.waitForTimeout(500);
-
-                const captchaBuffer = await captchaEl.screenshot();
-                console.log(`CAPTCHA_IMAGE:data:image/png;base64,${captchaBuffer.toString('base64')}`);
+                const captchaDataUrl = await getCaptchaDataUrl(page, '#imgCaptcha');
+                console.log(`CAPTCHA_IMAGE:${captchaDataUrl}`);
                 sendUpdate('WAITING_FOR_CAPTCHA');
 
                 const captchaText = await new Promise(resolve => {
@@ -750,11 +796,8 @@ async function run() {
             await fillTrnLoginForm();
 
             sendUpdate('Locating TRN Login Captcha...');
-            const loginCaptchaEl = await page.waitForSelector('#imgCaptcha', { state: 'visible' });
-            await page.waitForTimeout(500);
-
-            const loginCaptchaBuffer = await loginCaptchaEl.screenshot();
-            console.log(`CAPTCHA_IMAGE:data:image/png;base64,${loginCaptchaBuffer.toString('base64')}`);
+            const loginCaptchaDataUrl = await getCaptchaDataUrl(page, '#imgCaptcha');
+            console.log(`CAPTCHA_IMAGE:${loginCaptchaDataUrl}`);
             sendUpdate('WAITING_FOR_CAPTCHA_TRN');
 
             const loginCaptchaText = await new Promise(resolve => {

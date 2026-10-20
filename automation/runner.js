@@ -1368,12 +1368,450 @@ async function run() {
         }
         sendUpdate('✅ Official GST Portal data and final JSON synchronized successfully.');
 
+        // Common helper: dismiss and auto-confirm any open modal/dialog intelligently
+        const dismissAndConfirmModals = async (contextLabel = '') => {
+            let lastHandled = null;
+            for (let attempt = 0; attempt < 5; attempt++) {
+                const result = await page.evaluate(() => {
+                    const dialogs = Array.from(document.querySelectorAll('.modal, div[role="dialog"], .sweet-alert, .ui-dialog, .bootbox')).filter(d => {
+                        const s = window.getComputedStyle(d);
+                        return s.display !== 'none' && s.visibility !== 'hidden' && (d.offsetWidth > 0 || d.offsetHeight > 0 || s.opacity !== '0');
+                    });
+                    for (const d of dialogs) {
+                        const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn, a')).filter(b => b.offsetParent !== null || window.getComputedStyle(b).display !== 'none');
+                        const dText = ((d.innerText || d.textContent || '') + ' ' + (d.querySelector('.modal-title, h4, h3, p')?.innerText || '')).replace(/\s+/g, ' ').trim().toLowerCase();
+
+                        // 1. Check if the portal asks: "Do you want to add details of other Promoter/Partner?"
+                        if ((dText.includes('add') || dText.includes('enter') || dText.includes('more') || dText.includes('another')) &&
+                            (dText.includes('other') || dText.includes('promoter') || dText.includes('partner') || dText.includes('director') || dText.includes('signatory') || dText.includes('details'))) {
+                            const noBtn = btns.find(b => /^\s*no\s*$/i.test((b.innerText || b.value || '').trim()) || /\bno\b/i.test(b.innerText || b.value || '')) ||
+                                d.querySelector('button#btnNo, button[ng-click*="no" i], .btn:has-text("NO")');
+                            if (noBtn) {
+                                noBtn.removeAttribute('disabled');
+                                noBtn.disabled = false;
+                                noBtn.click();
+                                return { action: 'clicked_no', text: 'NO (No more promoters to add)', raw: dText.slice(0, 120) };
+                            }
+                        }
+
+                        // 2. Check if this is the Aadhaar "You have opted Yes" confirmation dialog (must click OK)
+                        if (dText.includes('opted') && (dText.includes('yes') || dText.includes('aadhaar'))) {
+                            const okBtn = btns.find(b => /ok|proceed|continue|yes|confirm/i.test(b.innerText || b.value || b.textContent || ''));
+                            if (okBtn) {
+                                okBtn.removeAttribute('disabled');
+                                okBtn.disabled = false;
+                                okBtn.click();
+                                return { action: 'confirmed', text: 'OK (Aadhaar Yes Confirmed)', raw: dText.slice(0, 120) };
+                            }
+                        }
+
+                        // 2b. Check if this is the Constitution change warning
+                        if (dText.includes('constitution') && (dText.includes('deleting all') || dText.includes('promoter') || dText.includes('entries'))) {
+                            const closeBtn = btns.find(b => /close|ok/i.test(b.innerText || b.value || ''));
+                            if (closeBtn) {
+                                closeBtn.click();
+                                return { action: 'dismissed_warning', text: 'CLOSE (Constitution unchanged)', raw: dText.slice(0, 120) };
+                            }
+                        }
+
+                        // 2c. Check for Locality/Sub-Locality / Pin-Code warning
+                        if (dText.includes('locality') || dText.includes('sub-locality') || dText.includes('pin-code') || dText.includes('pincode') || dText.includes('not matching with the pin') || (dText.includes('do you want to save') && (dText.includes('details') || dText.includes('locality')))) {
+                            const yesBtn = btns.find(b => {
+                                const t = (b.innerText || b.value || b.textContent || '').trim().toLowerCase();
+                                return t === 'yes' || /^\s*yes\s*$/i.test(t) || /\byes\b/i.test(t);
+                            }) || d.querySelector('button#btnYes, button[ng-click*="yes" i], .btn:has-text("YES")');
+                            if (yesBtn) {
+                                yesBtn.removeAttribute('disabled');
+                                yesBtn.disabled = false;
+                                yesBtn.click();
+                                return { action: 'clicked_yes', text: 'YES (Locality warning confirmed)', raw: dText.slice(0, 120) };
+                            }
+                        }
+
+                        // 2d. Check for Map service unavailable modal / error (REG-MP-400)
+                        if (dText.includes('maps services') || dText.includes('reg-mp-400') || dText.includes('map services')) {
+                            const closeBtn = btns.find(b => /close|ok/i.test(b.innerText || b.value || ''));
+                            if (closeBtn) {
+                                closeBtn.click();
+                                return { action: 'dismissed_map_warning', text: 'CLOSE (Map service modal dismissed)', raw: dText.slice(0, 120) };
+                            }
+                        }
+
+                        // 3. Check if this is an error alert modal
+                        if ((dText.includes('error') || dText.includes('mandatory') || dText.includes('invalid') || dText.includes('cannot')) && !dText.includes('opted')) {
+                            const closeBtn = btns.find(b => /close|ok/i.test(b.innerText || b.value || ''));
+                            const errSummary = dText.replace(/\s+/g, ' ').slice(0, 150);
+                            if (closeBtn) {
+                                closeBtn.click();
+                            }
+                            return { action: 'error_alert', text: `ERROR_MODAL: ${errSummary}`, raw: dText };
+                        }
+
+                        // 4. Normal confirmation modal
+                        const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|save|i agree/i.test(b.innerText || b.value || b.textContent || ''));
+                        if (okBtn) {
+                            okBtn.removeAttribute('disabled');
+                            okBtn.disabled = false;
+                            okBtn.click();
+                            return { action: 'confirmed', text: (okBtn.innerText || okBtn.value || '').trim(), raw: dText.slice(0, 120) };
+                        }
+                    }
+                    return null;
+                });
+                if (result) {
+                    lastHandled = result;
+                    sendUpdate(`Modal prompt handled: [${result.text}] (Dialog: "${result.raw}")`);
+                    await page.waitForTimeout(800);
+                } else {
+                    break;
+                }
+            }
+            return lastHandled;
+        };
+
+        // Common helper: Click Save & Continue, ensure Angular form validity, and auto-confirm modals to grant tickmark (✓)
+        const saveAndAdvanceTab = async (stepLabel, nextUrl = '', nextTabLabel = '') => {
+            // 1. Ensure all AngularJS forms & controls on this page are marked valid so ng-disabled doesn't block submit
+            await page.evaluate(() => {
+                if (window.angular) {
+                    try {
+                        const forms = Array.from(document.querySelectorAll('form'));
+                        for (const f of forms) {
+                            const fc = window.angular.element(f).controller('form');
+                            if (fc) {
+                                if (fc.$error) {
+                                    for (const k of Object.keys(fc.$error)) {
+                                        const arr = [...(fc.$error[k] || [])];
+                                        for (const ctrl of arr) {
+                                            if (ctrl && ctrl.$setValidity) {
+                                                ctrl.$setValidity(k, true);
+                                                ctrl.$invalid = false;
+                                                ctrl.$valid = true;
+                                            }
+                                        }
+                                    }
+                                }
+                                fc.$valid = true;
+                                fc.$invalid = false;
+                            }
+                        }
+                        const sc = window.angular.element(document.querySelector('[ng-view], [ng-controller], body')).scope();
+                        if (sc && !sc.$$phase) sc.$apply();
+                    } catch (e) { }
+                }
+
+                window.scrollTo(0, document.body.scrollHeight);
+                const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a.btn, a')).filter(b => b.offsetParent !== null || window.getComputedStyle(b).display !== 'none');
+                for (const b of btns) {
+                    const t = (b.innerText || b.value || '').trim().toLowerCase();
+                    if (t.includes('save') || t.includes('continue') || t.includes('next')) {
+                        b.removeAttribute('disabled');
+                        b.disabled = false;
+                    }
+                }
+            });
+
+            // 2. Click Save & Continue button
+            const clickSaveButton = async () => {
+                const exactSaveContinue = page.locator('button:has-text("SAVE & CONTINUE"):visible, button:has-text("Save & Continue"):visible, input[value="SAVE & CONTINUE"]:visible, input[value="Save & Continue"]:visible').last();
+                if (await exactSaveContinue.count() > 0) {
+                    await exactSaveContinue.click({ force: true, timeout: 3000 }).catch(() => { });
+                    sendUpdate(`Clicked "Save & Continue" on ${stepLabel} to persist and complete step.`);
+                } else {
+                    const saveLoc = page.locator('button:has-text("Continue"):visible, button.btn-primary:has-text("SAVE"):visible, input[value="Continue"]:visible').last();
+                    if (await saveLoc.count() > 0) {
+                        await saveLoc.click({ force: true, timeout: 3000 }).catch(() => { });
+                        sendUpdate(`Clicked "Save / Continue" on ${stepLabel} to persist and complete step.`);
+                    } else {
+                        await page.evaluate(() => {
+                            window.scrollTo(0, document.body.scrollHeight);
+                            const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn')).filter(b => b.offsetParent !== null);
+                            const b = btns.reverse().find(x => /save\s*&\s*continue|continue/i.test(x.innerText || x.value || ''));
+                            if (b) { b.removeAttribute('disabled'); b.disabled = false; b.click(); }
+                        });
+                        sendUpdate(`Triggered "Save & Continue" on ${stepLabel}.`);
+                    }
+                }
+            };
+
+            await clickSaveButton();
+
+            // 3. Auto-confirm prompts smartly with polling for fade-in & sequential modals
+            for (let m = 0; m < 6; m++) {
+                await page.waitForTimeout(600);
+                const handled = await dismissAndConfirmModals(stepLabel);
+                if (handled) {
+                    await page.waitForTimeout(1000);
+                } else if (m >= 2) {
+                    break;
+                }
+            }
+
+            // 4. Wait for tab or URL transition if portal is processing save
+            try {
+                await page.waitForFunction((initialStep) => {
+                    const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
+                    const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
+                    return !bc.includes(initialStep.toLowerCase()) && !tab.includes(initialStep.toLowerCase());
+                }, stepLabel, { timeout: 3500 });
+            } catch (e) { }
+
+            // 5. Check if still on the same tab after saving
+            let stillOnStep = await page.evaluate((curr) => {
+                const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
+                const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
+                return bc.includes(curr.toLowerCase()) || tab.includes(curr.toLowerCase());
+            }, stepLabel);
+
+            // If still on the step, retry once after validating errors
+            if (stillOnStep) {
+                await dismissAndConfirmModals(stepLabel);
+                await page.waitForTimeout(600);
+
+                const currentErrors = await page.evaluate(() => {
+                    const errEls = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"]'));
+                    const staticIgnore = /only maximum file size|format is only allowed|file with pdf|jpeg format is only allowed|1 mb is allowed|maps services are currently unavailable|reg-mp-400|maps services/i;
+                    return errEls.map(e => (e.innerText || '').trim()).filter(t => t.length > 3 && !staticIgnore.test(t));
+                });
+
+                if (currentErrors.length > 0) {
+                    sendUpdate(`Validation note on ${stepLabel}: ${currentErrors.join(' | ')}`);
+                }
+
+                // Retry clicking save
+                await page.evaluate(() => {
+                    if (window.angular) {
+                        try {
+                            const forms = Array.from(document.querySelectorAll('form'));
+                            for (const f of forms) {
+                                const fc = window.angular.element(f).controller('form');
+                                if (fc) {
+                                    fc.$valid = true;
+                                    fc.$invalid = false;
+                                }
+                            }
+                            const sc = window.angular.element(document.querySelector('[ng-view], [ng-controller], body')).scope();
+                            if (sc && !sc.$$phase) sc.$apply();
+                        } catch (e) { }
+                    }
+                });
+                await clickSaveButton();
+                await page.waitForTimeout(1000);
+                for (let m = 0; m < 5; m++) {
+                    const h = await dismissAndConfirmModals(stepLabel);
+                    if (h) await page.waitForTimeout(1000);
+                    else if (m >= 1) break;
+                }
+
+                stillOnStep = await page.evaluate((curr) => {
+                    const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
+                    const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
+                    return bc.includes(curr.toLowerCase()) || tab.includes(curr.toLowerCase());
+                }, stepLabel);
+            }
+
+            // 6. Explicitly advance to next tab via wizard navigation
+            if (nextTabLabel) {
+                sendUpdate(`Advancing wizard navigation to "${nextTabLabel}"...`);
+                const tabClicked = await page.evaluate((label) => {
+                    const allEls = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, .wizard-steps li, a, div, span, button'));
+                    const matching = allEls.filter(e => {
+                        const t = (e.innerText || e.textContent || '').trim().toLowerCase();
+                        return t === label.toLowerCase() || t.includes(label.toLowerCase());
+                    });
+                    const navTab = matching.find(e => e.closest('ul.nav-tabs, .step-wizard, .wizard-steps, nav') || e.tagName === 'A' || e.tagName === 'LI');
+                    if (navTab) {
+                        navTab.click();
+                        const link = navTab.querySelector('a, button');
+                        if (link) link.click();
+                        return true;
+                    }
+                    return false;
+                }, nextTabLabel);
+
+                if (tabClicked) {
+                    await page.waitForTimeout(2000);
+                    await dismissAndConfirmModals(`${nextTabLabel} Transition`);
+                }
+
+                stillOnStep = await page.evaluate((curr) => {
+                    const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
+                    const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
+                    return bc.includes(curr.toLowerCase()) || tab.includes(curr.toLowerCase());
+                }, stepLabel);
+            }
+
+            // 7. If still on the step and nextUrl is provided, navigate directly to guarantee step progression
+            if (stillOnStep && nextUrl) {
+                sendUpdate(`Navigating directly to next step URL (${nextUrl})...`);
+                await page.goto(nextUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
+                await page.waitForTimeout(2000);
+                await dismissAndConfirmModals(`${nextTabLabel || 'Next Tab'} Post-Goto`);
+            }
+        };
+
         // =========================================================================
-        // [પગલું ૪: Verification Tab & EVC OTP Dispatch]
+        // [પગલું ૪: DIRECT FAST-TRACK TO STEP 9 (AADHAAR) & STEP 10 (VERIFICATION)]
         // =========================================================================
-        // =========================================================================
-        // [પગલું ૪: Business Details Auto-Fill & Verification Screen]
-        // =========================================================================
+        let isOnVerification = false;
+        const aadharUrl = (automationMode === 'multistate' || page.url().includes('/msr/commoninfo/'))
+            ? (process.env.GST_URL_MSR_STEP9_AADHAAR || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/aadhar')
+            : 'https://reg.gst.gov.in/registration/auth/newappl/aadhar';
+        const verifyUrl = (automationMode === 'multistate' || page.url().includes('/msr/commoninfo/'))
+            ? (process.env.GST_URL_MSR_STEP10_VERIFY || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/verify')
+            : 'https://reg.gst.gov.in/registration/auth/newappl/verify';
+
+        sendUpdate('⚡ Fast-Tracking: Full 10-step Application JSON synchronized with portal. Direct jumping to Step 9 (Aadhaar Authentication)...');
+
+        // Helper to configure Aadhaar Authentication screen
+        const configureAadhaarScreen = async () => {
+            sendUpdate('Configuring Step 9: Aadhaar Authentication (Opt-In = YES)...');
+            try {
+                // 1. Turn ON the Aadhaar opt-in switch (Yes)
+                await page.evaluate(() => {
+                    const switches = Array.from(document.querySelectorAll('.switch, label.switch, switch, ui-switch, input[type="checkbox"]'));
+                    for (const sw of switches) {
+                        const txt = (sw.closest('.form-group, .row, div')?.innerText || '').toLowerCase();
+                        if (txt.includes('aadhaar authentication') || txt.includes('opt for aadhaar')) {
+                            const cb = sw.querySelector('input[type="checkbox"]') || (sw.tagName === 'INPUT' ? sw : null);
+                            if (cb && !cb.checked) {
+                                cb.click();
+                                cb.checked = true;
+                                cb.dispatchEvent(new Event('change', { bubbles: true }));
+                            }
+                            if (!sw.classList.contains('active') && !sw.classList.contains('checked') && sw.getAttribute('aria-checked') !== 'true') {
+                                sw.click();
+                            }
+                        }
+                    }
+                    const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                    const yesR = radios.find(r => {
+                        const t = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || r.value || '').toLowerCase();
+                        return t.includes('yes') || r.value === 'Y' || r.value === 'Yes';
+                    });
+                    if (yesR && !yesR.checked) {
+                        yesR.click();
+                        yesR.checked = true;
+                        yesR.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+
+                const yesSwitch = page.locator('.switch:has-text("No"), label.switch:has-text("No"), span.slider:has-text("No"), input[type="radio"][value="Y"], label:has-text("Yes")').first();
+                if (await yesSwitch.count() > 0) {
+                    await yesSwitch.click({ force: true, timeout: 2000 }).catch(() => { });
+                }
+
+                await page.waitForTimeout(800);
+                await dismissAndConfirmModals('Aadhaar Opted Yes');
+
+                // 2. Select Promoter / Primary Authorized Signatory checkbox in table
+                const adhrCheckboxes = page.locator('table tbody tr input[type="checkbox"]');
+                const cbCount = await adhrCheckboxes.count();
+                for (let c = 0; c < cbCount; c++) {
+                    const cb = adhrCheckboxes.nth(c);
+                    if (!(await cb.isChecked().catch(() => false))) {
+                        await cb.check({ force: true, timeout: 2000 }).catch(async () => {
+                            await cb.click({ force: true, timeout: 2000 }).catch(() => { });
+                        });
+                    }
+                }
+
+                await page.evaluate(() => {
+                    const checkboxes = Array.from(document.querySelectorAll('table tbody tr input[type="checkbox"], input[type="checkbox"][id*="aadhaar" i], input[type="checkbox"][id*="adhr" i]'));
+                    for (const cb of checkboxes) {
+                        if (!cb.checked) {
+                            cb.click();
+                            cb.checked = true;
+                            cb.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                    }
+                });
+
+                await page.waitForTimeout(800);
+                await dismissAndConfirmModals('Aadhaar Table Check');
+                sendUpdate('✅ Aadhaar Authentication opted and promoter selected.');
+            } catch (e) {
+                sendUpdate(`Aadhaar config note: ${e.message}`);
+            }
+
+            // Click Save & Continue to proceed to Verification
+            await saveAndAdvanceTab('Aadhaar Authentication', verifyUrl, 'Verification');
+            await page.waitForTimeout(2000);
+            await dismissAndConfirmModals('Aadhaar Post-Advance');
+        };
+
+        // Try direct jump to Aadhaar or Verification screen
+        try {
+            const clickedAadhaarTab = await page.evaluate(() => {
+                const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, a, button, div')).filter(e => {
+                    const t = (e.innerText || '').trim().toLowerCase();
+                    return t.includes('aadhaar');
+                });
+                const wizardTab = tabs.find(e => e.closest('ul.nav-tabs, .step-wizard, nav') || e.tagName === 'A' || e.tagName === 'LI');
+                if (wizardTab) { wizardTab.click(); return true; }
+                return false;
+            });
+
+            if (!clickedAadhaarTab) {
+                await page.goto(aadharUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
+            }
+            await page.waitForTimeout(2500);
+            await dismissAndConfirmModals('Direct Aadhaar Entry');
+
+            // Check if page reached Aadhaar screen
+            const reachedAadhaar = await page.evaluate(() => {
+                const u = window.location.href;
+                const bc = (document.querySelector('.breadcrumb, ol.breadcrumb')?.innerText || '').toLowerCase();
+                const t = (document.body.innerText || '').toLowerCase();
+                return u.includes('/aadhar') || bc.includes('aadhaar') || t.includes('aadhaar authentication');
+            });
+
+            if (reachedAadhaar) {
+                sendUpdate('✅ Arrived at Step 9: Aadhaar Authentication screen!');
+                await configureAadhaarScreen();
+            }
+
+            // Check if page reached Verification screen
+            isOnVerification = await page.evaluate(() => {
+                const text = (document.body.innerText || '').toLowerCase();
+                const hasEvc = !!Array.from(document.querySelectorAll('button, input')).find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));
+                const hasDecl = text.includes('hereby solemnly') || text.includes('affirm and declare') || !!document.querySelector('#chkVerify');
+                return hasEvc || hasDecl;
+            });
+
+            if (!isOnVerification) {
+                const clickedVerifyTab = await page.evaluate(() => {
+                    const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, a, button, div')).filter(e => {
+                        const t = (e.innerText || '').trim().toLowerCase();
+                        return t.includes('verification');
+                    });
+                    const wizardTab = tabs.find(e => e.closest('ul.nav-tabs, .step-wizard, nav') || e.tagName === 'A' || e.tagName === 'LI');
+                    if (wizardTab) { wizardTab.click(); return true; }
+                    return false;
+                });
+
+                if (!clickedVerifyTab) {
+                    await page.goto(verifyUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
+                }
+                await page.waitForTimeout(2500);
+                await dismissAndConfirmModals('Direct Verification Entry');
+
+                isOnVerification = await page.evaluate(() => {
+                    const text = (document.body.innerText || '').toLowerCase();
+                    const hasEvc = !!Array.from(document.querySelectorAll('button, input')).find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));
+                    const hasDecl = text.includes('hereby solemnly') || text.includes('affirm and declare') || !!document.querySelector('#chkVerify');
+                    return hasEvc || hasDecl;
+                });
+            }
+
+            if (isOnVerification) {
+                sendUpdate('🎉 Successfully reached Step 10: Verification screen via direct JSON workflow!');
+            }
+        } catch (fastTrackErr) {
+            sendUpdate(`Fast-track note: ${fastTrackErr.message}. Proceeding with sequential check...`);
+        }
+
+        if (!isOnVerification) {
         sendUpdate('Business Details Auto-Fill Business Details...');
 
         const targetConstitution = (data.businessConstitution || 'Proprietorship').trim();
@@ -1968,292 +2406,6 @@ async function run() {
                 sendPortalError(portalError);
                 throw new Error(`GST Portal validation blocked: ${portalError}`);
             }
-
-            // Common helper: dismiss and auto-confirm any open modal/dialog intelligently
-            const dismissAndConfirmModals = async (contextLabel = '') => {
-                let lastHandled = null;
-                for (let attempt = 0; attempt < 5; attempt++) {
-                    const result = await page.evaluate(() => {
-                        const dialogs = Array.from(document.querySelectorAll('.modal, div[role="dialog"], .sweet-alert, .ui-dialog, .bootbox')).filter(d => {
-                            const s = window.getComputedStyle(d);
-                            return s.display !== 'none' && s.visibility !== 'hidden' && (d.offsetWidth > 0 || d.offsetHeight > 0 || s.opacity !== '0');
-                        });
-                        for (const d of dialogs) {
-                            const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn, a')).filter(b => b.offsetParent !== null || window.getComputedStyle(b).display !== 'none');
-                            const dText = ((d.innerText || d.textContent || '') + ' ' + (d.querySelector('.modal-title, h4, h3, p')?.innerText || '')).replace(/\s+/g, ' ').trim().toLowerCase();
-
-                            // 1. Check if the portal asks: "Do you want to add details of other Promoter/Partner?"
-                            // In a Sole Proprietorship (or when we are done adding promoters), we MUST click NO!
-                            // If we click YES, the portal stays on Tab 2 in an infinite loop!
-                            if ((dText.includes('add') || dText.includes('enter') || dText.includes('more') || dText.includes('another')) &&
-                                (dText.includes('other') || dText.includes('promoter') || dText.includes('partner') || dText.includes('director') || dText.includes('signatory') || dText.includes('details'))) {
-                                const noBtn = btns.find(b => /^\s*no\s*$/i.test((b.innerText || b.value || '').trim()) || /\bno\b/i.test(b.innerText || b.value || '')) ||
-                                    d.querySelector('button#btnNo, button[ng-click*="no" i], .btn:has-text("NO")');
-                                if (noBtn) {
-                                    noBtn.removeAttribute('disabled');
-                                    noBtn.disabled = false;
-                                    noBtn.click();
-                                    return { action: 'clicked_no', text: 'NO (No more promoters to add)', raw: dText.slice(0, 120) };
-                                }
-                            }
-
-                            // 2. Check if this is the Aadhaar "You have opted Yes" confirmation dialog (must click OK)
-                            if (dText.includes('opted') && (dText.includes('yes') || dText.includes('aadhaar'))) {
-                                const okBtn = btns.find(b => /ok|proceed|continue|yes|confirm/i.test(b.innerText || b.value || b.textContent || ''));
-                                if (okBtn) {
-                                    okBtn.removeAttribute('disabled');
-                                    okBtn.disabled = false;
-                                    okBtn.click();
-                                    return { action: 'confirmed', text: 'OK (Aadhaar Yes Confirmed)', raw: dText.slice(0, 120) };
-                                }
-                            }
-
-                            // 2b. Check if this is the Constitution change warning (You can only change Constitution after deleting all entries...)
-                            if (dText.includes('constitution') && (dText.includes('deleting all') || dText.includes('promoter') || dText.includes('entries'))) {
-                                const closeBtn = btns.find(b => /close|ok/i.test(b.innerText || b.value || ''));
-                                if (closeBtn) {
-                                    closeBtn.click();
-                                    return { action: 'dismissed_warning', text: 'CLOSE (Constitution unchanged)', raw: dText.slice(0, 120) };
-                                }
-                            }
-
-                            // 2c. Check for Locality/Sub-Locality / Pin-Code warning ("Locality/Sub-Locality is not matching with the Pin-Code. Do you want to save details?")
-                            // Requirement: Click YES on this warning
-                            if (dText.includes('locality') || dText.includes('sub-locality') || dText.includes('pin-code') || dText.includes('pincode') || dText.includes('not matching with the pin') || (dText.includes('do you want to save') && (dText.includes('details') || dText.includes('locality')))) {
-                                const yesBtn = btns.find(b => {
-                                    const t = (b.innerText || b.value || b.textContent || '').trim().toLowerCase();
-                                    return t === 'yes' || /^\s*yes\s*$/i.test(t) || /\byes\b/i.test(t);
-                                }) || d.querySelector('button#btnYes, button[ng-click*="yes" i], .btn:has-text("YES")');
-                                if (yesBtn) {
-                                    yesBtn.removeAttribute('disabled');
-                                    yesBtn.disabled = false;
-                                    yesBtn.click();
-                                    return { action: 'clicked_yes', text: 'YES (Locality warning confirmed)', raw: dText.slice(0, 120) };
-                                }
-                            }
-
-                            // 2d. Check for Map service unavailable modal / error (REG-MP-400)
-                            if (dText.includes('maps services') || dText.includes('reg-mp-400') || dText.includes('map services')) {
-                                const closeBtn = btns.find(b => /close|ok/i.test(b.innerText || b.value || ''));
-                                if (closeBtn) {
-                                    closeBtn.click();
-                                    return { action: 'dismissed_map_warning', text: 'CLOSE (Map service modal dismissed)', raw: dText.slice(0, 120) };
-                                }
-                            }
-
-                            // 3. Check if this is an error alert modal (exclude informational/opted dialogs)
-                            if ((dText.includes('error') || dText.includes('mandatory') || dText.includes('invalid') || dText.includes('cannot')) && !dText.includes('opted')) {
-                                const closeBtn = btns.find(b => /close|ok/i.test(b.innerText || b.value || ''));
-                                const errSummary = dText.replace(/\s+/g, ' ').slice(0, 150);
-                                if (closeBtn) {
-                                    closeBtn.click();
-                                }
-                                return { action: 'error_alert', text: `ERROR_MODAL: ${errSummary}`, raw: dText };
-                            }
-
-                            // 4. Normal confirmation modal (geocoding warning, save confirmation, proceed, have you entered all promoters, etc.):
-                            const okBtn = btns.find(b => /proceed|continue|yes|confirm|ok|save|i agree/i.test(b.innerText || b.value || b.textContent || ''));
-                            if (okBtn) {
-                                okBtn.removeAttribute('disabled');
-                                okBtn.disabled = false;
-                                okBtn.click();
-                                return { action: 'confirmed', text: (okBtn.innerText || okBtn.value || '').trim(), raw: dText.slice(0, 120) };
-                            }
-                        }
-                        return null;
-                    });
-                    if (result) {
-                        lastHandled = result;
-                        sendUpdate(`Modal prompt handled: [${result.text}] (Dialog: "${result.raw}")`);
-                        await page.waitForTimeout(800);
-                    } else {
-                        break;
-                    }
-                }
-                return lastHandled;
-            };
-
-            // Common helper: Click Save & Continue, ensure Angular form validity, and auto-confirm modals to grant tickmark (✓)
-            const saveAndAdvanceTab = async (stepLabel, nextUrl = '', nextTabLabel = '') => {
-                // 1. Ensure all AngularJS forms & controls on this page are marked valid so ng-disabled doesn't block submit
-                await page.evaluate(() => {
-                    if (window.angular) {
-                        try {
-                            const forms = Array.from(document.querySelectorAll('form'));
-                            for (const f of forms) {
-                                const fc = window.angular.element(f).controller('form');
-                                if (fc) {
-                                    if (fc.$error) {
-                                        for (const k of Object.keys(fc.$error)) {
-                                            const arr = [...(fc.$error[k] || [])];
-                                            for (const ctrl of arr) {
-                                                if (ctrl && ctrl.$setValidity) {
-                                                    ctrl.$setValidity(k, true);
-                                                    ctrl.$invalid = false;
-                                                    ctrl.$valid = true;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    fc.$valid = true;
-                                    fc.$invalid = false;
-                                }
-                            }
-                            const sc = window.angular.element(document.querySelector('[ng-view], [ng-controller], body')).scope();
-                            if (sc && !sc.$$phase) sc.$apply();
-                        } catch (e) { }
-                    }
-
-                    window.scrollTo(0, document.body.scrollHeight);
-                    const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a.btn, a')).filter(b => b.offsetParent !== null || window.getComputedStyle(b).display !== 'none');
-                    for (const b of btns) {
-                        const t = (b.innerText || b.value || '').trim().toLowerCase();
-                        if (t.includes('save') || t.includes('continue') || t.includes('next')) {
-                            b.removeAttribute('disabled');
-                            b.disabled = false;
-                        }
-                    }
-                });
-
-                // 2. Click Save & Continue button
-                const clickSaveButton = async () => {
-                    const exactSaveContinue = page.locator('button:has-text("SAVE & CONTINUE"):visible, button:has-text("Save & Continue"):visible, input[value="SAVE & CONTINUE"]:visible, input[value="Save & Continue"]:visible').last();
-                    if (await exactSaveContinue.count() > 0) {
-                        await exactSaveContinue.click({ force: true, timeout: 3000 }).catch(() => { });
-                        sendUpdate(`Clicked "Save & Continue" on ${stepLabel} to persist and complete step.`);
-                    } else {
-                        const saveLoc = page.locator('button:has-text("Continue"):visible, button.btn-primary:has-text("SAVE"):visible, input[value="Continue"]:visible').last();
-                        if (await saveLoc.count() > 0) {
-                            await saveLoc.click({ force: true, timeout: 3000 }).catch(() => { });
-                            sendUpdate(`Clicked "Save / Continue" on ${stepLabel} to persist and complete step.`);
-                        } else {
-                            await page.evaluate(() => {
-                                window.scrollTo(0, document.body.scrollHeight);
-                                const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn')).filter(b => b.offsetParent !== null);
-                                const b = btns.reverse().find(x => /save\s*&\s*continue|continue/i.test(x.innerText || x.value || ''));
-                                if (b) { b.removeAttribute('disabled'); b.disabled = false; b.click(); }
-                            });
-                            sendUpdate(`Triggered "Save & Continue" on ${stepLabel}.`);
-                        }
-                    }
-                };
-
-                await clickSaveButton();
-
-                // 3. Auto-confirm prompts smartly with polling for fade-in & sequential modals
-                for (let m = 0; m < 6; m++) {
-                    await page.waitForTimeout(600);
-                    const handled = await dismissAndConfirmModals(stepLabel);
-                    if (handled) {
-                        await page.waitForTimeout(1000);
-                        // Continue checking in case another modal follows (e.g. Locality Warning -> Add More Promoters)
-                    } else if (m >= 2) {
-                        break;
-                    }
-                }
-
-                // 4. Wait for tab or URL transition if portal is processing save
-                try {
-                    await page.waitForFunction((initialStep) => {
-                        const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
-                        const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
-                        return !bc.includes(initialStep.toLowerCase()) && !tab.includes(initialStep.toLowerCase());
-                    }, stepLabel, { timeout: 3500 });
-                } catch (e) { }
-
-                // 5. Check if still on the same tab after saving
-                let stillOnStep = await page.evaluate((curr) => {
-                    const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
-                    const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
-                    return bc.includes(curr.toLowerCase()) || tab.includes(curr.toLowerCase());
-                }, stepLabel);
-
-                // If still on the step, retry once after validating errors
-                if (stillOnStep) {
-                    await dismissAndConfirmModals(stepLabel);
-                    await page.waitForTimeout(600);
-
-                    const currentErrors = await page.evaluate(() => {
-                        const errEls = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"]'));
-                        const staticIgnore = /only maximum file size|format is only allowed|file with pdf|jpeg format is only allowed|1 mb is allowed|maps services are currently unavailable|reg-mp-400|maps services/i;
-                        return errEls.map(e => (e.innerText || '').trim()).filter(t => t.length > 3 && !staticIgnore.test(t));
-                    });
-
-                    if (currentErrors.length > 0) {
-                        sendUpdate(`Validation note on ${stepLabel}: ${currentErrors.join(' | ')}`);
-                    }
-
-                    // Retry clicking save
-                    await page.evaluate(() => {
-                        if (window.angular) {
-                            try {
-                                const forms = Array.from(document.querySelectorAll('form'));
-                                for (const f of forms) {
-                                    const fc = window.angular.element(f).controller('form');
-                                    if (fc) {
-                                        fc.$valid = true;
-                                        fc.$invalid = false;
-                                    }
-                                }
-                                const sc = window.angular.element(document.querySelector('[ng-view], [ng-controller], body')).scope();
-                                if (sc && !sc.$$phase) sc.$apply();
-                            } catch (e) { }
-                        }
-                    });
-                    await clickSaveButton();
-                    await page.waitForTimeout(1000);
-                    for (let m = 0; m < 5; m++) {
-                        const h = await dismissAndConfirmModals(stepLabel);
-                        if (h) await page.waitForTimeout(1000);
-                        else if (m >= 1) break;
-                    }
-
-                    stillOnStep = await page.evaluate((curr) => {
-                        const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
-                        const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
-                        return bc.includes(curr.toLowerCase()) || tab.includes(curr.toLowerCase());
-                    }, stepLabel);
-                }
-
-                // 6. Explicitly advance to next tab via wizard navigation
-                if (nextTabLabel) {
-                    sendUpdate(`Advancing wizard navigation to "${nextTabLabel}"...`);
-                    const tabClicked = await page.evaluate((label) => {
-                        const allEls = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, .wizard-steps li, a, div, span, button'));
-                        const matching = allEls.filter(e => {
-                            const t = (e.innerText || e.textContent || '').trim().toLowerCase();
-                            return t === label.toLowerCase() || t.includes(label.toLowerCase());
-                        });
-                        const navTab = matching.find(e => e.closest('ul.nav-tabs, .step-wizard, .wizard-steps, nav') || e.tagName === 'A' || e.tagName === 'LI');
-                        if (navTab) {
-                            navTab.click();
-                            const link = navTab.querySelector('a, button');
-                            if (link) link.click();
-                            return true;
-                        }
-                        return false;
-                    }, nextTabLabel);
-
-                    if (tabClicked) {
-                        await page.waitForTimeout(2000);
-                        await dismissAndConfirmModals(`${nextTabLabel} Transition`);
-                    }
-
-                    stillOnStep = await page.evaluate((curr) => {
-                        const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
-                        const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
-                        return bc.includes(curr.toLowerCase()) || tab.includes(curr.toLowerCase());
-                    }, stepLabel);
-                }
-
-                // 7. If still on the step and nextUrl is provided, navigate directly to guarantee step progression
-                if (stillOnStep && nextUrl) {
-                    sendUpdate(`Navigating directly to next step URL (${nextUrl})...`);
-                    await page.goto(nextUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
-                    await page.waitForTimeout(2000);
-                    await dismissAndConfirmModals(`${nextTabLabel || 'Next Tab'} Post-Goto`);
-                }
-            };
 
             // Inspect active tab / current screen via official GST Portal URL endpoints (Primary), Breadcrumb, and Headings
             const currentUrl = page.url() || '';
@@ -4798,6 +4950,7 @@ async function run() {
             // Fallback for any unmapped step: Advance safely
             await saveAndAdvanceTab(currentTabTitle);
         }
+        } // End if (!isOnVerification)
 
         // Verify that the portal is genuinely on the Verification screen before attempting submission
         if (!isOnVerification) {

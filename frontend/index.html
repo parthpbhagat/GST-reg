@@ -1037,6 +1037,44 @@
         </div>
     </div>
 
+    <!-- Direct JSON Upload Modal -->
+    <div id="json-upload-modal" class="modal-overlay hidden">
+        <div class="modal" style="width: 620px; max-width: 95vw; max-height: 85vh; overflow-y: auto;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <h2 style="margin: 0; font-size: 18px; color: #0f172a; font-weight: 700;">📋 Direct Full JSON Data Upload</h2>
+                <button type="button" style="background: none; border: none; font-size: 20px; color: #64748b; cursor: pointer;" onclick="window.closeJsonUploadModal()">✕</button>
+            </div>
+            <p style="font-size: 13px; color: #64748b; margin-bottom: 14px; line-height: 1.4;">Paste your complete 10-step GST Application JSON payload below. All data will be uploaded and mapped into the final form at once:</p>
+            <textarea id="direct-json-textarea" style="width: 100%; height: 260px; font-family: monospace; font-size: 12px; padding: 12px; border: 1.5px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;" placeholder='{
+  "pan": "ABCDE1234F",
+  "legalName": "LEGAL NAME OF BUSINESS",
+  "tradeName": "TRADE NAME",
+  "businessConstitution": "Proprietorship",
+  "state": "Gujarat",
+  "district": "Ahmedabad",
+  "dateOfCommencement": "2026-01-01",
+  "dateOfLiability": "2026-01-01",
+  "reasonToObtainRegistration": "Voluntary Basis",
+  "p1": {
+    "firstName": "FIRSTNAME",
+    "mobile": "9876543210",
+    "email": "email@example.com",
+    "designation": "Proprietor",
+    "alsoAuthorizedSignatory": true
+  },
+  "ppob_pincode": "380001",
+  "ppob_city": "Ahmedabad",
+  "ppob_natureOfPossession": "Owned",
+  "goods_hsn": ["1001"],
+  "verification_place": "Ahmedabad"
+}'></textarea>
+            <div class="btn-group" style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn ghost" onclick="window.closeJsonUploadModal()">Cancel</button>
+                <button class="btn accent" style="background: #2563eb; color: white;" onclick="window.applyDirectJsonUpload()">⚡ Apply & Upload to Final Form</button>
+            </div>
+        </div>
+    </div>
+
 
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>

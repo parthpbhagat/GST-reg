@@ -1109,6 +1109,14 @@ function validateStep(targetStep) {
             alert('Please enter Legal Name in Business Details (Step 1).');
             return false;
         }
+        if (!f.tradeName || !f.tradeName.trim()) {
+            alert('Please enter Trade Name in Business Details (Step 1).');
+            return false;
+        }
+        if (!f.businessConstitution || !f.businessConstitution.trim()) {
+            alert('Please select Constitution of Business in Business Details (Step 1).');
+            return false;
+        }
         if (!f.state || !f.state.trim()) {
             alert('Please select State in Business Details (Step 1).');
             return false;
@@ -1143,10 +1151,15 @@ function validateStep(targetStep) {
             alert('Please add at least one Promoter / Partner with mandatory details (First Name, Mobile) in Step 2.');
             return false;
         }
+        const p1 = f.p1 || {};
+        if (!p1.promoterPhotoFile && !f.promoterPhotoFile) {
+            alert('Please upload Promoter Photograph in Step 2.');
+            return false;
+        }
     } else if (targetStep === 2) {
         let hasPrimary = false;
         for (const k in f) {
-            if ((k.match(/^a\d+$/) || k.match(/^p\d+$/)) && f[k] && f[k].primary === true) {
+            if ((k.match(/^a\d+$/) || k.match(/^p\d+$/)) && f[k] && (f[k].primary === true || f[k].alsoAuthorizedSignatory === true)) {
                 if (f[k].firstName && f[k].firstName.trim()) {
                     hasPrimary = true;
                     break;
@@ -1154,7 +1167,7 @@ function validateStep(targetStep) {
             }
         }
         if (!hasPrimary) {
-            alert('Please designate at least one Primary Authorized Signatory with valid details in Step 3.');
+            alert('Please designate at least one Primary Authorized Signatory in Step 3.');
             return false;
         }
     } else if (targetStep === 4) {
@@ -1178,9 +1191,31 @@ function validateStep(targetStep) {
             alert('Please select Nature of Possession of Premises in Step 5.');
             return false;
         }
+        if (!f.ppob_docFile && !f.electricityBillFile && !f.rentAgreementFile && !f.consentLetterFile) {
+            alert('Please upload Proof of Principal Place of Business (Electricity Bill / Rent Agreement) in Step 5.');
+            return false;
+        }
         const hasNature = f.ppob_natureOfBusiness && Object.values(f.ppob_natureOfBusiness).some(v => v === true);
         if (!hasNature) {
             alert('Please select at least one Nature of Business Activity in Step 5.');
+            return false;
+        }
+    } else if (targetStep === 6) {
+        const hasGoods = (Array.isArray(f.goods_hsn) && f.goods_hsn.length > 0) ||
+                         (Array.isArray(f.goods_sac) && f.goods_sac.length > 0) ||
+                         (typeof f.goods_hsn === 'string' && f.goods_hsn.trim().length > 0) ||
+                         (typeof f.hsn === 'string' && f.hsn.trim().length > 0);
+        if (!hasGoods) {
+            alert('Please add at least one Goods (HSN) or Services (SAC) Code in Step 7.');
+            return false;
+        }
+    } else if (targetStep === 9) {
+        if (f.verification_declaration === false) {
+            alert('Please check the Solemn Affirmation Declaration checkbox in Step 10.');
+            return false;
+        }
+        if (!f.verification_place && !f.ppob_city && !f.district) {
+            alert('Please enter Place of Declaration in Step 10.');
             return false;
         }
     }
@@ -1188,8 +1223,8 @@ function validateStep(targetStep) {
 }
 
 window.validateFullForm = function () {
-    for (let s = 0; s <= 4; s++) {
-        if (s === 3) continue; // Authorized representative is optional
+    for (let s = 0; s <= 9; s++) {
+        if (s === 3 || s === 5 || s === 7 || s === 8) continue; // Optional or default-satisfied steps
         if (!validateStep(s)) {
             setStep(s);
             return false;
@@ -1199,10 +1234,8 @@ window.validateFullForm = function () {
 };
 
 function setStep(newStep) {
-    if (newStep > step) {
-        for (let s = step; s < newStep; s++) {
-            if (!validateStep(s)) return;
-        }
+    if (newStep === step + 1) {
+        if (!validateStep(step)) return;
     }
 
     if (newStep === 2) {
@@ -1483,12 +1516,31 @@ window.checkMissingGstPortalData = function (data) {
     if (isBlank(pEmail)) missing.push({ step: 1, key: 'p1_email', label: 'Promoter (P1) Email Address' });
     const pPan = p1.pan || data.pan;
     if (isBlank(pPan)) missing.push({ step: 1, key: 'p1_pan', label: 'Promoter (P1) PAN' });
+    if (isBlank(p1.promoterPhotoFile) && isBlank(data.promoterPhotoFile)) {
+        missing.push({ step: 1, key: 'promoterPhotoFile', label: 'Promoter (P1) Photograph (under 100 KB)' });
+    }
+
+    // Step 2: Authorized Signatory
+    const hasPromoterAuthSig = (data.p1 && data.p1.alsoAuthorizedSignatory) || data.authSigSameAsPromoter;
+    if (!hasPromoterAuthSig) {
+        const a1 = data.a1 || {};
+        if (isBlank(a1.firstName) && isBlank(pFirst)) {
+            missing.push({ step: 2, key: 'a1_firstName', label: 'Primary Authorized Signatory Details' });
+        }
+    }
 
     // Step 4: Principal Place of Business
     if (isBlank(data.ppob_pincode)) missing.push({ step: 4, key: 'ppob_pincode', label: 'Principal Place PIN Code (6 digits)' });
     if (isBlank(data.ppob_locality) && isBlank(data.ppob_city)) missing.push({ step: 4, key: 'ppob_locality', label: 'Principal Place City / Locality' });
     if (isBlank(data.ppob_flatNo) && isBlank(data.ppob_building)) missing.push({ step: 4, key: 'ppob_flatNo', label: 'Principal Place Flat / Door / Building No.' });
     if (isBlank(data.ppob_natureOfPossession)) missing.push({ step: 4, key: 'ppob_natureOfPossession', label: 'Nature of Possession of Premises' });
+    if (isBlank(data.ppob_docFile) && isBlank(data.electricityBillFile) && isBlank(data.rentAgreementFile) && isBlank(data.consentLetterFile)) {
+        missing.push({ step: 4, key: 'ppob_docFile', label: 'Principal Place Proof Document (Electricity Bill / Rent Agreement)' });
+    }
+    const hasNature = data.ppob_natureOfBusiness && Object.values(data.ppob_natureOfBusiness).some(Boolean);
+    if (!hasNature) {
+        missing.push({ step: 4, key: 'ppob_natureOfBusiness', label: 'Principal Place Nature of Business Activity' });
+    }
 
     // Step 6: Goods and Services
     const hasGoods = (data.goods_hsn && data.goods_hsn.length > 0) || (data.goods_sac && data.goods_sac.length > 0);
@@ -1497,8 +1549,11 @@ window.checkMissingGstPortalData = function (data) {
     }
 
     // Step 9: Verification
-    if (isBlank(data.verification_place)) {
-        data.verification_place = data.ppob_city || data.ppob_locality || data.district || '';
+    if (isBlank(data.verification_place) && isBlank(data.ppob_city) && isBlank(data.district)) {
+        missing.push({ step: 9, key: 'verification_place', label: 'Place of Declaration' });
+    }
+    if (data.verification_declaration === false) {
+        missing.push({ step: 9, key: 'verification_declaration', label: 'Solemn Affirmation Declaration Checkbox' });
     }
 
     return missing;
@@ -1511,22 +1566,42 @@ window.showMissingFieldsBeforeAppIdModal = function (missingFields) {
     const desc = document.getElementById('missing-fields-desc');
     const saveBtn = document.getElementById('missing-fields-save-btn');
 
+    if (!modal || !container) return;
+
     if (title) title.innerText = '⚠️ Required GST Portal Information Missing';
-    if (desc) desc.innerText = 'GST Portal requires all mandatory fields before an Application ID can be generated. Please fill in the missing details below:';
+    if (desc) desc.innerText = 'GST Portal requires all mandatory fields across the 10 steps to reach 100% before registration. Please fill in the missing details below:';
     if (saveBtn) {
-        saveBtn.innerText = 'Save & Generate Application ID';
+        saveBtn.innerText = 'Save & Update Details';
         saveBtn.onclick = window.saveMissingFieldsAndSubmit;
     }
 
-    container.innerHTML = missingFields.map(f => `
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
+    container.innerHTML = missingFields.map(f => {
+        const isFileOrPhoto = f.key.toLowerCase().includes('file') || f.key.toLowerCase().includes('photo') || f.key.toLowerCase().includes('doc');
+        const isNature = f.key === 'ppob_natureOfBusiness';
+        const isGoods = f.key === 'goods_hsn';
+
+        if (isFileOrPhoto || isNature || isGoods) {
+            return `
+            <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <label style="font-size: 13px; font-weight: 700; color: #1e293b; margin: 0;">Step ${f.step + 1}: ${f.label}</label>
+                    <button type="button" style="font-size: 11px; font-weight: 600; padding: 4px 10px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer;" onclick="document.getElementById('missing-fields-modal').classList.add('hidden'); setStep(${f.step});">Go to Step ${f.step + 1} →</button>
+                </div>
+                <div style="font-size: 12px; color: #64748b;">
+                    ${isFileOrPhoto ? 'Document/Photo upload required in step.' : (isNature ? 'Select business activities in step.' : 'Add at least 1 HSN/SAC code in step.')}
+                </div>
+            </div>`;
+        }
+
+        return `
+        <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <label style="font-size: 13px; font-weight: 600; color: #1e293b; margin: 0;">${f.label}</label>
-                <button type="button" style="font-size: 11px; padding: 2px 8px; background: #e2e8f0; border: none; border-radius: 4px; cursor: pointer; color: #334155;" onclick="document.getElementById('missing-fields-modal').classList.add('hidden'); setStep(${f.step});">Go to Step ${f.step + 1}</button>
+                <label style="font-size: 13px; font-weight: 700; color: #1e293b; margin: 0;">Step ${f.step + 1}: ${f.label}</label>
+                <button type="button" style="font-size: 11px; padding: 3px 8px; background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; color: #334155;" onclick="document.getElementById('missing-fields-modal').classList.add('hidden'); setStep(${f.step});">Go to Step ${f.step + 1} →</button>
             </div>
             <input type="text" id="pre-app-field-${f.key}" data-key="${f.key}" style="width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1.5px solid #cbd5e1; border-radius: 4px; font-size: 14px;" placeholder="Enter ${f.label}..." />
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 
     modal.classList.remove('hidden');
 };
@@ -1547,14 +1622,134 @@ window.saveMissingFieldsAndSubmit = function () {
         }
     });
 
+    if (window.calculateProgress) window.calculateProgress();
+
     const stillMissing = window.checkMissingGstPortalData(window.form);
     if (stillMissing.length > 0) {
-        alert(`Please fill in: ${stillMissing.map(m => m.label).join(', ')}`);
+        alert(`Still required: ${stillMissing.map(m => m.label).join(', ')}`);
+        window.showMissingFieldsBeforeAppIdModal(stillMissing);
         return;
     }
 
     document.getElementById('missing-fields-modal').classList.add('hidden');
-    window.submitApplication();
+    renderContent();
+    if (window.calculateProgress) window.calculateProgress();
+};
+
+window.handleIncompleteEvcSubmit = function () {
+    const missing = window.checkMissingGstPortalData ? window.checkMissingGstPortalData(window.form) : [];
+    if (missing.length > 0) {
+        window.showMissingFieldsBeforeAppIdModal(missing);
+        return;
+    }
+
+    const f = window.form || {};
+    if (f.verification_declaration === false) {
+        alert('Please check the Solemn Affirmation Declaration checkbox in Step 10.');
+        return;
+    }
+
+    const placeVal = f.verification_place || f.ppob_city || f.district || '';
+    if (!placeVal || placeVal.trim().length === 0) {
+        alert('Please enter Place of Declaration in Step 10.');
+        const pInput = document.getElementById('verification_place');
+        if (pInput) pInput.focus();
+        return;
+    }
+
+    const currentPercent = window.calculateProgress ? window.calculateProgress() : 0;
+    if (currentPercent < 100) {
+        alert(`Your profile status is currently ${currentPercent}%. Please fill all required fields to reach 100% before submitting.`);
+        return;
+    }
+};
+
+window.openJsonUploadModal = function () {
+    const modal = document.getElementById('json-upload-modal');
+    if (modal) modal.classList.remove('hidden');
+};
+
+window.closeJsonUploadModal = function () {
+    const modal = document.getElementById('json-upload-modal');
+    if (modal) modal.classList.add('hidden');
+};
+
+window.applyDirectJsonUpload = function () {
+    const txtArea = document.getElementById('direct-json-textarea');
+    if (!txtArea || !txtArea.value.trim()) {
+        alert('Please paste valid GST JSON data.');
+        return;
+    }
+    try {
+        const parsed = JSON.parse(txtArea.value.trim());
+        const data = parsed.data || parsed;
+        
+        // Merge top level fields
+        Object.assign(window.form, data);
+
+        // Map standard GST payload structure (bzdtls, opdtls, asgdtls, ppob, hsn) if present
+        if (data.bzdtls) {
+            const bz = data.bzdtls.bzdtlsbz || data.bzdtls;
+            if (bz.pan && bz.pan.num) window.form.pan = bz.pan.num;
+            if (bz.lgnmbzpan) window.form.legalName = bz.lgnmbzpan;
+            if (bz.trdnm) window.form.tradeName = bz.trdnm;
+            if (bz.cobz) window.form.businessConstitution = bz.cobz;
+            if (bz.rslibrg) window.form.reasonToObtainRegistration = bz.rslibrg;
+            if (bz.dtcommbz) window.form.dateOfCommencement = bz.dtcommbz.split('/').reverse().join('-');
+            if (bz.dtliab) window.form.dateOfLiability = bz.dtliab.split('/').reverse().join('-');
+        }
+        if (Array.isArray(data.opdtls) && data.opdtls.length > 0) {
+            data.opdtls.forEach((op, idx) => {
+                const pKey = 'p' + (idx + 1);
+                window.form[pKey] = {
+                    firstName: op.fn || '',
+                    middleName: op.mn || '',
+                    lastName: op.ln || '',
+                    fatherFirstName: op.fhfn || '',
+                    dob: op.dob ? op.dob.split('/').reverse().join('-') : '',
+                    gender: op.gd === 'F' ? 'Female' : 'Male',
+                    mobile: op.mbno || '',
+                    email: op.em || '',
+                    designation: op.dg || 'Proprietor',
+                    pan: (op.pan && op.pan.num) || '',
+                    res_pincode: (op.rsad && op.rsad.pncd) || '',
+                    res_district: (op.rsad && op.rsad.dst) || '',
+                    res_city: (op.rsad && op.rsad.loc) || '',
+                    res_road: (op.rsad && op.rsad.st) || '',
+                    res_buildingNo: (op.rsad && op.rsad.bno) || '',
+                    promoterPhotoFile: op.photoFile || op.promoterPhotoFile || '',
+                    alsoAuthorizedSignatory: op.isasg === 'Y' || op.isopas === 'Y'
+                };
+            });
+        }
+        if (data.ppob) {
+            const ad = (data.ppob.pradr && data.ppob.pradr.addr) || data.ppob;
+            if (ad) {
+                window.form.ppob_pincode = ad.pncd || window.form.ppob_pincode || '';
+                window.form.ppob_city = ad.loc || window.form.ppob_city || '';
+                window.form.ppob_street = ad.st || window.form.ppob_street || '';
+                window.form.ppob_building = ad.bnm || ad.bno || window.form.ppob_building || '';
+                window.form.ppob_district = ad.dst || window.form.ppob_district || '';
+                window.form.ppob_state = ad.stcd || window.form.ppob_state || '';
+            }
+            if (data.ppob.ntrbz) {
+                if (!window.form.ppob_natureOfBusiness) window.form.ppob_natureOfBusiness = {};
+                for (const k of Object.keys(data.ppob.ntrbz)) {
+                    if (data.ppob.ntrbz[k] === 'Y') window.form.ppob_natureOfBusiness[k] = true;
+                }
+            }
+        }
+        if (Array.isArray(data.hsn) && data.hsn.length > 0) {
+            window.form.goods_hsn = data.hsn.map(h => (typeof h === 'object' ? h.hsncd : h)).filter(Boolean);
+        }
+
+        if (window.calculateProgress) window.calculateProgress();
+        window.closeJsonUploadModal();
+        renderContent();
+        alert('✅ Full GST JSON applied directly to final form! All 10 steps updated.');
+    } catch (e) {
+        alert('Invalid JSON: ' + e.message);
+    }
 };
 
 window.submitApplication = async function () {
@@ -1563,13 +1758,19 @@ window.submitApplication = async function () {
     }
 
     // Verify that all GST portal required data is present BEFORE generating Application ID
-    const missingFields = window.checkMissingGstPortalData(form);
+    const missingFields = window.checkMissingGstPortalData ? window.checkMissingGstPortalData(form) : [];
     if (missingFields.length > 0) {
         window.showMissingFieldsBeforeAppIdModal(missingFields);
         return;
     }
 
-    const btn = (window.event && window.event.target) || document.querySelector('button[onclick*="submitApplication"]');
+    const currentPercent = window.calculateProgress ? window.calculateProgress() : 0;
+    if (currentPercent < 100) {
+        alert(`Please complete all 10 steps to 100% before registering. (Current: ${currentPercent}%)`);
+        return;
+    }
+
+    const btn = (window.event && window.event.target) || document.getElementById('btn-submit-evc') || document.querySelector('button[onclick*="submitApplication"]');
     const originalText = btn ? btn.innerText : 'Submit Application';
     try {
         console.log("Submitting application...");
@@ -4712,7 +4913,9 @@ function renderContent() {
 
         const isDeclChecked = form.verification_declaration !== false;
         const placeVal = form.verification_place || form.ppob_city || form.district || '';
-        const canSubmit = isDeclChecked && placeVal.trim().length > 0;
+        const missingFields = window.checkMissingGstPortalData ? window.checkMissingGstPortalData(form) : [];
+        const currentPercentage = window.calculateProgress ? window.calculateProgress() : 0;
+        const canSubmit = (missingFields.length === 0) && isDeclChecked && (placeVal.trim().length > 0) && (currentPercentage === 100);
 
         html = `
         <div style="background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden;">
@@ -4732,7 +4935,7 @@ function renderContent() {
                 </div>
                 <div>
                     <div style="font-size: 13px; color: #475569; font-weight: 500;">Profile</div>
-                    <div style="font-size: 16px; font-weight: 700; color: #0f172a; margin-top: 4px;">100%</div>
+                    <div id="verification-profile-percent" style="font-size: 16px; font-weight: 700; color: ${canSubmit ? '#15803d' : '#0f172a'}; margin-top: 4px;">${currentPercentage}%</div>
                 </div>
             </div>
 
@@ -4789,6 +4992,37 @@ function renderContent() {
                     </div>
                 </div>
 
+                <!-- Missing Information Alert (if any fields missing) -->
+                ${missingFields.length > 0 ? `
+                <div id="verification-missing-notice" style="background: #fff1f2; border: 1.5px solid #fda4af; border-radius: 6px; padding: 14px 18px; margin-bottom: 24px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="font-weight: 700; color: #9f1239; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+                            <span>⚠️</span> Application Incomplete (${missingFields.length} Mandatory Details Missing)
+                        </span>
+                        <button type="button" onclick="window.showMissingFieldsBeforeAppIdModal(window.checkMissingGstPortalData(window.form))" style="background: #e11d48; color: white; border: none; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer;">Fill All Missing Details →</button>
+                    </div>
+                    <p style="font-size: 13px; color: #881337; margin: 0 0 10px 0; line-height: 1.4;">
+                        GST Portal requires 100% completion before registration. Please fill the following required information to enable registration:
+                    </p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        ${missingFields.map(m => `
+                            <button type="button" onclick="setStep(${m.step})" style="background: white; border: 1px solid #fecdd3; color: #9f1239; padding: 5px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                                <span>Step ${m.step + 1}: ${m.label}</span>
+                                <span style="font-size: 10px; color: #e11d48; text-decoration: underline;">Fix →</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+                ` : (canSubmit ? `
+                <div id="verification-complete-notice" style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 6px; padding: 14px 18px; margin-bottom: 24px; display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 24px;">✅</span>
+                    <div>
+                        <div style="font-size: 14px; font-weight: 700; color: #166534;">Profile 100% Complete!</div>
+                        <div style="font-size: 13px; color: #15803d; margin-top: 2px;">All mandatory fields across all 10 steps have been completed. You can now click "SUBMIT WITH EVC" to register on GST Portal.</div>
+                    </div>
+                </div>
+                ` : '')}
+
                 <!-- DSC Info Link -->
                 <div style="margin-bottom: 20px;">
                     <a href="javascript:void(0)" style="font-size: 13px; color: #0284c7; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-weight: 500;">
@@ -4798,15 +5032,16 @@ function renderContent() {
 
                 <!-- Warning Notice Box matching Screenshot 2 -->
                 <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 12px 18px; margin-bottom: 24px; color: #92400e; font-size: 13px; line-height: 1.5;">
-                    Submit buttons will get enabled only after all mandatory fields are filled. Please check that you have filled all mandatory fields in the Form.
+                    Submit buttons will get enabled only after all mandatory fields are filled across the 10 steps (100% Profile status). Please check that you have filled all mandatory fields in the Form.
                 </div>
 
                 <!-- Action Buttons matching Screenshot 2 -->
                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 12px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
                     <button type="button" class="btn ghost" onclick="setStep(8)" style="font-size: 13px; padding: 8px 20px; font-weight: 600; text-transform: uppercase;">BACK</button>
+                    <button type="button" class="btn ghost" onclick="window.openJsonUploadModal()" style="font-size: 13px; padding: 8px 16px; border: 1.5px solid #2563eb; color: #2563eb; font-weight: 700; background: #eff6ff;">📋 UPLOAD FULL JSON</button>
                     <button type="button" class="btn ghost" onclick="showPreview()" style="font-size: 13px; padding: 8px 16px; border: 1px solid #94a3b8; color: #475569; font-weight: 600;">PREVIEW APPLICATION</button>
                     <button type="button" style="background: #cbd5e1; color: #64748b; border: none; padding: 8px 20px; border-radius: 4px; font-size: 13px; font-weight: 700; cursor: not-allowed; text-transform: uppercase;" title="DSC signing available via USB token">SUBMIT WITH DSC</button>
-                    <button type="button" class="btn accent" style="background: #2563eb; border-color: #2563eb; color: white; padding: 8px 24px; font-size: 13px; font-weight: 700; text-transform: uppercase; ${canSubmit ? '' : 'opacity: 0.6; cursor: not-allowed;'}" onclick="submitApplication()">SUBMIT WITH EVC</button>
+                    <button type="button" id="btn-submit-evc" class="btn accent" style="background: ${canSubmit ? '#2563eb' : '#94a3b8'}; border-color: ${canSubmit ? '#2563eb' : '#94a3b8'}; color: white; padding: 8px 24px; font-size: 13px; font-weight: 700; text-transform: uppercase; cursor: ${canSubmit ? 'pointer' : 'not-allowed'};" onclick="${canSubmit ? 'submitApplication()' : 'handleIncompleteEvcSubmit()'}" ${canSubmit ? '' : 'title="Please complete all mandatory fields across all 10 steps first"'}>SUBMIT WITH EVC</button>
                 </div>
             </div>
         </div>`;
@@ -5320,7 +5555,7 @@ window.calculateProgress = function () {
 
     const check = (val) => {
         total++;
-        if (val !== undefined && val !== null && String(val).trim() !== '') {
+        if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).trim() !== '-') {
             filled++;
         }
     };
@@ -5338,7 +5573,7 @@ window.calculateProgress = function () {
 
     // Proof of Constitution is only required for non-Proprietorship entities (Partnership, Company, LLP, etc.)
     const isProprietorship = (f.businessConstitution || '').toLowerCase().includes('proprietor') || (f.businessConstitution || '').toUpperCase() === 'PRO';
-    if (!isProprietorship) {
+    if (!isProprietorship && f.businessConstitution) {
         check(f.proofOfConstitutionType);
         check(f.proofOfConstitutionFile);
     }
@@ -5349,7 +5584,6 @@ window.calculateProgress = function () {
     for (const pKey of pKeysToCheck) {
         const p = f[pKey] || {};
         check(p.firstName);
-        check(p.middleName || p.lastName || p.firstName);
         check(p.fatherFirstName);
         check(p.dob);
         check(p.gender);
@@ -5360,14 +5594,14 @@ window.calculateProgress = function () {
         check(p.res_pincode || f.ppob_pincode);
         check(p.res_state || f.ppob_state || f.state);
         check(p.res_district || f.ppob_district || f.district);
-        check(p.res_city || f.ppob_city);
+        check(p.res_city || f.ppob_city || f.ppob_locality);
         check(p.res_road || f.ppob_street || f.ppob_road);
         check(p.res_buildingNo || f.ppob_building || f.ppob_flatNo);
         check(p.promoterPhotoFile || f.promoterPhotoFile);
     }
 
     // 3. Authorized Signatory (Step 2)
-    const hasPromoterAuthSig = promoterKeys.some(k => f[k] && f[k].alsoAuthorizedSignatory) || f.authSigSameAsPromoter;
+    const hasPromoterAuthSig = promoterKeys.some(k => f[k] && (f[k].alsoAuthorizedSignatory || f[k].primary)) || f.authSigSameAsPromoter;
     if (hasPromoterAuthSig) {
         total += 2;
         filled += 2;
@@ -5386,24 +5620,36 @@ window.calculateProgress = function () {
         }
     }
 
-    // 4. Principal Place of Business (Step 4)
+    // 4. Authorized Representative (Step 3)
+    total++;
+    if (f.haveAuthRep === 'No' || !f.haveAuthRep || (f.haveAuthRep === 'Yes' && f.authRepName)) {
+        filled++;
+    }
+
+    // 5. Principal Place of Business (Step 4)
     check(f.ppob_building || f.ppob_buildingName || f.ppob_flatNo || f.ppob_floor);
     check(f.ppob_street || f.ppob_road);
-    check(f.ppob_city);
+    check(f.ppob_city || f.ppob_locality);
     check(f.ppob_district || f.district);
     check(f.ppob_state || f.state);
     check(f.ppob_pincode);
     check(f.ppob_email || f.email);
     check(f.ppob_mobile || f.mobile);
     check(f.ppob_natureOfPossession);
-    check(f.ppob_docFile);
+    check(f.ppob_docFile || f.electricityBillFile || f.rentAgreementFile || f.consentLetterFile);
     
     total++;
     if (f.ppob_natureOfBusiness && Object.values(f.ppob_natureOfBusiness).some(Boolean)) {
         filled++;
     }
 
-    // 5. Goods and Services (Step 6)
+    // 6. Additional Places of Business (Step 5)
+    total++;
+    if (f.haveAdditionalPlace === 'No' || !f.haveAdditionalPlace || (f.haveAdditionalPlace === 'Yes' && f.additionalPlaces && f.additionalPlaces.length > 0)) {
+        filled++;
+    }
+
+    // 7. Goods and Services (Step 6)
     total++;
     const hasHsn = (Array.isArray(f.goods_hsn) && f.goods_hsn.length > 0) ||
                    (Array.isArray(f.goods_sac) && f.goods_sac.length > 0) ||
@@ -5413,15 +5659,39 @@ window.calculateProgress = function () {
         filled++;
     }
 
-    // 6. Verification (Step 9)
+    // 8. State Specific Information (Step 7)
+    total++;
+    filled++;
+
+    // 9. Aadhaar Authentication (Step 8)
+    total++;
+    filled++;
+
+    // 10. Verification (Step 9)
     check(f.verification_signatory || (f.p1 && f.p1.firstName) || f.legalName);
     check(f.verification_place || f.ppob_city || f.district || f.state);
+    total++;
+    if (f.verification_declaration !== false) {
+        filled++;
+    }
+
+    // Check mandatory fields across all 10 steps
+    let missingCount = 0;
+    if (typeof window.checkMissingGstPortalData === 'function') {
+        const missing = window.checkMissingGstPortalData(f);
+        missingCount = missing.length;
+    }
 
     let percentage = 0;
     if (total > 0) {
-        percentage = Math.min(100, Math.round((filled / total) * 100));
+        if (missingCount === 0 && filled === total) {
+            percentage = 100;
+        } else {
+            percentage = Math.min(99, Math.round((filled / total) * 100));
+        }
     }
 
+    // Update circular progress on top header
     const circle = document.getElementById('form-progress-circle');
     const text = document.getElementById('form-progress-text');
     if (circle && text) {
@@ -5429,9 +5699,63 @@ window.calculateProgress = function () {
         text.innerText = `${percentage}%`;
     }
 
+    // Update Step 10 Verification Profile display
+    const verifPercent = document.getElementById('verification-profile-percent');
+    if (verifPercent) {
+        verifPercent.innerText = `${percentage}%`;
+        verifPercent.style.color = (percentage === 100) ? '#15803d' : '#0f172a';
+    }
+
+    // Update Step 10 EVC submit button state live
+    const evcBtn = document.getElementById('btn-submit-evc');
+    if (evcBtn) {
+        const placeVal = f.verification_place || f.ppob_city || f.district || '';
+        const canSubmit = (missingCount === 0) && (percentage === 100) && (f.verification_declaration !== false) && (placeVal.trim().length > 0);
+        if (canSubmit) {
+            evcBtn.style.background = '#2563eb';
+            evcBtn.style.borderColor = '#2563eb';
+            evcBtn.style.cursor = 'pointer';
+            evcBtn.removeAttribute('title');
+            evcBtn.onclick = function () { window.submitApplication(); };
+        } else {
+            evcBtn.style.background = '#94a3b8';
+            evcBtn.style.borderColor = '#94a3b8';
+            evcBtn.style.cursor = 'not-allowed';
+            evcBtn.title = 'Please complete all mandatory fields across all 10 steps first (100% Profile required)';
+            evcBtn.onclick = function () { window.handleIncompleteEvcSubmit(); };
+        }
+    }
+
     return percentage;
 };
 
+// Real-time dynamic updates on typing (input event)
+document.addEventListener('input', function (e) {
+    const target = e.target;
+    if (target && window.form) {
+        const onchangeAttr = target.getAttribute('onchange') || '';
+        const match = onchangeAttr.match(/(?:window\.)?updateForm\(['"]([^'"]+)['"]/);
+        if (match && match[1]) {
+            const formKey = match[1];
+            if (formKey !== 'businessConstitution' && formKey !== 'ppob_natureOfPossession' && !formKey.endsWith('state')) {
+                const keys = formKey.replace(/\[(\d+)\]/g, '.$1').split('.');
+                let current = window.form;
+                for (let i = 0; i < keys.length - 1; i++) {
+                    if (!current[keys[i]]) current[keys[i]] = {};
+                    current = current[keys[i]];
+                }
+                current[keys[keys.length - 1]] = target.value;
+            }
+        } else if (target.id && (target.id in window.form || target.id === 'verification_place')) {
+            window.form[target.id] = target.value;
+        }
+    }
+    if (window.calculateProgress) {
+        window.calculateProgress();
+    }
+});
+
+// Update on dropdown, radio, checkbox, date change
 document.addEventListener('change', function (e) {
     setTimeout(() => {
         if (window.calculateProgress) window.calculateProgress();

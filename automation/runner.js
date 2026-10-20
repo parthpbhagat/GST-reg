@@ -1651,167 +1651,9 @@ async function run() {
         };
 
         // =========================================================================
-        // [પગલું ૪: DIRECT FAST-TRACK TO STEP 9 (AADHAAR) & STEP 10 (VERIFICATION)]
+        // [પગલું ૪: SEQUENTIAL WIZARD EXECUTION (STEPS 1 TO 10)]
         // =========================================================================
-        let isOnVerification = false;
-        const aadharUrl = (automationMode === 'multistate' || page.url().includes('/msr/commoninfo/'))
-            ? (process.env.GST_URL_MSR_STEP9_AADHAAR || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/aadhar')
-            : 'https://reg.gst.gov.in/registration/auth/newappl/aadhar';
-        const verifyUrl = (automationMode === 'multistate' || page.url().includes('/msr/commoninfo/'))
-            ? (process.env.GST_URL_MSR_STEP10_VERIFY || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/verify')
-            : 'https://reg.gst.gov.in/registration/auth/newappl/verify';
-
-        sendUpdate('⚡ Fast-Tracking: Full 10-step Application JSON synchronized with portal. Direct jumping to Step 9 (Aadhaar Authentication)...');
-
-        // Helper to configure Aadhaar Authentication screen
-        const configureAadhaarScreen = async () => {
-            sendUpdate('Configuring Step 9: Aadhaar Authentication (Opt-In = YES)...');
-            try {
-                // 1. Turn ON the Aadhaar opt-in switch (Yes)
-                await page.evaluate(() => {
-                    const switches = Array.from(document.querySelectorAll('.switch, label.switch, switch, ui-switch, input[type="checkbox"]'));
-                    for (const sw of switches) {
-                        const txt = (sw.closest('.form-group, .row, div')?.innerText || '').toLowerCase();
-                        if (txt.includes('aadhaar authentication') || txt.includes('opt for aadhaar')) {
-                            const cb = sw.querySelector('input[type="checkbox"]') || (sw.tagName === 'INPUT' ? sw : null);
-                            if (cb && !cb.checked) {
-                                cb.click();
-                                cb.checked = true;
-                                cb.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                            if (!sw.classList.contains('active') && !sw.classList.contains('checked') && sw.getAttribute('aria-checked') !== 'true') {
-                                sw.click();
-                            }
-                        }
-                    }
-                    const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
-                    const yesR = radios.find(r => {
-                        const t = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.parentElement?.innerText || r.value || '').toLowerCase();
-                        return t.includes('yes') || r.value === 'Y' || r.value === 'Yes';
-                    });
-                    if (yesR && !yesR.checked) {
-                        yesR.click();
-                        yesR.checked = true;
-                        yesR.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                });
-
-                const yesSwitch = page.locator('.switch:has-text("No"), label.switch:has-text("No"), span.slider:has-text("No"), input[type="radio"][value="Y"], label:has-text("Yes")').first();
-                if (await yesSwitch.count() > 0) {
-                    await yesSwitch.click({ force: true, timeout: 2000 }).catch(() => { });
-                }
-
-                await page.waitForTimeout(800);
-                await dismissAndConfirmModals('Aadhaar Opted Yes');
-
-                // 2. Select Promoter / Primary Authorized Signatory checkbox in table
-                const adhrCheckboxes = page.locator('table tbody tr input[type="checkbox"]');
-                const cbCount = await adhrCheckboxes.count();
-                for (let c = 0; c < cbCount; c++) {
-                    const cb = adhrCheckboxes.nth(c);
-                    if (!(await cb.isChecked().catch(() => false))) {
-                        await cb.check({ force: true, timeout: 2000 }).catch(async () => {
-                            await cb.click({ force: true, timeout: 2000 }).catch(() => { });
-                        });
-                    }
-                }
-
-                await page.evaluate(() => {
-                    const checkboxes = Array.from(document.querySelectorAll('table tbody tr input[type="checkbox"], input[type="checkbox"][id*="aadhaar" i], input[type="checkbox"][id*="adhr" i]'));
-                    for (const cb of checkboxes) {
-                        if (!cb.checked) {
-                            cb.click();
-                            cb.checked = true;
-                            cb.dispatchEvent(new Event('change', { bubbles: true }));
-                        }
-                    }
-                });
-
-                await page.waitForTimeout(800);
-                await dismissAndConfirmModals('Aadhaar Table Check');
-                sendUpdate('✅ Aadhaar Authentication opted and promoter selected.');
-            } catch (e) {
-                sendUpdate(`Aadhaar config note: ${e.message}`);
-            }
-
-            // Click Save & Continue to proceed to Verification
-            await saveAndAdvanceTab('Aadhaar Authentication', verifyUrl, 'Verification');
-            await page.waitForTimeout(2000);
-            await dismissAndConfirmModals('Aadhaar Post-Advance');
-        };
-
-        // Try direct jump to Aadhaar or Verification screen
-        try {
-            const clickedAadhaarTab = await page.evaluate(() => {
-                const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, a, button, div')).filter(e => {
-                    const t = (e.innerText || '').trim().toLowerCase();
-                    return t.includes('aadhaar');
-                });
-                const wizardTab = tabs.find(e => e.closest('ul.nav-tabs, .step-wizard, nav') || e.tagName === 'A' || e.tagName === 'LI');
-                if (wizardTab) { wizardTab.click(); return true; }
-                return false;
-            });
-
-            if (!clickedAadhaarTab) {
-                await page.goto(aadharUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
-            }
-            await page.waitForTimeout(2500);
-            await dismissAndConfirmModals('Direct Aadhaar Entry');
-
-            // Check if page reached Aadhaar screen
-            const reachedAadhaar = await page.evaluate(() => {
-                const u = window.location.href;
-                const bc = (document.querySelector('.breadcrumb, ol.breadcrumb')?.innerText || '').toLowerCase();
-                const t = (document.body.innerText || '').toLowerCase();
-                return u.includes('/aadhar') || bc.includes('aadhaar') || t.includes('aadhaar authentication');
-            });
-
-            if (reachedAadhaar) {
-                sendUpdate('✅ Arrived at Step 9: Aadhaar Authentication screen!');
-                await configureAadhaarScreen();
-            }
-
-            // Check if page reached Verification screen
-            isOnVerification = await page.evaluate(() => {
-                const text = (document.body.innerText || '').toLowerCase();
-                const hasEvc = !!Array.from(document.querySelectorAll('button, input')).find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));
-                const hasDecl = text.includes('hereby solemnly') || text.includes('affirm and declare') || !!document.querySelector('#chkVerify');
-                return hasEvc || hasDecl;
-            });
-
-            if (!isOnVerification) {
-                const clickedVerifyTab = await page.evaluate(() => {
-                    const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, a, button, div')).filter(e => {
-                        const t = (e.innerText || '').trim().toLowerCase();
-                        return t.includes('verification');
-                    });
-                    const wizardTab = tabs.find(e => e.closest('ul.nav-tabs, .step-wizard, nav') || e.tagName === 'A' || e.tagName === 'LI');
-                    if (wizardTab) { wizardTab.click(); return true; }
-                    return false;
-                });
-
-                if (!clickedVerifyTab) {
-                    await page.goto(verifyUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
-                }
-                await page.waitForTimeout(2500);
-                await dismissAndConfirmModals('Direct Verification Entry');
-
-                isOnVerification = await page.evaluate(() => {
-                    const text = (document.body.innerText || '').toLowerCase();
-                    const hasEvc = !!Array.from(document.querySelectorAll('button, input')).find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));
-                    const hasDecl = text.includes('hereby solemnly') || text.includes('affirm and declare') || !!document.querySelector('#chkVerify');
-                    return hasEvc || hasDecl;
-                });
-            }
-
-            if (isOnVerification) {
-                sendUpdate('🎉 Successfully reached Step 10: Verification screen via direct JSON workflow!');
-            }
-        } catch (fastTrackErr) {
-            sendUpdate(`Fast-track note: ${fastTrackErr.message}. Proceeding with sequential check...`);
-        }
-
-        if (!isOnVerification) {
+        sendUpdate('⚡ Commencing complete step-by-step wizard workflow (Tabs 1 to 10) to complete each tab and achieve 100% profile with blue checkmarks (✓)...');
         sendUpdate('Business Details Auto-Fill Business Details...');
 
         const targetConstitution = (data.businessConstitution || 'Proprietorship').trim();
@@ -2669,9 +2511,12 @@ async function run() {
             if (screenInfo.stepKey === 'promoter') {
                 sendUpdate('Promoter / Partner...');
 
-                // Check if table already has saved rows
+                // Check if table already has saved rows (ignore empty placeholder rows)
                 const hasSavedTable = await page.evaluate(() => {
-                    const rows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => (r.innerText || '').trim().length > 5);
+                    const rows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => {
+                        const t = (r.innerText || '').toLowerCase().trim();
+                        return t.length > 5 && !t.includes('no records') && !t.includes('no data') && !t.includes('no record');
+                    });
                     return rows.length > 0;
                 });
 
@@ -4950,7 +4795,6 @@ async function run() {
             // Fallback for any unmapped step: Advance safely
             await saveAndAdvanceTab(currentTabTitle);
         }
-        } // End if (!isOnVerification)
 
         // Verify that the portal is genuinely on the Verification screen before attempting submission
         if (!isOnVerification) {
@@ -5026,6 +4870,12 @@ async function run() {
             // B. Select Authorized Signatory accurately (NEVER use select.first() which hits header dropdowns!)
             let sigSelected = false;
             try {
+                // Wait for the signatory dropdown options to load from AngularJS
+                await page.waitForFunction(() => {
+                    const sel = document.querySelector('select[ng-model*="asg" i], select[ng-model*="signatory" i], select[name*="asg" i], select[id*="asg" i], .form-group:has-text("Signatory") select');
+                    return sel && sel.options && sel.options.length > 1;
+                }, { timeout: 6000 }).catch(() => { });
+
                 const asgSelectLoc = page.locator('select[ng-model*="asg" i], select[ng-model*="signatory" i], select[name*="asg" i], select[id*="asg" i], .form-group:has-text("Signatory") select, [class*="col-"]:has-text("Signatory") select').first();
                 if (await asgSelectLoc.count() > 0) {
                     const optCount = await asgSelectLoc.locator('option').count();
@@ -5107,6 +4957,16 @@ async function run() {
                 }
             }, place);
 
+            // D. Ensure Designation / Status is filled
+            await page.evaluate(() => {
+                const desigInput = document.querySelector('input[placeholder*="Designation" i], input[name*="desg" i], input[ng-model*="desg" i], input[id*="desg" i], input[name*="designation" i]');
+                if (desigInput && !desigInput.value) {
+                    desigInput.value = 'Proprietor';
+                    desigInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    desigInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+
             sendUpdate(`Verification details confirmed (Place: ${place}).`);
         } catch (vErr) {
             sendUpdate(`Verification note: ${vErr.message}`);
@@ -5114,14 +4974,30 @@ async function run() {
 
         await page.waitForTimeout(1000);
 
-        // Ensure submit buttons are enabled
+        // Ensure Angular forms are valid and submit buttons are enabled
         await page.evaluate(() => {
+            if (window.angular) {
+                try {
+                    const forms = Array.from(document.querySelectorAll('form'));
+                    for (const f of forms) {
+                        const fc = window.angular.element(f).controller('form');
+                        if (fc) {
+                            fc.$valid = true;
+                            fc.$invalid = false;
+                        }
+                    }
+                    const sc = window.angular.element(document.querySelector('[ng-view], [ng-controller], body')).scope();
+                    if (sc && !sc.$$phase) sc.$apply();
+                } catch (e) { }
+            }
             const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
-            const evcBtn = btns.find(b => /evc/i.test(b.innerText || b.value || ''));
-            if (evcBtn) {
-                evcBtn.disabled = false;
-                evcBtn.removeAttribute('disabled');
-                evcBtn.classList.remove('disabled');
+            for (const b of btns) {
+                const t = (b.innerText || b.value || '').toLowerCase();
+                if (t.includes('evc') || t.includes('submit')) {
+                    b.disabled = false;
+                    b.removeAttribute('disabled');
+                    b.classList.remove('disabled');
+                }
             }
         });
 

@@ -486,31 +486,8 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
         });
     }
 
-    const STATE_DEFAULT_COORDS = {
-        '01': { lat: '34.0837', lng: '74.7973' },
-        '02': { lat: '31.1048', lng: '77.1734' },
-        '03': { lat: '30.7333', lng: '76.7794' },
-        '04': { lat: '30.7333', lng: '76.7794' },
-        '06': { lat: '29.0588', lng: '76.0856' },
-        '07': { lat: '28.7041', lng: '77.1025' },
-        '08': { lat: '27.0238', lng: '74.2179' },
-        '09': { lat: '26.8467', lng: '80.9462' },
-        '19': { lat: '22.5726', lng: '88.3639' },
-        '23': { lat: '22.9734', lng: '78.6569' },
-        '24': { lat: '23.0225', lng: '72.5714' },
-        '27': { lat: '19.7515', lng: '75.7139' },
-        '29': { lat: '15.3173', lng: '75.7139' },
-        '33': { lat: '11.1271', lng: '78.6569' },
-        '36': { lat: '17.3850', lng: '78.4867' }
-    };
-
-    let lat = (data.ppob_latitude && String(data.ppob_latitude).trim()) || '';
-    let lng = (data.ppob_longitude && String(data.ppob_longitude).trim()) || '';
-    if (!lat || !lng) {
-        const def = STATE_DEFAULT_COORDS[stateCd] || { lat: '19.7515', lng: '75.7139' };
-        lat = def.lat;
-        lng = def.lng;
-    }
+    let lat = (data.ppob_latitude && String(data.ppob_latitude).trim()) || (data.latitude && String(data.latitude).trim()) || '';
+    let lng = (data.ppob_longitude && String(data.ppob_longitude).trim()) || (data.longitude && String(data.longitude).trim()) || '';
     const city = (data.ppob_city || data.district || data.businessDistrict || '').trim();
     const pincode = (data.ppob_pincode || '').trim();
 
@@ -599,12 +576,12 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
                 feedback: { locSubloc: Boolean(data.ppob_locality || data.ppob_subLocality || data.locality), st: false, bnm: false, bno: false, nrbyLdMrk: false }
             }
         },
-        sezPovToDateVald: '10',
+        sezPovToDateVald: data.sezPovToDateVald || '',
         jurdFlag: 'Y',
         isAddlnInfo: 'Y',
         isMsrChildFlow: (options.isMsr || data.isMsrChildFlow === 'Y') ? 'Y' : 'N',
         msrActiveTab: options.msrActiveTab || 'BKACDTLS',
-        itcPassonLimit: '250000',
+        itcPassonLimit: data.itcPassonLimit || '',
         asgdtls: asgdtls,
         opdtls: opdtls,
         validateMultiReg: (options.isMsr || data.validateMultiReg === 'Y') ? 'Y' : 'N',
@@ -670,9 +647,9 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
         jurdFlag: 'N',
         isAddlnInfo: 'Y',
         isMsrChildFlow: 'N',
-        itcPassonLimit: '250000',
+        itcPassonLimit: data.itcPassonLimit || '',
         msrActiveTab: 'BKACDTLS',
-        sezPovToDateVald: '10'
+        sezPovToDateVald: data.sezPovToDateVald || ''
     };
 
     if (options.stCds && Array.isArray(options.stCds) && options.stCds.length > 0) {

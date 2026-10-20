@@ -1674,10 +1674,23 @@ window.closeJsonUploadModal = function () {
     if (modal) modal.classList.add('hidden');
 };
 
+window.handleJsonFileSelect = function (input) {
+    if (!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    const fnSpan = document.getElementById('direct-json-filename');
+    if (fnSpan) fnSpan.innerText = file.name;
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        const txtArea = document.getElementById('direct-json-textarea');
+        if (txtArea) txtArea.value = e.target.result;
+    };
+    reader.readAsText(file);
+};
+
 window.applyDirectJsonUpload = function () {
     const txtArea = document.getElementById('direct-json-textarea');
     if (!txtArea || !txtArea.value.trim()) {
-        alert('Please paste valid GST JSON data.');
+        alert('Please select a JSON file or paste valid GST JSON data.');
         return;
     }
     try {
@@ -1687,7 +1700,7 @@ window.applyDirectJsonUpload = function () {
         // Merge top level fields
         Object.assign(window.form, data);
 
-        // Map standard GST payload structure (bzdtls, opdtls, asgdtls, ppob, hsn) if present
+        // 1. Business Details (bzdtls)
         if (data.bzdtls) {
             const bz = data.bzdtls.bzdtlsbz || data.bzdtls;
             if (bz.pan && bz.pan.num) window.form.pan = bz.pan.num;
@@ -1695,9 +1708,15 @@ window.applyDirectJsonUpload = function () {
             if (bz.trdnm) window.form.tradeName = bz.trdnm;
             if (bz.cobz) window.form.businessConstitution = bz.cobz;
             if (bz.rslibrg) window.form.reasonToObtainRegistration = bz.rslibrg;
+            if (bz.cmbzdt) window.form.dateOfCommencement = bz.cmbzdt.split('/').reverse().join('-');
             if (bz.dtcommbz) window.form.dateOfCommencement = bz.dtcommbz.split('/').reverse().join('-');
+            if (bz.lbrgdt) window.form.dateOfLiability = bz.lbrgdt.split('/').reverse().join('-');
             if (bz.dtliab) window.form.dateOfLiability = bz.dtliab.split('/').reverse().join('-');
+            if (bz.stcd) window.form.state = bz.stcd;
+            if (bz.dst) window.form.district = bz.dst;
         }
+
+        // 2. Promoter / Partners (opdtls)
         if (Array.isArray(data.opdtls) && data.opdtls.length > 0) {
             data.opdtls.forEach((op, idx) => {
                 const pKey = 'p' + (idx + 1);
@@ -1706,49 +1725,141 @@ window.applyDirectJsonUpload = function () {
                     middleName: op.mn || '',
                     lastName: op.ln || '',
                     fatherFirstName: op.fhfn || '',
+                    fatherMiddleName: op.fhmn || '',
+                    fatherLastName: op.fhln || '',
                     dob: op.dob ? op.dob.split('/').reverse().join('-') : '',
                     gender: op.gd === 'F' ? 'Female' : 'Male',
-                    mobile: op.mbno || '',
-                    email: op.em || '',
-                    designation: op.dg || 'Proprietor',
+                    mobile: op.mbno || window.form.mobile || '',
+                    email: op.em || window.form.email || '',
+                    designation: op.dg || '',
                     pan: (op.pan && op.pan.num) || '',
                     res_pincode: (op.rsad && op.rsad.pncd) || '',
                     res_district: (op.rsad && op.rsad.dst) || '',
                     res_city: (op.rsad && op.rsad.loc) || '',
                     res_road: (op.rsad && op.rsad.st) || '',
                     res_buildingNo: (op.rsad && op.rsad.bno) || '',
+                    res_buildingName: (op.rsad && op.rsad.bnm) || '',
+                    res_state: (op.rsad && op.rsad.stcd) || '',
                     promoterPhotoFile: op.photoFile || op.promoterPhotoFile || '',
                     alsoAuthorizedSignatory: op.isasg === 'Y' || op.isopas === 'Y'
                 };
             });
         }
-        if (data.ppob) {
-            const ad = (data.ppob.pradr && data.ppob.pradr.addr) || data.ppob;
+
+        // 3. Authorized Signatories (asgdtls)
+        if (Array.isArray(data.asgdtls) && data.asgdtls.length > 0) {
+            data.asgdtls.forEach((asg, idx) => {
+                const aKey = 'a' + (idx + 1);
+                window.form[aKey] = {
+                    firstName: asg.fn || '',
+                    middleName: asg.mn || '',
+                    lastName: asg.ln || '',
+                    fatherFirstName: asg.fhfn || '',
+                    dob: asg.dob ? asg.dob.split('/').reverse().join('-') : '',
+                    gender: asg.gd === 'F' ? 'Female' : 'Male',
+                    mobile: asg.mbno || '',
+                    email: asg.em || '',
+                    designation: asg.dg || '',
+                    pan: (asg.pan && asg.pan.num) || '',
+                    res_pincode: (asg.rsad && asg.rsad.pncd) || '',
+                    res_district: (asg.rsad && asg.rsad.dst) || '',
+                    res_city: (asg.rsad && asg.rsad.loc) || '',
+                    authSigPhotoFile: asg.photoFile || asg.authSigPhotoFile || '',
+                    authSigProofFile: asg.proofFile || asg.authSigProofFile || '',
+                    primary: asg.ispas === 'Y' || idx === 0
+                };
+            });
+        }
+
+        // 4. Authorized Representative
+        if (data.reprdtls) {
+            window.form.haveAuthRep = 'Yes';
+            window.form.authRepName = data.reprdtls.nm || '';
+        } else {
+            window.form.haveAuthRep = 'No';
+        }
+
+        // 5. Principal Place of Business (ppbzdtls / ppob)
+        const pp = data.ppbzdtls || data.ppob;
+        if (pp) {
+            const ad = (pp.pradr && pp.pradr.addr) || pp.add || pp;
             if (ad) {
                 window.form.ppob_pincode = ad.pncd || window.form.ppob_pincode || '';
                 window.form.ppob_city = ad.loc || window.form.ppob_city || '';
                 window.form.ppob_street = ad.st || window.form.ppob_street || '';
                 window.form.ppob_building = ad.bnm || ad.bno || window.form.ppob_building || '';
+                window.form.ppob_flatNo = ad.bno || window.form.ppob_flatNo || '';
+                window.form.ppob_floor = ad.flno || window.form.ppob_floor || '';
+                window.form.ppob_landmark = ad.landMark || ad.nrbyLdMrk || window.form.ppob_landmark || '';
                 window.form.ppob_district = ad.dst || window.form.ppob_district || '';
                 window.form.ppob_state = ad.stcd || window.form.ppob_state || '';
             }
-            if (data.ppob.ntrbz) {
+            if (pp.contdtls) {
+                if (pp.contdtls.em) window.form.ppob_email = pp.contdtls.em;
+                if (pp.contdtls.mbno) window.form.ppob_mobile = pp.contdtls.mbno;
+            }
+            if (pp.cj) {
+                window.form.ppob_commissionerate = pp.cj.comrtcd || window.form.ppob_commissionerate || '';
+                window.form.ppob_division = pp.cj.divsncd || window.form.ppob_division || '';
+                window.form.ppob_range = pp.cj.rangecd || window.form.ppob_range || '';
+            }
+            if (pp.sj) {
+                window.form.ppob_stateJurisdictionCode = pp.sj.stjdno || window.form.ppob_stateJurisdictionCode || '';
+            }
+            if (pp.psnt) window.form.ppob_natureOfPossession = pp.psnt;
+            if (pp.ntbz && Array.isArray(pp.ntbz)) {
                 if (!window.form.ppob_natureOfBusiness) window.form.ppob_natureOfBusiness = {};
-                for (const k of Object.keys(data.ppob.ntrbz)) {
-                    if (data.ppob.ntrbz[k] === 'Y') window.form.ppob_natureOfBusiness[k] = true;
-                }
+                pp.ntbz.forEach(n => { window.form.ppob_natureOfBusiness[n.toLowerCase()] = true; });
             }
         }
-        if (Array.isArray(data.hsn) && data.hsn.length > 0) {
+
+        // 6. Additional Places of Business
+        if (Array.isArray(data.adbzdtls) && data.adbzdtls.length > 0) {
+            window.form.haveAdditionalPlace = 'Yes';
+            window.form.additionalPlaces = data.adbzdtls;
+        } else {
+            window.form.haveAdditionalPlace = 'No';
+        }
+
+        // 7. Goods & Services (gdssvcdtls / hsn)
+        if (data.gdssvcdtls) {
+            if (Array.isArray(data.gdssvcdtls.bzgddtls) && data.gdssvcdtls.bzgddtls.length > 0) {
+                window.form.goods_hsn = data.gdssvcdtls.bzgddtls.map(g => g.hsncd);
+            }
+            if (Array.isArray(data.gdssvcdtls.bzsdtls) && data.gdssvcdtls.bzsdtls.length > 0) {
+                window.form.goods_sac = data.gdssvcdtls.bzsdtls.map(s => s.saccd);
+            }
+        } else if (Array.isArray(data.hsn) && data.hsn.length > 0) {
             window.form.goods_hsn = data.hsn.map(h => (typeof h === 'object' ? h.hsncd : h)).filter(Boolean);
+        }
+
+        // 8. State Specific Information (stsidtls)
+        if (data.stsidtls && data.stsidtls.ebdtls) {
+            const eb = data.stsidtls.ebdtls;
+            window.form.stateSpecific_electricityConsumerNo = eb.canum || '';
+            window.form.stateSpecific_electricityBoard = eb.ebdes || '';
+            window.form.stateSpecific_electricityBoardCode = eb.ebcd || '';
+        }
+
+        // 9. Aadhaar Authentication
+        if (data.adhrflag || data.aadhaarflag || data.aadhaarAuth) {
+            window.form.aadhaarAuth = (data.adhrflag === 'N' || data.aadhaarflag === 'N' || data.aadhaarAuth === 'No') ? 'No' : 'Yes';
+        } else {
+            window.form.aadhaarAuth = 'Yes';
+        }
+
+        // 10. Verification (decdtls)
+        if (data.decdtls) {
+            if (data.decdtls.place) window.form.verification_place = data.decdtls.place;
+            window.form.verification_declaration = true;
         }
 
         if (window.calculateProgress) window.calculateProgress();
         window.closeJsonUploadModal();
         renderContent();
-        alert('✅ Full GST JSON applied directly to final form! All 10 steps updated.');
+        alert('✅ Full GST JSON uploaded and mapped successfully across all 10 steps!');
     } catch (e) {
-        alert('Invalid JSON: ' + e.message);
+        alert('Invalid JSON format: ' + e.message);
     }
 };
 

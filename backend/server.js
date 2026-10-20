@@ -682,15 +682,25 @@ app.put('/api/applications/:id/trn', authenticateToken, async (req, res) => {
 
     let appData = typeof row.data === 'string' ? JSON.parse(row.data) : (row.data || {});
 
+    // Sanitize TRN
+    const cleanTrnMatch = (str) => {
+        if (!str || typeof str !== 'string') return null;
+        const m = str.match(/\b(\d{2}\d{2}\d{2}\d{6,10}(?:TRN)?)\b/i) ||
+                  str.match(/\b(\d{12,15}TRN)\b/i) ||
+                  str.match(/\b(\d{14,16})\b/);
+        return m ? m[1].toUpperCase() : null;
+    };
+
     // Main primary TRN
-    const primaryTrn = trn || masterTrn || (stateTrns && Object.values(stateTrns)[0]) || row.trn;
+    const rawPrimary = trn || masterTrn || (stateTrns && Object.values(stateTrns)[0]) || row.trn;
+    const primaryTrn = cleanTrnMatch(rawPrimary) || row.trn;
 
     // Merge state-wise TRNs into application data
     if (stateTrns && typeof stateTrns === 'object') {
         appData.stateTrns = Object.assign({}, appData.stateTrns || {}, stateTrns);
     }
     if (masterTrn) {
-        appData.masterTrn = masterTrn;
+        appData.masterTrn = cleanTrnMatch(masterTrn) || masterTrn;
     }
 
     const updateFields = {

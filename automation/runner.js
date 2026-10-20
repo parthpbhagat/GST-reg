@@ -61,6 +61,14 @@ function isDummyElectricityConsumerNo(val) {
     return false;
 }
 
+function extractValidTrn(text) {
+    if (!text || typeof text !== 'string') return '';
+    const m = text.match(/\b(\d{2}\d{2}\d{2}\d{6,10}(?:TRN)?)\b/i) ||
+              text.match(/\b(\d{12,15}TRN)\b/i) ||
+              text.match(/\b(\d{14,16})\b/);
+    return m ? m[1].toUpperCase() : '';
+}
+
 function extractCleanErrorMessage(raw) {
     if (!raw) return 'Validation error from GST portal';
     const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
@@ -274,8 +282,7 @@ async function run() {
 
     try {
         let rawTrn = (appData.trn || appData.masterTrn || data.trn || data.masterTrn || '').trim();
-        const trnCleanMatch = rawTrn.match(/\b(\d{12,15}(?:TRN)?)\b/i);
-        let trnText = trnCleanMatch ? trnCleanMatch[1].toUpperCase() : rawTrn;
+        let trnText = extractValidTrn(rawTrn);
 
         // =========================================================================
         // [પગલું ૧: TRN Login]
@@ -515,44 +522,51 @@ async function run() {
             sendUpdate('Extracting Temporary Reference Number (TRN)...');
             try {
                 await page.waitForFunction(() => {
-                    const el = document.querySelector('span[data-ng-bind*="trn" i], span[ng-bind*="trn" i], .trn-number, strong[ng-bind*="trn" i]');
-                    if (el && el.textContent.trim().length > 5) return true;
-                    const match = document.body.innerText.match(/\b\d{14,16}(?:TRN)?\b/i);
-                    return !!match;
+                    const text = document.body ? document.body.innerText : '';
+                    return /\b\d{2}\d{2}\d{2}\d{6,10}(?:TRN)?\b/i.test(text) || /\b\d{12,15}TRN\b/i.test(text) || /\b\d{14,16}\b/.test(text);
                 }, { timeout: 60000 });
             } catch (e) { }
 
-            trnText = await page.evaluate(() => {
-                const el = document.querySelector('span[data-ng-bind*="trn" i], span[ng-bind*="trn" i], .trn-number, strong[ng-bind*="trn" i]');
-                if (el && el.textContent.trim().length > 5) return el.textContent.trim();
-                const match = document.body.innerText.match(/\b(\d{14,16}(?:TRN)?)\b/i);
-                return match ? match[1].trim() : '';
+            const rawExtractedTrn = await page.evaluate(() => {
+                const text = document.body ? document.body.innerText : '';
+                // 1. Search in innerText of specific elements first
+                const els = Array.from(document.querySelectorAll('span[data-ng-bind*="trn" i], span[ng-bind*="trn" i], .trn-number, strong[ng-bind*="trn" i], strong, b, span, p, div'));
+                for (const el of els) {
+                    const t = (el.textContent || '').trim();
+                    const m = t.match(/\b(\d{2}\d{2}\d{2}\d{6,10}(?:TRN)?)\b/i) || t.match(/\b(\d{12,15}TRN)\b/i) || t.match(/\b(\d{14,16})\b/);
+                    if (m) return m[1].toUpperCase();
+                }
+                // 2. Search entire page text
+                const match = text.match(/\b(\d{2}\d{2}\d{2}\d{6,10}(?:TRN)?)\b/i) || text.match(/\b(\d{12,15}TRN)\b/i) || text.match(/\b(\d{14,16})\b/);
+                return match ? match[1].toUpperCase() : '';
             });
-            sendUpdate(`TRN Generated: ${trnText}`);
 
-            // Persist TRN to database
-            await new Promise((resolve, reject) => {
-                const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/trn`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-                }, (res) => { res.on('data', () => { }); res.on('end', resolve); });
-                req.on('error', reject);
-                const trnPayload = (automationMode === 'multistate')
-                    ? { trn: trnText, masterTrn: trnText }
-                    : { trn: trnText };
-                req.write(JSON.stringify(trnPayload));
-                req.end();
-            });
+            trnText = extractValidTrn(rawExtractedTrn);
+            if (trnText) {
+                sendUpdate(`TRN Generated: ${trnText}`);
+                // Persist TRN to database
+                await new Promise((resolve, reject) => {
+                    const req = http.request(`http://127.0.0.1:3002/api/applications/${appId}/trn`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+                    }, (res) => { res.on('data', () => { }); res.on('end', resolve); });
+                    req.on('error', reject);
+                    const trnPayload = (automationMode === 'multistate')
+                        ? { trn: trnText, masterTrn: trnText }
+                        : { trn: trnText };
+                    req.write(JSON.stringify(trnPayload));
+                    req.end();
+                });
+            } else {
+                sendUpdate('⚠️ Could not auto-detect TRN pattern on confirmation page. Checking database fallback...');
+            }
         }
 
         // Ensure clean, valid TRN string
-        if (trnText) {
-            const cleanMatch = trnText.match(/\b(\d{12,15}(?:TRN)?)\b/i);
-            if (cleanMatch) trnText = cleanMatch[1].toUpperCase();
-        }
+        trnText = extractValidTrn(trnText);
 
         // If trnText is still missing, fallback to querying database
-        if (!trnText || trnText.length < 5) {
+        if (!trnText) {
             try {
                 const dbAppRes = await new Promise((resolve) => {
                     http.get(`http://127.0.0.1:3002/api/applications/${appId}`, {
@@ -566,48 +580,61 @@ async function run() {
                     }).on('error', () => resolve(null));
                 });
                 if (dbAppRes && dbAppRes.application) {
-                    const fetchedTrn = dbAppRes.application.trn || dbAppRes.application.masterTrn || (dbAppRes.application.data && dbAppRes.application.data.trn) || '';
-                    if (fetchedTrn) {
-                        const m = fetchedTrn.match(/\b(\d{12,15}(?:TRN)?)\b/i);
-                        trnText = m ? m[1].toUpperCase() : fetchedTrn.trim();
-                    }
+                    const app = dbAppRes.application;
+                    const fetchedTrn = app.trn || app.masterTrn || (app.data && (app.data.trn || app.data.secToken || app.data.masterTrn)) || '';
+                    trnText = extractValidTrn(fetchedTrn);
                 }
             } catch (e) { }
         }
 
-        sendUpdate(`Navigating to TRN Login screen with TRN: ${trnText}...`);
+        // Resolve applicant email from all possible paths
+        const resolveApplicantEmail = () => {
+            const candidates = [
+                data.email,
+                data.rgdtls && data.rgdtls.em,
+                data.applicantEmail,
+                data.userEmail,
+                appData.userEmail,
+                data.p1 && data.p1.email,
+                data.ppob_email,
+                data.asgdtls && data.asgdtls[0] && data.asgdtls[0].em,
+                data.authSignatory && data.authSignatory[0] && data.authSignatory[0].email,
+                data.authSignatory && data.authSignatory[0] && data.authSignatory[0].contact && data.authSignatory[0].contact.email,
+                data.promoters && data.promoters[0] && data.promoters[0].email
+            ];
+            for (const c of candidates) {
+                if (typeof c === 'string') {
+                    const trimmed = c.trim();
+                    if (trimmed.length > 3 && trimmed.includes('@') && trimmed.includes('.') && trimmed !== '-') {
+                        return trimmed;
+                    }
+                }
+            }
+            try {
+                const jsonStr = JSON.stringify({ data, appData });
+                const m = jsonStr.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+                if (m) return m[0];
+            } catch (_) {}
+            return '';
+        };
+
+        const userEmail = resolveApplicantEmail();
+
+        sendUpdate(`Navigating to TRN Login screen (TRN: ${trnText || 'Pending'}, Email: ${userEmail || 'Pending'})...`);
         await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(1500);
 
         // Click TRN radio button
         const radioTrn = page.locator('#radiotrn, input[type="radio"][value*="trn" i], label:has-text("Temporary Reference Number")').first();
         await radioTrn.waitFor({ state: 'visible', timeout: 30000 });
         await radioTrn.click({ force: true });
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(1500);
 
-        // Fill TRN & Email using multiple strategies (Playwright type + DOM + AngularJS scope)
-        const userEmail = (data.email || (data.p1 && data.p1.email) || '').trim();
-
-        for (let fillAttempt = 0; fillAttempt < 3; fillAttempt++) {
-            // 1. Playwright locators with sequential typing
-            const trnInput = page.locator('input[placeholder*="Temporary Reference Number" i], #trnno, #trn, input[name*="trn" i]').first();
-            if (await trnInput.count() > 0 && await trnInput.isVisible()) {
-                await trnInput.click({ force: true }).catch(() => { });
-                await trnInput.fill('').catch(() => { });
-                await trnInput.pressSequentially(trnText, { delay: 40 }).catch(() => { });
-            }
-
-            const emailInput = page.locator('input[placeholder*="Email Address" i]:visible, input[placeholder*="Email" i]:visible, #trneml:visible, #trn_email:visible, input[name*="email" i]:visible').first();
-            if (await emailInput.count() > 0 && await emailInput.isVisible() && userEmail) {
-                await emailInput.click({ force: true }).catch(() => { });
-                await emailInput.fill('').catch(() => { });
-                await emailInput.pressSequentially(userEmail, { delay: 40 }).catch(() => { });
-            }
-
-            // 2. Direct DOM & AngularJS scope injection
-            await page.evaluate(({ tVal, eVal }) => {
+        // Robust multi-strategy DOM & AngularJS filler for TRN and Email
+        const fillTrnLoginForm = async () => {
+            return await page.evaluate(({ tVal, eVal }) => {
                 const triggerField = (inputEl, val) => {
-                    if (!inputEl || !val) return;
+                    if (!inputEl || !val) return false;
                     inputEl.focus();
                     inputEl.value = val;
                     inputEl.dispatchEvent(new Event('input', { bubbles: true }));
@@ -624,56 +651,103 @@ async function run() {
                             }
                             const sc = window.angular.element(inputEl).scope();
                             if (sc) {
-                                if (sc.trnModel) sc.trnModel = val;
-                                if (sc.trn) sc.trn = val;
-                                if (sc.trnno) sc.trnno = val;
-                                if (sc.email) sc.email = eVal;
+                                const ngm = inputEl.getAttribute('ng-model') || inputEl.getAttribute('data-ng-model');
+                                if (ngm) {
+                                    const parts = ngm.split('.');
+                                    let curr = sc;
+                                    for (let i = 0; i < parts.length - 1; i++) {
+                                        if (curr[parts[i]]) curr = curr[parts[i]];
+                                    }
+                                    curr[parts[parts.length - 1]] = val;
+                                }
+                                if (sc.trnModel !== undefined) sc.trnModel = val;
+                                if (sc.trn !== undefined) sc.trn = val;
+                                if (sc.trnno !== undefined) sc.trnno = val;
+                                if (sc.email !== undefined) sc.email = val;
+                                if (sc.trneml !== undefined) sc.trneml = val;
                                 if (!sc.$$phase) sc.$apply();
                             }
                         } catch (e) { }
                     }
+                    return true;
                 };
 
-                const visibleInputs = Array.from(document.querySelectorAll('input')).filter(i => i.offsetParent !== null && window.getComputedStyle(i).display !== 'none');
+                const visibleInputs = Array.from(document.querySelectorAll('input')).filter(i => {
+                    return i.type !== 'hidden' && i.type !== 'radio' && i.type !== 'checkbox' && i.offsetParent !== null && window.getComputedStyle(i).display !== 'none';
+                });
 
                 // Find TRN input
                 const trnEl = visibleInputs.find(i => {
                     const p = (i.placeholder || '').toLowerCase();
                     const id = (i.id || '').toLowerCase();
                     const name = (i.name || '').toLowerCase();
-                    return p.includes('temporary reference number') || p.includes('trn') || id.includes('trn') || name.includes('trn');
+                    const ngm = (i.getAttribute('ng-model') || '').toLowerCase();
+                    return p.includes('temporary reference number') || p.includes('trn') || id.includes('trn') || name.includes('trn') || ngm.includes('trn');
                 });
-                if (trnEl) triggerField(trnEl, tVal);
+                if (trnEl && tVal) triggerField(trnEl, tVal);
 
                 // Find Email input
-                if (eVal) {
-                    const emailEl = visibleInputs.find(i => {
-                        const p = (i.placeholder || '').toLowerCase();
-                        const id = (i.id || '').toLowerCase();
-                        const name = (i.name || '').toLowerCase();
-                        return p.includes('email') || id.includes('email') || name.includes('email');
-                    });
-                    if (emailEl) triggerField(emailEl, eVal);
-                }
-            }, { tVal: trnText, eVal: userEmail });
+                const emailEl = visibleInputs.find(i => {
+                    const p = (i.placeholder || '').toLowerCase();
+                    const id = (i.id || '').toLowerCase();
+                    const name = (i.name || '').toLowerCase();
+                    const ngm = (i.getAttribute('ng-model') || '').toLowerCase();
+                    return p.includes('email') || id.includes('email') || id.includes('eml') || name.includes('email') || ngm.includes('email');
+                });
+                if (emailEl && eVal) triggerField(emailEl, eVal);
 
+                return {
+                    trnFound: !!trnEl,
+                    trnVal: trnEl ? trnEl.value.trim() : '',
+                    emailFound: !!emailEl,
+                    emailVal: emailEl ? emailEl.value.trim() : ''
+                };
+            }, { tVal: trnText, eVal: userEmail });
+        };
+
+        for (let fillAttempt = 1; fillAttempt <= 5; fillAttempt++) {
+            // 1. Playwright locators with sequential typing
+            if (trnText) {
+                const trnInput = page.locator('input[placeholder*="Temporary Reference Number" i], #trnno, #trn, input[name*="trn" i]').first();
+                if (await trnInput.count() > 0 && await trnInput.isVisible()) {
+                    await trnInput.click({ force: true }).catch(() => { });
+                    await trnInput.fill('').catch(() => { });
+                    await trnInput.pressSequentially(trnText, { delay: 35 }).catch(() => { });
+                }
+            }
+
+            if (userEmail) {
+                const emailInput = page.locator('input[placeholder*="Email Address" i]:visible, input[placeholder*="Email" i]:visible, #trneml:visible, #trn_email:visible, input[name*="email" i]:visible').first();
+                if (await emailInput.count() > 0 && await emailInput.isVisible()) {
+                    await emailInput.click({ force: true }).catch(() => { });
+                    await emailInput.fill('').catch(() => { });
+                    await emailInput.pressSequentially(userEmail, { delay: 35 }).catch(() => { });
+                }
+            }
+
+            // 2. Direct DOM & AngularJS scope injection
+            const res = await fillTrnLoginForm();
             await page.waitForTimeout(500);
 
             // Verify if values stick in DOM
-            const currentFilled = await page.evaluate(() => {
+            const check = await page.evaluate(() => {
                 const visibleInputs = Array.from(document.querySelectorAll('input')).filter(i => i.offsetParent !== null);
                 const trnEl = visibleInputs.find(i => (i.placeholder || '').toLowerCase().includes('temporary reference number') || (i.id || '').toLowerCase().includes('trn'));
                 const emailEl = visibleInputs.find(i => (i.placeholder || '').toLowerCase().includes('email') || (i.id || '').toLowerCase().includes('email'));
                 return {
-                    trn: trnEl ? trnEl.value : '',
-                    email: emailEl ? emailEl.value : ''
+                    trn: trnEl ? trnEl.value.trim() : '',
+                    email: emailEl ? emailEl.value.trim() : ''
                 };
             });
 
-            if (currentFilled.trn && (!userEmail || currentFilled.email)) {
-                sendUpdate(`✅ TRN Login inputs filled successfully -> TRN: "${currentFilled.trn}", Email: "${currentFilled.email}"`);
+            const trnOk = !trnText || check.trn === trnText || check.trn.length >= 10;
+            const emailOk = !userEmail || check.email === userEmail || check.email.includes('@');
+
+            if (trnOk && emailOk && (check.trn || !trnText) && (check.email || !userEmail)) {
+                sendUpdate(`✅ TRN Login inputs filled successfully -> TRN: "${check.trn}", Email: "${check.email}"`);
                 break;
             } else {
+                sendUpdate(`Attempt ${fillAttempt}/5: TRN="${check.trn}", Email="${check.email}". Re-syncing inputs...`);
                 await page.waitForTimeout(800);
             }
         }
@@ -681,6 +755,9 @@ async function run() {
         // TRN Login Captcha Loop
         let trnLoginSuccess = false;
         while (!trnLoginSuccess) {
+            // Re-verify and maintain TRN & Email values
+            await fillTrnLoginForm();
+
             sendUpdate('Locating TRN Login Captcha...');
             const loginCaptchaEl = await page.waitForSelector('#imgCaptcha', { state: 'visible' });
             await page.waitForTimeout(500);
@@ -694,7 +771,16 @@ async function run() {
             });
 
             sendUpdate('Verifying TRN Login...');
+
+            // Ensure TRN and Email are STILL populated before entering captcha and submitting
+            await fillTrnLoginForm();
+            await page.waitForTimeout(200);
+
             await page.fill('#captchatrn', loginCaptchaText);
+            await page.waitForTimeout(200);
+
+            // Final check on TRN & Email before proceed
+            await fillTrnLoginForm();
 
             await page.evaluate(() => {
                 const form = document.querySelector('form[name="preg"]');
@@ -712,7 +798,7 @@ async function run() {
                     if (url.includes('/verify') || url.includes('/msrverify')) return true;
                     const captchaEl = document.querySelector('#captchatrn');
                     if (captchaEl && captchaEl.value === '') return true;
-                    const err = document.querySelector('.err, .alert-danger');
+                    const err = document.querySelector('.err, .alert-danger, [ng-show*="err"], span.text-danger');
                     return (err && err.offsetParent !== null && err.innerText.trim().length > 0);
                 }, { timeout: 35000 });
 
@@ -723,13 +809,20 @@ async function run() {
                     if (url.includes('/verify') || url.includes('/msrverify')) return 'otp_ready';
                     const captchaEl = document.querySelector('#captchatrn');
                     if (captchaEl && captchaEl.value === '') return 'invalid_captcha';
-                    const err = document.querySelector('.err, .alert-danger');
+                    const err = document.querySelector('.err, .alert-danger, [ng-show*="err"], span.text-danger');
                     if (err && err.offsetParent !== null && err.innerText.trim().length > 0) return 'error_message';
                     return 'unknown';
                 });
 
                 if (resultStatus === 'invalid_captcha' || resultStatus === 'error_message') {
-                    sendUpdate('Invalid Captcha. Retrying with fresh Captcha...');
+                    const errMsg = await page.evaluate(() => {
+                        const errs = Array.from(document.querySelectorAll('.err, .alert-danger, [ng-show*="err"], span.text-danger'))
+                            .filter(e => e.offsetParent !== null && e.innerText.trim().length > 0)
+                            .map(e => e.innerText.trim());
+                        return errs.join(' | ');
+                    });
+                    sendUpdate(`Portal Notice: ${errMsg || 'Invalid Captcha'}. Re-filling inputs and retrying with fresh Captcha...`);
+                    await fillTrnLoginForm();
                     await page.waitForTimeout(1500);
                 } else {
                     trnLoginSuccess = true;

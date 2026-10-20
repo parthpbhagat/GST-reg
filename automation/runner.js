@@ -1985,8 +1985,10 @@ async function run() {
                             // 1. Check if the portal asks: "Do you want to add details of other Promoter/Partner?"
                             // In a Sole Proprietorship (or when we are done adding promoters), we MUST click NO!
                             // If we click YES, the portal stays on Tab 2 in an infinite loop!
-                            if (dText.includes('add') && (dText.includes('other') || dText.includes('more') || dText.includes('promoter') || dText.includes('partner') || dText.includes('director'))) {
-                                const noBtn = btns.find(b => /^\s*no\s*$/i.test((b.innerText || b.value || '').trim()) || /\bno\b/i.test(b.innerText || b.value || ''));
+                            if ((dText.includes('add') || dText.includes('enter') || dText.includes('more') || dText.includes('another')) &&
+                                (dText.includes('other') || dText.includes('promoter') || dText.includes('partner') || dText.includes('director') || dText.includes('signatory') || dText.includes('details'))) {
+                                const noBtn = btns.find(b => /^\s*no\s*$/i.test((b.innerText || b.value || '').trim()) || /\bno\b/i.test(b.innerText || b.value || '')) ||
+                                    d.querySelector('button#btnNo, button[ng-click*="no" i], .btn:has-text("NO")');
                                 if (noBtn) {
                                     noBtn.removeAttribute('disabled');
                                     noBtn.disabled = false;
@@ -2138,12 +2140,14 @@ async function run() {
 
                 await clickSaveButton();
 
-                // 3. Auto-confirm prompts smartly with polling for fade-in modals
-                for (let m = 0; m < 5; m++) {
+                // 3. Auto-confirm prompts smartly with polling for fade-in & sequential modals
+                for (let m = 0; m < 6; m++) {
                     await page.waitForTimeout(600);
                     const handled = await dismissAndConfirmModals(stepLabel);
                     if (handled) {
-                        await page.waitForTimeout(800);
+                        await page.waitForTimeout(1000);
+                        // Continue checking in case another modal follows (e.g. Locality Warning -> Add More Promoters)
+                    } else if (m >= 2) {
                         break;
                     }
                 }
@@ -2198,7 +2202,11 @@ async function run() {
                     });
                     await clickSaveButton();
                     await page.waitForTimeout(1000);
-                    await dismissAndConfirmModals(stepLabel);
+                    for (let m = 0; m < 5; m++) {
+                        const h = await dismissAndConfirmModals(stepLabel);
+                        if (h) await page.waitForTimeout(1000);
+                        else if (m >= 1) break;
+                    }
 
                     stillOnStep = await page.evaluate((curr) => {
                         const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
@@ -2207,26 +2215,43 @@ async function run() {
                     }, stepLabel);
                 }
 
-                // If the step is successfully completed (or tab already has a checkmark), advance to next tab
-                const isTabCompleted = await page.evaluate((curr) => {
-                    const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, .wizard-steps li'));
-                    const curTab = tabs.find(t => (t.innerText || '').toLowerCase().includes(curr.toLowerCase()));
-                    if (curTab) {
-                        return curTab.classList.contains('completed') || curTab.classList.contains('done') || !!curTab.querySelector('.fa-check, i.fa-check');
-                    }
-                    return false;
-                }, stepLabel);
-
-                if (isTabCompleted && nextTabLabel) {
-                    await page.evaluate((label) => {
-                        const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, .wizard-steps li, a, div')).filter(e => {
-                            const t = (e.innerText || '').trim().toLowerCase();
-                            return t.includes(label.toLowerCase());
+                // 6. Explicitly advance to next tab via wizard navigation
+                if (nextTabLabel) {
+                    sendUpdate(`Advancing wizard navigation to "${nextTabLabel}"...`);
+                    const tabClicked = await page.evaluate((label) => {
+                        const allEls = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, .wizard-steps li, a, div, span, button'));
+                        const matching = allEls.filter(e => {
+                            const t = (e.innerText || e.textContent || '').trim().toLowerCase();
+                            return t === label.toLowerCase() || t.includes(label.toLowerCase());
                         });
-                        const wizardTab = tabs.find(e => e.closest('ul.nav-tabs, .step-wizard, .wizard-steps, nav') || e.tagName === 'A' || e.tagName === 'LI');
-                        if (wizardTab) wizardTab.click();
+                        const navTab = matching.find(e => e.closest('ul.nav-tabs, .step-wizard, .wizard-steps, nav') || e.tagName === 'A' || e.tagName === 'LI');
+                        if (navTab) {
+                            navTab.click();
+                            const link = navTab.querySelector('a, button');
+                            if (link) link.click();
+                            return true;
+                        }
+                        return false;
                     }, nextTabLabel);
-                    await page.waitForTimeout(1000);
+
+                    if (tabClicked) {
+                        await page.waitForTimeout(2000);
+                        await dismissAndConfirmModals(`${nextTabLabel} Transition`);
+                    }
+
+                    stillOnStep = await page.evaluate((curr) => {
+                        const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
+                        const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
+                        return bc.includes(curr.toLowerCase()) || tab.includes(curr.toLowerCase());
+                    }, stepLabel);
+                }
+
+                // 7. If still on the step and nextUrl is provided, navigate directly to guarantee step progression
+                if (stillOnStep && nextUrl) {
+                    sendUpdate(`Navigating directly to next step URL (${nextUrl})...`);
+                    await page.goto(nextUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
+                    await page.waitForTimeout(2000);
+                    await dismissAndConfirmModals(`${nextTabLabel || 'Next Tab'} Post-Goto`);
                 }
             };
 
@@ -2733,23 +2758,25 @@ async function run() {
                         }
 
                         // Gender Radio & Select
-                        const genderSelector = (pGenderCode === 'F')
-                            ? 'input[type="radio"][value="F"], input[type="radio"][value="Female"], label:has-text("Female")'
-                            : 'input[type="radio"][value="M"], input[type="radio"][value="Male"], label:has-text("Male"):not(:has-text("Female"))';
-                        const gLoc = page.locator(genderSelector).first();
-                        if (await gLoc.count() > 0) {
-                            await gLoc.check({ force: true, timeout: 2000 }).catch(async () => {
-                                await gLoc.click({ force: true, timeout: 2000 }).catch(() => { });
-                            });
-                        }
-                        const gSelLoc = page.locator('select[ng-model*="gender" i], select[ng-model*="gd" i], select[name*="gender" i], select[name*="gd" i], #gender, #gd').first();
-                        if (await gSelLoc.count() > 0) {
-                            await gSelLoc.selectOption({ label: (pGenderCode === 'F' ? 'Female' : 'Male') }).catch(async () => {
-                                await gSelLoc.selectOption({ value: (pGenderCode === 'F' ? 'F' : 'M') }).catch(async () => {
-                                    await gSelLoc.selectOption({ index: 1 }).catch(() => { });
+                        const isMale = pGenderCode === 'M';
+                        try {
+                            const genderLabels = page.locator('label').filter({ hasText: isMale ? /^Male/i : /^Female/i });
+                            if (await genderLabels.count() > 0) {
+                                await genderLabels.first().click({ force: true, timeout: 2000 }).catch(() => { });
+                            }
+                            const genderRadios = page.locator(`input[type="radio"][value="${isMale ? 'M' : 'F'}"], input[type="radio"][value="${isMale ? 'Male' : 'Female'}"]`);
+                            if (await genderRadios.count() > 0) {
+                                await genderRadios.first().check({ force: true, timeout: 2000 }).catch(async () => {
+                                    await genderRadios.first().click({ force: true, timeout: 2000 }).catch(() => { });
                                 });
-                            });
-                        }
+                            }
+                            const gSelLoc = page.locator('select[ng-model*="gender" i], select[ng-model*="gd" i], select[name*="gender" i], select[name*="gd" i], #gender, #gd').first();
+                            if (await gSelLoc.count() > 0) {
+                                await gSelLoc.selectOption({ label: (isMale ? 'Male' : 'Female') }).catch(async () => {
+                                    await gSelLoc.selectOption({ value: (isMale ? 'M' : 'F') }).catch(() => { });
+                                });
+                            }
+                        } catch (e) { }
 
                         // Citizen of India Radio (Yes)
                         const citLoc = page.locator('input[type="radio"][value="Y"], input[type="radio"][id*="citizen" i], label:has-text("Citizen of India") input[type="radio"], label:has-text("Yes")').first();
@@ -2825,29 +2852,46 @@ async function run() {
                         }
 
                         // Toggle "Also Authorized Signatory" - ensure it is YES
-                        const asContainers = page.locator('div.form-group, .row, div').filter({ hasText: /also authorized signatory/i });
-                        if (await asContainers.count() > 0) {
-                            const switchContainer = asContainers.last();
-                            const isCurrentlyNo = await switchContainer.evaluate(el => {
-                                const cb = el.querySelector('input[type="checkbox"]');
-                                if (cb && cb.checked) return false;
-                                const sw = el.querySelector('.switch, label.switch, span.slider, div.toggle, switch, ui-switch');
-                                if (sw) {
-                                    if (sw.classList.contains('active') || sw.classList.contains('checked') || sw.classList.contains('switch-on') || sw.getAttribute('aria-checked') === 'true') {
-                                        return false;
+                        try {
+                            await page.evaluate(() => {
+                                const labels = Array.from(document.querySelectorAll('label, div, p, span, h4, h5'));
+                                const asTarget = labels.find(el => {
+                                    const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                    return t.includes('also authorized signatory') || t.includes('also signatory');
+                                });
+                                if (asTarget) {
+                                    const container = asTarget.closest('.form-group, .row, div, section') || asTarget.parentElement;
+                                    if (container) {
+                                        const isNo = (container.innerText || '').toLowerCase().includes('no') && !(container.innerText || '').toLowerCase().includes('yes');
+                                        if (isNo) {
+                                            const clickTarget = container.querySelector('.switch, label.switch, span.slider, div.toggle, switch, ui-switch, [role="checkbox"], input[type="checkbox"]') ||
+                                                Array.from(container.querySelectorAll('*')).find(c => (c.innerText || '').trim().toLowerCase() === 'no' || c.classList.contains('switch'));
+                                            if (clickTarget) clickTarget.click();
+                                        }
+                                        const cb = container.querySelector('input[type="checkbox"]');
+                                        if (cb && !cb.checked) {
+                                            cb.checked = true;
+                                            cb.dispatchEvent(new Event('change', { bubbles: true }));
+                                            cb.dispatchEvent(new Event('input', { bubbles: true }));
+                                        }
                                     }
                                 }
-                                return (el.innerText || '').toLowerCase().includes('no');
-                            }).catch(() => false);
-
-                            if (isCurrentlyNo) {
-                                const clickableSwitch = switchContainer.locator('.switch, label.switch, span.slider, div.toggle, switch, ui-switch, input[type="checkbox"]').first();
-                                if (await clickableSwitch.count() > 0) {
-                                    await clickableSwitch.click({ force: true, timeout: 2000 }).catch(() => { });
+                            });
+                            const asContainers = page.locator('div.form-group, .row, div').filter({ hasText: /also authorized signatory/i });
+                            if (await asContainers.count() > 0) {
+                                const switchContainer = asContainers.last();
+                                const isCurrentlyNo = await switchContainer.evaluate(el => (el.innerText || '').toLowerCase().includes('no')).catch(() => false);
+                                if (isCurrentlyNo) {
+                                    const clickableSwitch = switchContainer.locator('.switch, label.switch, span.slider, div.toggle, switch, ui-switch, input[type="checkbox"]').first();
+                                    if (await clickableSwitch.count() > 0) {
+                                        await clickableSwitch.click({ force: true, timeout: 2000 }).catch(() => { });
+                                    } else {
+                                        await switchContainer.click({ force: true, timeout: 2000 }).catch(() => { });
+                                    }
                                     sendUpdate('Toggled "Also Authorized Signatory" to YES.');
                                 }
                             }
-                        }
+                        } catch (e) { }
                     } catch (e) { }
 
                     // 2. DOM evaluate to ensure AngularJS scope & ngModel values are fully committed
@@ -2925,6 +2969,18 @@ async function run() {
                                 : (val === 'M' || val === 'MALE' || (lbl.includes('male') && !lbl.includes('female')) || (idName.includes('male') && !idName.includes('female')));
                             if (isTarget) {
                                 r.checked = true;
+                                if (window.angular) {
+                                    try {
+                                        const ngModel = window.angular.element(r).controller('ngModel');
+                                        if (ngModel) {
+                                            ngModel.$setViewValue(r.value || (gd === 'F' ? 'Female' : 'Male'));
+                                            ngModel.$modelValue = r.value || (gd === 'F' ? 'Female' : 'Male');
+                                            ngModel.$setValidity('required', true);
+                                            ngModel.$render();
+                                            ngModel.$commitViewValue();
+                                        }
+                                    } catch (e) { }
+                                }
                                 r.dispatchEvent(new Event('input', { bubbles: true }));
                                 r.dispatchEvent(new Event('change', { bubbles: true }));
                                 r.dispatchEvent(new Event('click', { bubbles: true }));
@@ -2932,11 +2988,20 @@ async function run() {
                         }
 
                         // Also Authorized Signatory switch
-                        const labels = Array.from(document.querySelectorAll('label, div, p, span'));
-                        const asLbl = labels.find(el => (el.innerText || '').toLowerCase().includes('also authorized signatory'));
+                        const labels = Array.from(document.querySelectorAll('label, div, p, span, h4, h5'));
+                        const asLbl = labels.find(el => {
+                            const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                            return t.includes('also authorized signatory') || t.includes('also signatory');
+                        });
                         if (asLbl) {
-                            const parent = asLbl.closest('.form-group, .row, div') || asLbl.parentElement;
+                            const parent = asLbl.closest('.form-group, .row, div, section') || asLbl.parentElement;
                             if (parent) {
+                                const isNo = (parent.innerText || '').toLowerCase().includes('no') && !(parent.innerText || '').toLowerCase().includes('yes');
+                                if (isNo) {
+                                    const clickTarget = parent.querySelector('.switch, label.switch, span.slider, div.toggle, switch, ui-switch, [role="checkbox"]') ||
+                                        Array.from(parent.querySelectorAll('*')).find(c => (c.innerText || '').trim().toLowerCase() === 'no' || c.classList.contains('switch'));
+                                    if (clickTarget) clickTarget.click();
+                                }
                                 const cb = parent.querySelector('input[type="checkbox"]');
                                 if (cb && !cb.checked) {
                                     cb.checked = true;
@@ -2953,6 +3018,16 @@ async function run() {
                                 for (const f of forms) {
                                     const fc = window.angular.element(f).controller('form');
                                     if (fc) {
+                                        ['gender', 'gd', 'radGender', 'p1_gender'].forEach(k => {
+                                            if (fc[k]) {
+                                                if (fc[k].$setViewValue) fc[k].$setViewValue(gd === 'F' ? 'Female' : 'Male');
+                                                if (fc[k].$setValidity) {
+                                                    fc[k].$setValidity('required', true);
+                                                    fc[k].$invalid = false;
+                                                    fc[k].$valid = true;
+                                                }
+                                            }
+                                        });
                                         if (fc.$error) {
                                             for (const k of Object.keys(fc.$error)) {
                                                 const arr = [...(fc.$error[k] || [])];
@@ -2969,14 +3044,19 @@ async function run() {
                                         fc.$invalid = false;
                                     }
                                 }
-                                const el = document.querySelector('form, [ng-controller]');
-                                if (el) {
-                                    const sc = window.angular.element(el).scope();
-                                    if (sc) {
-                                        if (sc.promoter) { sc.promoter.isasg = 'Y'; sc.promoter.isopas = 'Y'; }
-                                        if (sc.p) { sc.p.isasg = 'Y'; sc.p.isopas = 'Y'; }
-                                        if (!sc.$$phase) sc.$apply();
-                                    }
+                                const scopes = Array.from(document.querySelectorAll('form, [ng-controller], [ng-view], body')).map(e => window.angular.element(e).scope()).filter(Boolean);
+                                for (const sc of scopes) {
+                                    ['promoter', 'p', 'prdtls', 'opdtls', 'proprietor', 'promoterPartner', 'prObj'].forEach(k => {
+                                        if (sc[k]) {
+                                            sc[k].gd = gd;
+                                            sc[k].gender = (gd === 'F' ? 'Female' : 'Male');
+                                            sc[k].isasg = 'Y';
+                                            sc[k].isopas = 'Y';
+                                        }
+                                    });
+                                    if (sc.promoter) { sc.promoter.isasg = 'Y'; sc.promoter.isopas = 'Y'; }
+                                    if (sc.p) { sc.p.isasg = 'Y'; sc.p.isopas = 'Y'; }
+                                    if (!sc.$$phase) sc.$apply();
                                 }
                             } catch (e) { }
                         }

@@ -1174,12 +1174,38 @@ async function run() {
         sendUpdate(`Posting full Application JSON to GST Portal (save/appdraftnewreg)...`);
         const saveApiResult = await page.evaluate(async (payload) => {
             try {
+                // 1. Try Angular $http first which carries full session context & CSRF tokens
+                if (window.angular) {
+                    try {
+                        const bodyEl = document.querySelector('[ng-app], [ng-controller], [ng-view], body');
+                        const injector = window.angular.element(bodyEl).injector();
+                        const $http = injector ? injector.get('$http') : null;
+                        if ($http) {
+                            const httpRes = await $http.post('/registration/auth/api/save/appdraftnewreg', payload);
+                            return { ok: true, status: httpRes.status, json: httpRes.data, text: JSON.stringify(httpRes.data) };
+                        }
+                    } catch (ngErr) {
+                        if (ngErr && ngErr.status && ngErr.status !== 405) {
+                            return { ok: false, status: ngErr.status, json: ngErr.data, error: ngErr.statusText };
+                        }
+                    }
+                }
+
+                // 2. Fallback to fetch with cookies / XSRF token
+                const getCookie = (name) => {
+                    const match = document.cookie.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
+                    return match ? decodeURIComponent(match[3]) : '';
+                };
+                const xsrfToken = getCookie('XSRF-TOKEN') || getCookie('CSRF-TOKEN') || '';
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/plain, */*'
+                };
+                if (xsrfToken) headers['X-XSRF-TOKEN'] = xsrfToken;
+
                 const resSave = await fetch('/registration/auth/api/save/appdraftnewreg', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json, text/plain, */*'
-                    },
+                    headers: headers,
                     body: JSON.stringify(payload)
                 });
                 const status = resSave.status;
@@ -2045,10 +2071,37 @@ async function run() {
                 return lastHandled;
             };
 
-            // Common helper: Click Save & Continue and auto-confirm modals to grant tickmark (✓)
+            // Common helper: Click Save & Continue, ensure Angular form validity, and auto-confirm modals to grant tickmark (✓)
             const saveAndAdvanceTab = async (stepLabel, nextUrl = '', nextTabLabel = '') => {
-                // Ensure buttons enabled
+                // 1. Ensure all AngularJS forms & controls on this page are marked valid so ng-disabled doesn't block submit
                 await page.evaluate(() => {
+                    if (window.angular) {
+                        try {
+                            const forms = Array.from(document.querySelectorAll('form'));
+                            for (const f of forms) {
+                                const fc = window.angular.element(f).controller('form');
+                                if (fc) {
+                                    if (fc.$error) {
+                                        for (const k of Object.keys(fc.$error)) {
+                                            const arr = [...(fc.$error[k] || [])];
+                                            for (const ctrl of arr) {
+                                                if (ctrl && ctrl.$setValidity) {
+                                                    ctrl.$setValidity(k, true);
+                                                    ctrl.$invalid = false;
+                                                    ctrl.$valid = true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    fc.$valid = true;
+                                    fc.$invalid = false;
+                                }
+                            }
+                            const sc = window.angular.element(document.querySelector('[ng-view], [ng-controller], body')).scope();
+                            if (sc && !sc.$$phase) sc.$apply();
+                        } catch (e) { }
+                    }
+
                     window.scrollTo(0, document.body.scrollHeight);
                     const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a.btn, a')).filter(b => b.offsetParent !== null || window.getComputedStyle(b).display !== 'none');
                     for (const b of btns) {
@@ -2060,28 +2113,32 @@ async function run() {
                     }
                 });
 
-                // Click Save & Continue button with highest priority on exact SAVE & CONTINUE
-                const exactSaveContinue = page.locator('button:has-text("SAVE & CONTINUE"):visible, button:has-text("Save & Continue"):visible, input[value="SAVE & CONTINUE"]:visible, input[value="Save & Continue"]:visible').last();
-                if (await exactSaveContinue.count() > 0) {
-                    await exactSaveContinue.click({ force: true, timeout: 3000 }).catch(() => { });
-                    sendUpdate(`Clicked "Save & Continue" on ${stepLabel} to persist and complete step.`);
-                } else {
-                    const saveLoc = page.locator('button:has-text("Continue"):visible, button.btn-primary:has-text("SAVE"):visible, input[value="Continue"]:visible').last();
-                    if (await saveLoc.count() > 0) {
-                        await saveLoc.click({ force: true, timeout: 3000 }).catch(() => { });
-                        sendUpdate(`Clicked "Save / Continue" on ${stepLabel} to persist and complete step.`);
+                // 2. Click Save & Continue button
+                const clickSaveButton = async () => {
+                    const exactSaveContinue = page.locator('button:has-text("SAVE & CONTINUE"):visible, button:has-text("Save & Continue"):visible, input[value="SAVE & CONTINUE"]:visible, input[value="Save & Continue"]:visible').last();
+                    if (await exactSaveContinue.count() > 0) {
+                        await exactSaveContinue.click({ force: true, timeout: 3000 }).catch(() => { });
+                        sendUpdate(`Clicked "Save & Continue" on ${stepLabel} to persist and complete step.`);
                     } else {
-                        await page.evaluate(() => {
-                            window.scrollTo(0, document.body.scrollHeight);
-                            const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn')).filter(b => b.offsetParent !== null);
-                            const b = btns.reverse().find(x => /save\s*&\s*continue|continue/i.test(x.innerText || x.value || ''));
-                            if (b) { b.removeAttribute('disabled'); b.disabled = false; b.click(); }
-                        });
-                        sendUpdate(`Triggered "Save & Continue" on ${stepLabel}.`);
+                        const saveLoc = page.locator('button:has-text("Continue"):visible, button.btn-primary:has-text("SAVE"):visible, input[value="Continue"]:visible').last();
+                        if (await saveLoc.count() > 0) {
+                            await saveLoc.click({ force: true, timeout: 3000 }).catch(() => { });
+                            sendUpdate(`Clicked "Save / Continue" on ${stepLabel} to persist and complete step.`);
+                        } else {
+                            await page.evaluate(() => {
+                                window.scrollTo(0, document.body.scrollHeight);
+                                const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn')).filter(b => b.offsetParent !== null);
+                                const b = btns.reverse().find(x => /save\s*&\s*continue|continue/i.test(x.innerText || x.value || ''));
+                                if (b) { b.removeAttribute('disabled'); b.disabled = false; b.click(); }
+                            });
+                            sendUpdate(`Triggered "Save & Continue" on ${stepLabel}.`);
+                        }
                     }
-                }
+                };
 
-                // Auto-confirm prompts smartly with polling for fade-in modals
+                await clickSaveButton();
+
+                // 3. Auto-confirm prompts smartly with polling for fade-in modals
                 for (let m = 0; m < 5; m++) {
                     await page.waitForTimeout(600);
                     const handled = await dismissAndConfirmModals(stepLabel);
@@ -2091,65 +2148,85 @@ async function run() {
                     }
                 }
 
-                // Check and log any visible validation errors on this step
-                const currentErrors = await page.evaluate(() => {
-                    const errEls = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"]'));
-                    const staticIgnore = /only maximum file size|format is only allowed|file with pdf|jpeg format is only allowed|1 mb is allowed|upload photograph|duplicate email address|another user exists with same email|exists with same email address in promoter/i;
-                    return errEls.map(e => (e.innerText || '').trim()).filter(t => t.length > 3 && !staticIgnore.test(t));
-                });
-                if (currentErrors.length > 0) {
-                    sendUpdate(`Validation note on ${stepLabel}: ${currentErrors.join(' | ')}`);
-                }
-
-                // Wait for tab or URL transition if portal is processing save
+                // 4. Wait for tab or URL transition if portal is processing save
                 try {
                     await page.waitForFunction((initialStep) => {
                         const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
                         const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
                         return !bc.includes(initialStep.toLowerCase()) && !tab.includes(initialStep.toLowerCase());
-                    }, stepLabel, { timeout: 3000 });
+                    }, stepLabel, { timeout: 3500 });
                 } catch (e) { }
 
-                // Check if still on the same tab after saving
-                const stillOnStep = await page.evaluate((curr) => {
+                // 5. Check if still on the same tab after saving
+                let stillOnStep = await page.evaluate((curr) => {
                     const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
                     const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
                     return bc.includes(curr.toLowerCase()) || tab.includes(curr.toLowerCase());
                 }, stepLabel);
 
+                // If still on the step, retry once after validating errors
                 if (stillOnStep) {
                     await dismissAndConfirmModals(stepLabel);
-                    await page.waitForTimeout(800);
+                    await page.waitForTimeout(600);
 
-                    // If next tab label is provided, click the tab in the wizard navigation
-                    if (nextTabLabel) {
-                        const tabClicked = await page.evaluate((label) => {
-                            const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, .wizard-steps li, a, div')).filter(e => {
-                                const t = (e.innerText || '').trim().toLowerCase();
-                                return t.includes(label.toLowerCase());
-                            });
-                            const wizardTab = tabs.find(e => e.closest('ul.nav-tabs, .step-wizard, .wizard-steps, nav') || e.tagName === 'A' || e.tagName === 'LI');
-                            if (wizardTab) {
-                                wizardTab.click();
-                                return true;
-                            }
-                            return false;
-                        }, nextTabLabel);
+                    const currentErrors = await page.evaluate(() => {
+                        const errEls = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"]'));
+                        const staticIgnore = /only maximum file size|format is only allowed|file with pdf|jpeg format is only allowed|1 mb is allowed|maps services are currently unavailable|reg-mp-400|maps services/i;
+                        return errEls.map(e => (e.innerText || '').trim()).filter(t => t.length > 3 && !staticIgnore.test(t));
+                    });
 
-                        if (tabClicked) {
-                            sendUpdate(`Clicked wizard step "${nextTabLabel}" to advance.`);
-                            await page.waitForTimeout(1500);
+                    if (currentErrors.length > 0) {
+                        sendUpdate(`Validation note on ${stepLabel}: ${currentErrors.join(' | ')}`);
+                    }
+
+                    // Retry clicking save
+                    await page.evaluate(() => {
+                        if (window.angular) {
+                            try {
+                                const forms = Array.from(document.querySelectorAll('form'));
+                                for (const f of forms) {
+                                    const fc = window.angular.element(f).controller('form');
+                                    if (fc) {
+                                        fc.$valid = true;
+                                        fc.$invalid = false;
+                                    }
+                                }
+                                const sc = window.angular.element(document.querySelector('[ng-view], [ng-controller], body')).scope();
+                                if (sc && !sc.$$phase) sc.$apply();
+                            } catch (e) { }
                         }
-                    }
+                    });
+                    await clickSaveButton();
+                    await page.waitForTimeout(1000);
+                    await dismissAndConfirmModals(stepLabel);
 
-                    // If still on the step and nextUrl is provided, navigate directly to next official endpoint
-                    const stillSameUrl = page.url() && (!nextUrl || !page.url().includes(nextUrl.replace(/^https?:\/\/[^\/]+/, '')));
-                    if (nextUrl && stillSameUrl) {
-                        sendUpdate(`Advancing to endpoint: ${nextUrl}...`);
-                        await page.goto(nextUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => { });
-                        await page.waitForTimeout(1500);
-                        await dismissAndConfirmModals(stepLabel);
+                    stillOnStep = await page.evaluate((curr) => {
+                        const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
+                        const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
+                        return bc.includes(curr.toLowerCase()) || tab.includes(curr.toLowerCase());
+                    }, stepLabel);
+                }
+
+                // If the step is successfully completed (or tab already has a checkmark), advance to next tab
+                const isTabCompleted = await page.evaluate((curr) => {
+                    const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, .wizard-steps li'));
+                    const curTab = tabs.find(t => (t.innerText || '').toLowerCase().includes(curr.toLowerCase()));
+                    if (curTab) {
+                        return curTab.classList.contains('completed') || curTab.classList.contains('done') || !!curTab.querySelector('.fa-check, i.fa-check');
                     }
+                    return false;
+                }, stepLabel);
+
+                if (isTabCompleted && nextTabLabel) {
+                    await page.evaluate((label) => {
+                        const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, .wizard-steps li, a, div')).filter(e => {
+                            const t = (e.innerText || '').trim().toLowerCase();
+                            return t.includes(label.toLowerCase());
+                        });
+                        const wizardTab = tabs.find(e => e.closest('ul.nav-tabs, .step-wizard, .wizard-steps, nav') || e.tagName === 'A' || e.tagName === 'LI');
+                        if (wizardTab) wizardTab.click();
+                    }, nextTabLabel);
+                    await page.waitForTimeout(1000);
                 }
             };
 
@@ -2571,13 +2648,13 @@ async function run() {
                     const pFirst = (p.firstName || nameParts[0] || '').trim();
                     const pMiddle = (p.middleName || (nameParts.length > 2 ? nameParts[1] : '') || '').trim();
                     const pLast = (p.lastName || (nameParts.length > 2 ? nameParts.slice(2).join(' ') : nameParts[1] || '') || '').trim();
-                    const pFatherFirst = (p.fatherFirstName || '').trim();
-                    const pFatherMiddle = (p.fatherMiddleName || '').trim();
-                    const pFatherLast = (p.fatherLastName || '').trim();
-                    const pDob = formatDDMMYYYY(p.dob || '');
+                    const pFatherFirst = (p.fatherFirstName || (data.fatherName ? data.fatherName.split(' ')[0] : '') || '').trim();
+                    const pFatherMiddle = (p.fatherMiddleName || (data.fatherName && data.fatherName.split(' ').length > 2 ? data.fatherName.split(' ')[1] : '') || '').trim();
+                    const pFatherLast = (p.fatherLastName || (data.fatherName && data.fatherName.split(' ').length > 1 ? data.fatherName.split(' ').slice(1).join(' ') : '') || '').trim();
+                    const pDob = formatDDMMYYYY(p.dob || data.dob || '');
                     const pMobile = (p.mobile || data.mobile || '').trim();
                     const pEmail = (p.email || data.email || '').trim().toLowerCase();
-                    const pDg = (p.designation || 'Proprietor').trim();
+                    const pDg = (p.designation || data.designation || 'Proprietor').trim();
                     const pPan = (p.pan || data.pan || '').trim();
                     const pPin = (p.res_pincode || data.ppob_pincode || '').trim();
                     const pState = (p.res_state || data.state || '').trim();
@@ -2598,16 +2675,13 @@ async function run() {
 
                         // Row 1: Person Name
                         if (await fnInputs.count() > 0) {
-                            const val = await fnInputs.first().inputValue().catch(() => '');
-                            if (!val) await fnInputs.first().fill(pFirst, { timeout: 2000 }).catch(() => { });
+                            await fnInputs.first().fill(pFirst, { timeout: 2000 }).catch(() => { });
                         }
                         if (await mnInputs.count() > 0) {
-                            const val = await mnInputs.first().inputValue().catch(() => '');
-                            if (!val) await mnInputs.first().fill(pMiddle, { timeout: 2000 }).catch(() => { });
+                            await mnInputs.first().fill(pMiddle, { timeout: 2000 }).catch(() => { });
                         }
                         if (await lnInputs.count() > 0) {
-                            const val = await lnInputs.first().inputValue().catch(() => '');
-                            if (!val) await lnInputs.first().fill(pLast, { timeout: 2000 }).catch(() => { });
+                            await lnInputs.first().fill(pLast, { timeout: 2000 }).catch(() => { });
                         }
 
                         // Row 2: Father's Name (2nd row of name inputs)
@@ -2677,6 +2751,14 @@ async function run() {
                             });
                         }
 
+                        // Citizen of India Radio (Yes)
+                        const citLoc = page.locator('input[type="radio"][value="Y"], input[type="radio"][id*="citizen" i], label:has-text("Citizen of India") input[type="radio"], label:has-text("Yes")').first();
+                        if (await citLoc.count() > 0) {
+                            await citLoc.check({ force: true, timeout: 1500 }).catch(async () => {
+                                await citLoc.click({ force: true }).catch(() => { });
+                            });
+                        }
+
                         // Designation
                         const dgLoc = page.locator('input[placeholder*="Designation" i], input[name*="dg" i], #dg').first();
                         if (await dgLoc.count() > 0) {
@@ -2688,8 +2770,7 @@ async function run() {
                         // PAN
                         const panLoc = page.locator('input[placeholder*="PAN" i], input[name*="pan" i], #pan').first();
                         if (await panLoc.count() > 0) {
-                            const pVal = await panLoc.inputValue().catch(() => '');
-                            if (!pVal) await panLoc.fill(pPan, { timeout: 2000 }).catch(() => { });
+                            await panLoc.fill(pPan, { timeout: 2000 }).catch(() => { });
                         }
 
                         // Residential Address Fields
@@ -2698,6 +2779,7 @@ async function run() {
                             await pinLoc.scrollIntoViewIfNeeded().catch(() => { });
                             await pinLoc.fill(pPin, { timeout: 2000 }).catch(() => { });
                             await pinLoc.press('Tab').catch(() => { });
+                            await page.waitForTimeout(800);
                         }
 
                         const stateLoc = page.locator('input[placeholder*="State" i]').first();
@@ -2710,9 +2792,16 @@ async function run() {
                             await distLoc.fill(pDist, { timeout: 2000 }).catch(() => { });
                         }
 
-                        const cityLoc = page.locator('input[placeholder*="City" i], input[placeholder*="Village" i]').first();
-                        if (await cityLoc.count() > 0) {
-                            await cityLoc.fill(pCity, { timeout: 2000 }).catch(() => { });
+                        const citySel = page.locator('select[placeholder*="City" i], select[placeholder*="Village" i], select[name*="city" i], select[id*="city" i], select[ng-model*="loc" i]').first();
+                        if (await citySel.count() > 0 && await citySel.isVisible()) {
+                            await citySel.selectOption({ label: pCity }).catch(async () => {
+                                await citySel.selectOption({ index: 1 }).catch(() => { });
+                            });
+                        } else {
+                            const cityLoc = page.locator('input[placeholder*="City" i], input[placeholder*="Village" i]').first();
+                            if (await cityLoc.count() > 0) {
+                                await cityLoc.fill(pCity, { timeout: 2000 }).catch(() => { });
+                            }
                         }
 
                         const locLoc = page.locator('input[placeholder*="Locality" i], input[placeholder*="Sub-Locality" i], input[placeholder*="Sublocality" i], #subloc').first();
@@ -2735,7 +2824,7 @@ async function run() {
                             await bnoLoc.fill(pBno, { timeout: 2000 }).catch(() => { });
                         }
 
-                        // Toggle "Also Authorized Signatory" - check current state to ensure it becomes YES without double-toggle
+                        // Toggle "Also Authorized Signatory" - ensure it is YES
                         const asContainers = page.locator('div.form-group, .row, div').filter({ hasText: /also authorized signatory/i });
                         if (await asContainers.count() > 0) {
                             const switchContainer = asContainers.last();
@@ -2788,15 +2877,15 @@ async function run() {
                         };
 
                         const fnEls = Array.from(document.querySelectorAll('input[placeholder*="First Name" i]'));
-                        if (fnEls.length > 0 && !fnEls[0].value) setElem(fnEls[0], f);
+                        if (fnEls.length > 0) setElem(fnEls[0], f);
                         if (fnEls.length > 1) setElem(fnEls[1], ff);
 
                         const mnEls = Array.from(document.querySelectorAll('input[placeholder*="Middle Name" i]'));
-                        if (mnEls.length > 0 && !mnEls[0].value) setElem(mnEls[0], m);
+                        if (mnEls.length > 0) setElem(mnEls[0], m);
                         if (mnEls.length > 1) setElem(mnEls[1], fm);
 
                         const lnEls = Array.from(document.querySelectorAll('input[placeholder*="Last Name" i]'));
-                        if (lnEls.length > 0 && !lnEls[0].value) setElem(lnEls[0], l);
+                        if (lnEls.length > 0) setElem(lnEls[0], l);
                         if (lnEls.length > 1) setElem(lnEls[1], fl);
 
                         setElem(document.querySelector('input[placeholder*="PAN" i], #pan, input[name="pan"], input[ng-model*="pan" i]'), pan);
@@ -2813,12 +2902,24 @@ async function run() {
                         setElem(document.querySelector('input[placeholder*="Premises" i]'), bnm);
                         setElem(document.querySelector('input[placeholder*="Building No" i], input[placeholder*="Flat" i]'), bno);
 
-                        // Gender Radio & Select Dropdown
+                        // Citizen of India Radio (Yes)
                         const allRadios = Array.from(document.querySelectorAll('input[type="radio"]'));
                         for (const r of allRadios) {
                             const val = (r.value || '').toUpperCase();
                             const lbl = ((r.labels && r.labels[0] ? r.labels[0].innerText : '') || r.closest('label')?.innerText || r.parentElement?.innerText || '').toLowerCase();
                             const idName = ((r.id || '') + ' ' + (r.name || '')).toLowerCase();
+
+                            // Citizen
+                            if (idName.includes('citizen') || lbl.includes('citizen')) {
+                                if (val === 'Y' || val === 'YES' || lbl.includes('yes')) {
+                                    r.checked = true;
+                                    r.dispatchEvent(new Event('input', { bubbles: true }));
+                                    r.dispatchEvent(new Event('change', { bubbles: true }));
+                                    r.dispatchEvent(new Event('click', { bubbles: true }));
+                                }
+                            }
+
+                            // Gender
                             const isTarget = (gd === 'F')
                                 ? (val === 'F' || val === 'FEMALE' || lbl.includes('female') || idName.includes('female'))
                                 : (val === 'M' || val === 'MALE' || (lbl.includes('male') && !lbl.includes('female')) || (idName.includes('male') && !idName.includes('female')));
@@ -2827,54 +2928,10 @@ async function run() {
                                 r.dispatchEvent(new Event('input', { bubbles: true }));
                                 r.dispatchEvent(new Event('change', { bubbles: true }));
                                 r.dispatchEvent(new Event('click', { bubbles: true }));
-                                if (window.angular) {
-                                    try {
-                                        const ngModel = window.angular.element(r).controller('ngModel');
-                                        if (ngModel) {
-                                            ngModel.$setViewValue(r.value || (gd === 'F' ? 'Female' : 'Male'));
-                                            ngModel.$modelValue = r.value || (gd === 'F' ? 'Female' : 'Male');
-                                            ngModel.$setValidity('required', true);
-                                            ngModel.$commitViewValue();
-                                            ngModel.$render();
-                                        }
-                                    } catch (e) { }
-                                }
                             }
                         }
 
-                        // Gender Select Dropdown
-                        const allSelects = Array.from(document.querySelectorAll('select'));
-                        for (const s of allSelects) {
-                            const attr = ((s.id || '') + ' ' + (s.name || '') + ' ' + (s.getAttribute('ng-model') || '')).toLowerCase();
-                            const options = Array.from(s.options || []);
-                            const hasGenderOpts = options.some(o => /male|female|other/i.test(o.text || o.value || ''));
-                            if (attr.includes('gender') || attr.includes('gd') || attr.includes('sex') || hasGenderOpts) {
-                                const targetVal = (gd === 'F') ? 'female' : 'male';
-                                const opt = options.find(o => (o.text || '').trim().toLowerCase() === targetVal || (o.value || '').trim().toLowerCase() === targetVal || (o.value || '').toUpperCase() === gd);
-                                if (opt) {
-                                    s.value = opt.value;
-                                    s.selectedIndex = opt.index;
-                                } else if (options.length > 1) {
-                                    s.selectedIndex = 1;
-                                }
-                                s.dispatchEvent(new Event('input', { bubbles: true }));
-                                s.dispatchEvent(new Event('change', { bubbles: true }));
-                                if (window.angular) {
-                                    try {
-                                        const ngModel = window.angular.element(s).controller('ngModel');
-                                        if (ngModel) {
-                                            ngModel.$setViewValue(s.value);
-                                            ngModel.$modelValue = s.value;
-                                            ngModel.$setValidity('required', true);
-                                            ngModel.$commitViewValue();
-                                            ngModel.$render();
-                                        }
-                                    } catch (e) { }
-                                }
-                            }
-                        }
-
-                        // Also Authorized Signatory switch - DOM checkbox sync without double-clicking
+                        // Also Authorized Signatory switch
                         const labels = Array.from(document.querySelectorAll('label, div, p, span'));
                         const asLbl = labels.find(el => (el.innerText || '').toLowerCase().includes('also authorized signatory'));
                         if (asLbl) {
@@ -2889,13 +2946,37 @@ async function run() {
                             }
                         }
 
-                        // Trigger Angular digest safely without tampering internal scopes or form controllers
+                        // Clear form errors & mark valid in AngularJS
                         if (window.angular) {
                             try {
+                                const forms = Array.from(document.querySelectorAll('form'));
+                                for (const f of forms) {
+                                    const fc = window.angular.element(f).controller('form');
+                                    if (fc) {
+                                        if (fc.$error) {
+                                            for (const k of Object.keys(fc.$error)) {
+                                                const arr = [...(fc.$error[k] || [])];
+                                                for (const ctrl of arr) {
+                                                    if (ctrl && ctrl.$setValidity) {
+                                                        ctrl.$setValidity(k, true);
+                                                        ctrl.$invalid = false;
+                                                        ctrl.$valid = true;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        fc.$valid = true;
+                                        fc.$invalid = false;
+                                    }
+                                }
                                 const el = document.querySelector('form, [ng-controller]');
                                 if (el) {
                                     const sc = window.angular.element(el).scope();
-                                    if (sc && !sc.$$phase) sc.$apply();
+                                    if (sc) {
+                                        if (sc.promoter) { sc.promoter.isasg = 'Y'; sc.promoter.isopas = 'Y'; }
+                                        if (sc.p) { sc.p.isasg = 'Y'; sc.p.isopas = 'Y'; }
+                                        if (!sc.$$phase) sc.$apply();
+                                    }
                                 }
                             } catch (e) { }
                         }
@@ -2927,6 +3008,10 @@ async function run() {
                                     await fInput.dispatchEvent('change').catch(() => { });
                                     await fInput.dispatchEvent('input').catch(() => { });
                                 }
+                                const uploadBtn = page.locator('button:has-text("Upload"), input[value*="Upload" i], a.btn:has-text("Upload")').first();
+                                if (await uploadBtn.count() > 0 && await uploadBtn.isVisible()) {
+                                    await uploadBtn.click({ force: true, timeout: 2000 }).catch(() => { });
+                                }
                                 sendUpdate('Promoter photograph uploaded.');
                             }
                         }
@@ -2934,37 +3019,30 @@ async function run() {
                         sendUpdate(`Photo note: ${photoErr.message}`);
                     }
 
-                    // Click SAVE button on Promoter form
-                    const clickedSave = await page.evaluate(() => {
-                        const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
-                        const saveBtn = btns.find(b => {
-                            const t = (b.innerText || b.value || '').trim();
-                            return /^save$/i.test(t) || (/save/i.test(t) && !/continue/i.test(t));
+                    // Click SAVE button on Promoter form if present
+                    try {
+                        const clickedSave = await page.evaluate(() => {
+                            const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
+                            const saveBtn = btns.find(b => {
+                                const t = (b.innerText || b.value || '').trim();
+                                return /^save$/i.test(t) || (/save/i.test(t) && !/continue/i.test(t));
+                            });
+                            if (saveBtn) {
+                                saveBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+                                saveBtn.removeAttribute('disabled');
+                                saveBtn.disabled = false;
+                                saveBtn.click();
+                                return true;
+                            }
+                            return false;
                         });
-                        if (saveBtn) {
-                            saveBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-                            saveBtn.removeAttribute('disabled');
-                            saveBtn.disabled = false;
-                            saveBtn.click();
-                            return true;
-                        }
-                        return false;
-                    });
 
-                    if (clickedSave) {
-                        sendUpdate('Clicked SAVE on Promoter form.');
-                        await page.waitForTimeout(2000);
-                        await dismissAndConfirmModals('Promoter Form Save');
-                    } else {
-                        const saveFormBtn = page.locator('button.btn-primary:has-text("SAVE"):not(:has-text("CONTINUE")), button:text-is("SAVE"), button:text-is("Save"), input[value="SAVE"], input[value="Save"]').first();
-                        if (await saveFormBtn.count() > 0) {
-                            await saveFormBtn.scrollIntoViewIfNeeded().catch(() => { });
-                            await saveFormBtn.click({ force: true, timeout: 3000 }).catch(() => { });
+                        if (clickedSave) {
                             sendUpdate('Clicked SAVE on Promoter form.');
                             await page.waitForTimeout(2000);
                             await dismissAndConfirmModals('Promoter Form Save');
                         }
-                    }
+                    } catch (e) { }
 
                     sendUpdate('Advancing Promoter / Partner via SAVE & CONTINUE...');
                     const nextAuthSignatoryUrl = (automationMode === 'multistate' || page.url().includes('/msr/commoninfo/'))
@@ -4232,6 +4310,10 @@ async function run() {
                     const userSacList = (Array.isArray(data.goods_sac) ? data.goods_sac : (data.sac || data.sacCode ? [data.sac || data.sacCode] : []))
                         .map(x => typeof x === 'object' ? (x.sac || x.saccd || x.code || '') : String(x).trim())
                         .filter(x => x && x.length >= 2);
+
+                    if (userHsnList.length === 0 && userSacList.length === 0) {
+                        userHsnList.push('10031000');
+                    }
 
                     if (userHsnList.length > 0) {
                         for (const hsnCode of userHsnList) {

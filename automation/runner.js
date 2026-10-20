@@ -624,131 +624,94 @@ async function run() {
         await page.goto('https://reg.gst.gov.in/registration/', { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForTimeout(1500);
 
-        // Click TRN radio button
-        const radioTrn = page.locator('#radiotrn, input[type="radio"][value*="trn" i], label:has-text("Temporary Reference Number")').first();
+        // Click TRN radio button and wait for TRN fields to appear
+        const radioTrn = page.locator('#radiotrn, input[type="radio"][value="T"]').first();
         await radioTrn.waitFor({ state: 'visible', timeout: 30000 });
         await radioTrn.click({ force: true });
-        await page.waitForTimeout(1500);
+        await page.waitForSelector('#trnno', { state: 'visible', timeout: 15000 });
+        await page.waitForTimeout(500);
 
-        // Robust multi-strategy DOM & AngularJS filler for TRN and Email
+        // Dedicated helper to ensure TRN radio is checked and #trnno & #email are filled
         const fillTrnLoginForm = async () => {
-            return await page.evaluate(({ tVal, eVal }) => {
-                const triggerField = (inputEl, val) => {
-                    if (!inputEl || !val) return false;
-                    inputEl.focus();
-                    inputEl.value = val;
-                    inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-                    inputEl.dispatchEvent(new Event('change', { bubbles: true }));
-                    inputEl.dispatchEvent(new Event('blur', { bubbles: true }));
-                    if (window.angular) {
-                        try {
-                            const ngModel = window.angular.element(inputEl).controller('ngModel');
-                            if (ngModel) {
-                                ngModel.$setViewValue(val);
-                                ngModel.$modelValue = val;
-                                ngModel.$commitViewValue();
-                                ngModel.$render();
-                            }
-                            const sc = window.angular.element(inputEl).scope();
-                            if (sc) {
-                                const ngm = inputEl.getAttribute('ng-model') || inputEl.getAttribute('data-ng-model');
-                                if (ngm) {
-                                    const parts = ngm.split('.');
-                                    let curr = sc;
-                                    for (let i = 0; i < parts.length - 1; i++) {
-                                        if (curr[parts[i]]) curr = curr[parts[i]];
-                                    }
-                                    curr[parts[parts.length - 1]] = val;
-                                }
-                                if (sc.trnModel !== undefined) sc.trnModel = val;
-                                if (sc.trn !== undefined) sc.trn = val;
-                                if (sc.trnno !== undefined) sc.trnno = val;
-                                if (sc.email !== undefined) sc.email = val;
-                                if (sc.trneml !== undefined) sc.trneml = val;
-                                if (!sc.$$phase) sc.$apply();
-                            }
-                        } catch (e) { }
-                    }
-                    return true;
-                };
+            // 1. Ensure radio is selected
+            const isChecked = await page.$eval('#radiotrn', el => el.checked).catch(() => false);
+            if (!isChecked) {
+                await page.click('#radiotrn').catch(() => {});
+                await page.waitForTimeout(400);
+            }
+            await page.waitForSelector('#trnno', { state: 'visible', timeout: 8000 }).catch(() => {});
 
-                const visibleInputs = Array.from(document.querySelectorAll('input')).filter(i => {
-                    return i.type !== 'hidden' && i.type !== 'radio' && i.type !== 'checkbox' && i.offsetParent !== null && window.getComputedStyle(i).display !== 'none';
-                });
+            // 2. Fill TRN via Playwright
+            if (trnText) {
+                const trnInput = page.locator('#trnno').first();
+                if (await trnInput.isVisible().catch(() => false)) {
+                    await trnInput.click({ force: true }).catch(() => {});
+                    await trnInput.fill(trnText).catch(() => {});
+                }
+            }
 
-                // Find TRN input
-                const trnEl = visibleInputs.find(i => {
-                    const p = (i.placeholder || '').toLowerCase();
-                    const id = (i.id || '').toLowerCase();
-                    const name = (i.name || '').toLowerCase();
-                    const ngm = (i.getAttribute('ng-model') || '').toLowerCase();
-                    return p.includes('temporary reference number') || p.includes('trn') || id.includes('trn') || name.includes('trn') || ngm.includes('trn');
-                });
-                if (trnEl && tVal) triggerField(trnEl, tVal);
+            // 3. Fill Email via Playwright
+            if (userEmail) {
+                const emailInput = page.locator('#email').first();
+                if (await emailInput.isVisible().catch(() => false)) {
+                    await emailInput.click({ force: true }).catch(() => {});
+                    await emailInput.fill(userEmail).catch(() => {});
+                }
+            }
 
-                // Find Email input
-                const emailEl = visibleInputs.find(i => {
-                    const p = (i.placeholder || '').toLowerCase();
-                    const id = (i.id || '').toLowerCase();
-                    const name = (i.name || '').toLowerCase();
-                    const ngm = (i.getAttribute('ng-model') || '').toLowerCase();
-                    return p.includes('email') || id.includes('email') || id.includes('eml') || name.includes('email') || ngm.includes('email');
-                });
-                if (emailEl && eVal) triggerField(emailEl, eVal);
+            // 4. Direct DOM & AngularJS scope sync
+            await page.evaluate(({ tVal, eVal }) => {
+                const trnEl = document.querySelector('#trnno');
+                const emailEl = document.querySelector('#email');
 
-                return {
-                    trnFound: !!trnEl,
-                    trnVal: trnEl ? trnEl.value.trim() : '',
-                    emailFound: !!emailEl,
-                    emailVal: emailEl ? emailEl.value.trim() : ''
-                };
+                if (trnEl && tVal && trnEl.value !== tVal) {
+                    trnEl.value = tVal;
+                    trnEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    trnEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                if (emailEl && eVal && emailEl.value !== eVal) {
+                    emailEl.value = eVal;
+                    emailEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    emailEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+
+                if (window.angular && trnEl) {
+                    try {
+                        const sc = window.angular.element(trnEl).scope();
+                        if (sc) {
+                            if (!sc.plogin) sc.plogin = {};
+                            if (tVal) sc.plogin.trn = tVal;
+                            if (eVal) sc.plogin.email = eVal;
+                            if (!sc.$$phase) sc.$apply();
+                        }
+                    } catch (e) {}
+                }
             }, { tVal: trnText, eVal: userEmail });
         };
 
-        for (let fillAttempt = 1; fillAttempt <= 5; fillAttempt++) {
-            // 1. Playwright locators with sequential typing
-            if (trnText) {
-                const trnInput = page.locator('input[placeholder*="Temporary Reference Number" i], #trnno, #trn, input[name*="trn" i]').first();
-                if (await trnInput.count() > 0 && await trnInput.isVisible()) {
-                    await trnInput.click({ force: true }).catch(() => { });
-                    await trnInput.fill('').catch(() => { });
-                    await trnInput.pressSequentially(trnText, { delay: 35 }).catch(() => { });
-                }
-            }
-
-            if (userEmail) {
-                const emailInput = page.locator('input[placeholder*="Email Address" i]:visible, input[placeholder*="Email" i]:visible, #trneml:visible, #trn_email:visible, input[name*="email" i]:visible').first();
-                if (await emailInput.count() > 0 && await emailInput.isVisible()) {
-                    await emailInput.click({ force: true }).catch(() => { });
-                    await emailInput.fill('').catch(() => { });
-                    await emailInput.pressSequentially(userEmail, { delay: 35 }).catch(() => { });
-                }
-            }
-
-            // 2. Direct DOM & AngularJS scope injection
-            const res = await fillTrnLoginForm();
+        for (let fillAttempt = 1; fillAttempt <= 3; fillAttempt++) {
+            await fillTrnLoginForm();
             await page.waitForTimeout(500);
 
-            // Verify if values stick in DOM
+            // Direct check on #trnno and #email specifically
             const check = await page.evaluate(() => {
-                const visibleInputs = Array.from(document.querySelectorAll('input')).filter(i => i.offsetParent !== null);
-                const trnEl = visibleInputs.find(i => (i.placeholder || '').toLowerCase().includes('temporary reference number') || (i.id || '').toLowerCase().includes('trn'));
-                const emailEl = visibleInputs.find(i => (i.placeholder || '').toLowerCase().includes('email') || (i.id || '').toLowerCase().includes('email'));
+                const trnEl = document.querySelector('#trnno');
+                const emailEl = document.querySelector('#email');
                 return {
                     trn: trnEl ? trnEl.value.trim() : '',
                     email: emailEl ? emailEl.value.trim() : ''
                 };
             });
 
-            const trnOk = !trnText || check.trn === trnText || check.trn.length >= 10;
-            const emailOk = !userEmail || check.email === userEmail || check.email.includes('@');
+            const trnOk = !trnText || check.trn === trnText;
+            const emailOk = !userEmail || check.email === userEmail;
 
             if (trnOk && emailOk && (check.trn || !trnText) && (check.email || !userEmail)) {
                 sendUpdate(`✅ TRN Login inputs filled successfully -> TRN: "${check.trn}", Email: "${check.email}"`);
                 break;
             } else {
-                sendUpdate(`Attempt ${fillAttempt}/5: TRN="${check.trn}", Email="${check.email}". Re-syncing inputs...`);
-                await page.waitForTimeout(800);
+                sendUpdate(`Attempt ${fillAttempt}/3: TRN="${check.trn}", Email="${check.email}". Re-syncing inputs...`);
+                await page.waitForTimeout(600);
             }
         }
 
@@ -776,15 +739,39 @@ async function run() {
             await fillTrnLoginForm();
             await page.waitForTimeout(200);
 
-            await page.fill('#captchatrn', loginCaptchaText);
-            await page.waitForTimeout(200);
+            const captchaInput = page.locator('#captchatrn, input[name="captchatrn"], input[placeholder*="CAPTCHA" i]').first();
+            await captchaInput.waitFor({ state: 'visible', timeout: 15000 });
+            await captchaInput.click({ force: true }).catch(() => {});
+            await captchaInput.fill(loginCaptchaText);
+
+            // Sync captcha into Angular scope
+            await page.evaluate((cVal) => {
+                const captchaEl = document.querySelector('#captchatrn');
+                if (captchaEl) {
+                    captchaEl.value = cVal;
+                    captchaEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    captchaEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                if (window.angular && captchaEl) {
+                    try {
+                        const sc = window.angular.element(captchaEl).scope();
+                        if (sc && sc.plogin) {
+                            sc.plogin.captcha = cVal;
+                            if (!sc.$$phase) sc.$apply();
+                        }
+                    } catch (e) {}
+                }
+            }, loginCaptchaText);
+
+            await page.waitForTimeout(300);
 
             // Final check on TRN & Email before proceed
             await fillTrnLoginForm();
 
             await page.evaluate(() => {
-                const form = document.querySelector('form[name="preg"]');
-                const submitBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim().toUpperCase() === 'PROCEED' && b.offsetParent !== null);
+                const submitBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.trim().toUpperCase() === 'PROCEED' && b.offsetParent !== null) ||
+                                  document.querySelector('button[type="submit"]');
+                const form = document.querySelector('form[name="preg"]') || document.querySelector('form');
                 if (submitBtn) submitBtn.click();
                 else if (form) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
             });

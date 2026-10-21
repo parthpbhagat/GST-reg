@@ -1576,12 +1576,12 @@ async function run() {
             await clickSaveButton();
 
             // 3. Auto-confirm prompts smartly with polling for fade-in & sequential modals
-            for (let m = 0; m < 6; m++) {
-                await page.waitForTimeout(600);
+            for (let m = 0; m < 8; m++) {
+                await page.waitForTimeout(800);
                 const handled = await dismissAndConfirmModals(stepLabel);
                 if (handled) {
                     await page.waitForTimeout(1000);
-                } else if (m >= 2) {
+                } else if (m >= 3) {
                     break;
                 }
             }
@@ -1592,7 +1592,7 @@ async function run() {
                     const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
                     const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
                     return !bc.includes(initialStep.toLowerCase()) && !tab.includes(initialStep.toLowerCase());
-                }, stepLabel, { timeout: 3500 });
+                }, stepLabel, { timeout: 6000 });
             } catch (e) { }
 
             // 5. Check if still on the same tab after saving
@@ -1636,10 +1636,10 @@ async function run() {
                 });
                 await clickSaveButton();
                 await page.waitForTimeout(1000);
-                for (let m = 0; m < 5; m++) {
+                for (let m = 0; m < 6; m++) {
                     const h = await dismissAndConfirmModals(stepLabel);
                     if (h) await page.waitForTimeout(1000);
-                    else if (m >= 1) break;
+                    else if (m >= 2) break;
                 }
 
                 stillOnStep = await page.evaluate((curr) => {
@@ -1649,9 +1649,9 @@ async function run() {
                 }, stepLabel);
             }
 
-            // 6. Explicitly advance to next tab via wizard navigation
+            // 6. Advance to next tab via in-page wizard navigation (Preserves state, never use page.goto)
             if (nextTabLabel) {
-                sendUpdate(`Advancing wizard navigation to "${nextTabLabel}"...`);
+                sendUpdate(`Advancing in-page wizard navigation to "${nextTabLabel}"...`);
                 const tabClicked = await page.evaluate((label) => {
                     const allEls = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, .wizard-steps li, a, div, span, button'));
                     const matching = allEls.filter(e => {
@@ -1672,20 +1672,6 @@ async function run() {
                     await page.waitForTimeout(2000);
                     await dismissAndConfirmModals(`${nextTabLabel} Transition`);
                 }
-
-                stillOnStep = await page.evaluate((curr) => {
-                    const bc = (document.querySelector('ol.breadcrumb, .breadcrumb')?.innerText || '').toLowerCase();
-                    const tab = (document.querySelector('ul.nav-tabs li.active, .step-wizard .active')?.innerText || '').toLowerCase();
-                    return bc.includes(curr.toLowerCase()) || tab.includes(curr.toLowerCase());
-                }, stepLabel);
-            }
-
-            // 7. If still on the step and nextUrl is provided, navigate directly to guarantee step progression
-            if (stillOnStep && nextUrl) {
-                sendUpdate(`Navigating directly to next step URL (${nextUrl})...`);
-                await page.goto(nextUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
-                await page.waitForTimeout(2000);
-                await dismissAndConfirmModals(`${nextTabLabel || 'Next Tab'} Post-Goto`);
             }
         };
 
@@ -2254,14 +2240,21 @@ async function run() {
 
         let isOnVerification = false;
 
-        for (let tabStep = 0; tabStep < 22 && !isOnVerification; tabStep++) {
-            // Check if we have reached Verification screen with all steps complete
+        for (let tabStep = 0; tabStep < 25 && !isOnVerification; tabStep++) {
+            // Check if we have reached Verification screen with genuine 100% profile
             isOnVerification = await page.evaluate(() => {
                 const text = (document.body.innerText || '').toLowerCase();
                 const hasEvc = !!Array.from(document.querySelectorAll('button, input')).find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));
                 const hasDecl = text.includes('hereby solemnly') || text.includes('affirm and declare') || !!document.querySelector('#chkVerify');
                 const url = window.location.href || '';
-                return url.includes('/verify') || (hasEvc && hasDecl);
+                const isVerifyUrl = url.includes('/verify') || (hasEvc && hasDecl);
+                if (!isVerifyUrl) return false;
+
+                // If yellow incomplete warning is present, profile is not complete
+                const hasIncompleteWarning = text.includes('submit buttons will get enabled only after all mandatory fields are filled');
+                if (hasIncompleteWarning) return false;
+
+                return true;
             });
 
             if (isOnVerification) {
@@ -2293,7 +2286,7 @@ async function run() {
             let urlStepKey = '';
             if (currentUrl.includes('/newappl/business/place')) urlStepKey = 'principal place';
             else if (currentUrl.includes('/newappl/business/addlplace')) urlStepKey = 'additional places';
-            else if (currentUrl.includes('/newappl/business') || currentUrl.includes('/msr/commoninfo/business')) urlStepKey = 'business details';
+            else if (currentUrl.includes('/newappl/business') || currentUrl.includes('/msr/commoninfo/business') || currentUrl.endsWith('/newappl') || currentUrl.endsWith('/newappl/')) urlStepKey = 'business details';
             else if (currentUrl.includes('/newappl/promoters') || currentUrl.includes('/msr/commoninfo/promoters')) urlStepKey = 'promoter';
             else if (currentUrl.includes('/newappl/authsignatory') || currentUrl.includes('/msr/commoninfo/authsignatory')) urlStepKey = 'authorized signatory';
             else if (currentUrl.includes('/newappl/authrepresentative') || currentUrl.includes('/msr/commoninfo/authrepresentative')) urlStepKey = 'authorized representative';
@@ -2316,9 +2309,10 @@ async function run() {
                 const breadcrumbEl = document.querySelector('ol.breadcrumb, ul.breadcrumb, .breadcrumb, div[class*="breadcrumb"], [ng-bind*="breadCrumb"]');
                 let bcText = (breadcrumbEl ? breadcrumbEl.innerText : '').trim().replace(/^dashboard\s*>\s*/i, '').toLowerCase();
 
-                // 2. Headings on the active form view
+                // 2. Headings on the active form view (ignoring portal footer / news links)
                 const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, .panel-title, .card-title, .form-title, .title'));
-                const headingTexts = headings.map(h => (h.innerText || '').trim().toLowerCase()).filter(t => t.length > 3 && !t.includes('goods and services tax'));
+                const staticIgnoreHeadings = /news and updates|quick links|help|contact us|portal policies|disclaimer|related links|goods and services tax/i;
+                const headingTexts = headings.map(h => (h.innerText || '').trim().toLowerCase()).filter(t => t.length > 3 && !staticIgnoreHeadings.test(t));
 
                 // 3. Wizard steps
                 const wizardUl = document.querySelector('.nav-tabs:not(.navbar-nav), ul.step-wizard, .tabs, .wizard-steps');
@@ -2371,10 +2365,16 @@ async function run() {
 
                 // Fallback by visible form elements
                 if (!stepKey) {
-                    if (document.querySelector('#chkVerify')) stepKey = 'verification';
+                    const bodyText = (document.body.innerText || '').toLowerCase();
+                    if (document.querySelector('#chkVerify') || bodyText.includes('hereby solemnly affirm')) stepKey = 'verification';
+                    else if (bodyText.includes('opt for aadhaar') || document.querySelector('input[id*="aadhaar" i], input[id*="adhr" i]')) stepKey = 'aadhaar';
+                    else if (document.querySelector('select[ng-model*="ebcd" i], #canum, input[placeholder*="Consumer Number" i]')) stepKey = 'state specific';
+                    else if (document.querySelector('#gs_hsn_value, input[placeholder*="Search HSN" i]')) stepKey = 'goods and services';
                     else if (document.querySelector('input[placeholder*="PIN Code" i], #pncd')) stepKey = 'principal place';
+                    else if (bodyText.includes('have any authorized representative') || document.querySelector('input[ng-model*="isauthrep" i]')) stepKey = 'authorized representative';
+                    else if (bodyText.includes('primary authorized signatory') || document.querySelector('input[ng-model*="ispas" i]')) stepKey = 'authorized signatory';
                     else if (document.querySelector('#fnm, input[placeholder*="First Name" i]')) stepKey = 'promoter';
-                    else if (document.querySelector('#cmbzdt')) stepKey = 'business details';
+                    else if (document.querySelector('#cmbzdt, select[name*="cobz" i], select[ng-model*="cobz" i]')) stepKey = 'business details';
                 }
 
                 return {
@@ -2676,7 +2676,7 @@ async function run() {
                     } catch (e) { }
 
                     sendUpdate('Advancing Promoter / Partner via SAVE & CONTINUE...');
-                    await saveAndAdvanceTab('Promoter / Partner', 'https://reg.gst.gov.in/registration/auth/newappl/authsignatory', 'Authorized Signatory');
+                    await saveAndAdvanceTab('Promoter / Partner', '', 'Authorized Signatory');
                     continue;
                 } else {
                     // Check if promoter form is open. If not, click "ADD NEW" to open it
@@ -3154,17 +3154,26 @@ async function run() {
                         });
 
                         if (clickedSave) {
-                            sendUpdate('Clicked SAVE on Promoter form.');
-                            await page.waitForTimeout(2000);
-                            await dismissAndConfirmModals('Promoter Form Save');
+                            sendUpdate('Clicked SAVE on Promoter form. Dismissing confirmation prompts...');
+                            for (let pAttempt = 0; pAttempt < 6; pAttempt++) {
+                                await page.waitForTimeout(800);
+                                const handled = await dismissAndConfirmModals('Promoter Form Save');
+                                if (!handled && pAttempt >= 2) break;
+                            }
                         }
                     } catch (e) { }
 
+                    // Wait up to 6 seconds for promoter row to be visible in the table
+                    await page.waitForFunction(() => {
+                        const rows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => {
+                            const t = (r.innerText || '').toLowerCase().trim();
+                            return t.length > 5 && !t.includes('no records') && !t.includes('no data');
+                        });
+                        return rows.length > 0;
+                    }, { timeout: 6000 }).catch(() => { });
+
                     sendUpdate('Advancing Promoter / Partner via SAVE & CONTINUE...');
-                    const nextAuthSignatoryUrl = (automationMode === 'multistate' || page.url().includes('/msr/commoninfo/'))
-                        ? (process.env.GST_URL_MSR_STEP3_AUTHSIGNATORY || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/authsignatory')
-                        : 'https://reg.gst.gov.in/registration/auth/newappl/authsignatory';
-                    await saveAndAdvanceTab('Promoter / Partner', nextAuthSignatoryUrl, 'Authorized Signatory');
+                    await saveAndAdvanceTab('Promoter / Partner', '', 'Authorized Signatory');
                     await page.waitForTimeout(1500);
                     await dismissAndConfirmModals('Promoter / Partner Post-Advance');
                     continue;
@@ -3888,7 +3897,7 @@ async function run() {
                     ? (process.env.GST_URL_MSR_STEP5_GOODSSERVICES || 'https://reg.gst.gov.in/registration/auth/msr/commoninfo/goodsservices')
                     : 'https://reg.gst.gov.in/registration/auth/newappl/business/place';
                 const nextFromAuthRepLabel = isMsrActive ? 'Goods and Services' : 'Principal Place of Business';
-                await saveAndAdvanceTab('Authorized Representative', nextFromAuthRepUrl, nextFromAuthRepLabel);
+                await saveAndAdvanceTab('Authorized Representative', '', nextFromAuthRepLabel);
                 continue;
             }
 
@@ -4382,7 +4391,7 @@ async function run() {
 
                 await page.waitForTimeout(800);
                 await dismissAndConfirmModals('Principal Place of Business');
-                await saveAndAdvanceTab('Principal Place of Business', 'https://reg.gst.gov.in/registration/auth/newappl/business/addlplace', 'Additional Places of Business');
+                await saveAndAdvanceTab('Principal Place of Business', '', 'Goods and Services');
                 continue;
             }
 
@@ -4402,7 +4411,7 @@ async function run() {
                     }
                 });
                 await page.waitForTimeout(600);
-                await saveAndAdvanceTab('Additional Places of Business', 'https://reg.gst.gov.in/registration/auth/newappl/goodsservices', 'Goods and Services');
+                await saveAndAdvanceTab('Additional Places of Business', '', 'Goods and Services');
                 continue;
             }
 
@@ -4818,7 +4827,8 @@ async function run() {
                     await dismissAndConfirmModals('Aadhaar Table Check');
                 } catch (e) { }
 
-                await saveAndAdvanceTab('Aadhaar Authentication', 'https://reg.gst.gov.in/registration/auth/newappl/verify', 'Verification');
+                sendUpdate('Advancing Aadhaar Authentication via SAVE & CONTINUE...');
+                await saveAndAdvanceTab('Aadhaar Authentication', '', 'Verification');
                 await page.waitForTimeout(1500);
                 await dismissAndConfirmModals('Aadhaar Authentication Post-Advance');
                 continue;
@@ -4826,9 +4836,45 @@ async function run() {
 
             // Step 10: Verification screen reached
             if (screenInfo.stepKey === 'verification') {
-                sendUpdate('Verified: Successfully reached Verification tab step-by-step.');
-                isOnVerification = true;
-                break;
+                const isReady = await page.evaluate(() => {
+                    const text = (document.body.innerText || '').toLowerCase();
+                    return !text.includes('submit buttons will get enabled only after all mandatory fields are filled');
+                });
+
+                if (isReady) {
+                    sendUpdate('Verified: Successfully reached Verification tab with 100% profile.');
+                    isOnVerification = true;
+                    break;
+                } else {
+                    sendUpdate('Notice: Verification tab reached but Profile is incomplete. Navigating to incomplete tabs...');
+                    // Click the first incomplete wizard tab
+                    const jumped = await page.evaluate(() => {
+                        const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, .wizard-steps li, .nav li, a, div'));
+                        for (const t of tabs) {
+                            const isCheck = !!t.querySelector('.fa-check, [class*="check"], svg, img[src*="check"]');
+                            const txt = (t.innerText || '').toLowerCase();
+                            if (!isCheck && (txt.includes('promoter') || txt.includes('authorized representative') || txt.includes('additional place') || txt.includes('aadhaar'))) {
+                                const clickEl = t.querySelector('a, button, div') || t;
+                                clickEl.click();
+                                return txt;
+                            }
+                        }
+                        return null;
+                    });
+                    if (jumped) {
+                        sendUpdate(`Navigated to incomplete tab: ${jumped}`);
+                        await page.waitForTimeout(2500);
+                        continue;
+                    } else {
+                        // Fallback: click Promoter tab
+                        await page.evaluate(() => {
+                            const el = Array.from(document.querySelectorAll('a, li, div')).find(e => (e.innerText || '').toLowerCase().includes('promoter'));
+                            if (el) el.click();
+                        });
+                        await page.waitForTimeout(2500);
+                        continue;
+                    }
+                }
             }
 
             // Fallback for any unmapped step: Advance safely

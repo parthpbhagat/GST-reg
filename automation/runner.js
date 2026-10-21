@@ -1769,6 +1769,13 @@ async function run() {
             }
         };
 
+        const targetConstitution = (data.businessConstitution || 'Proprietorship').trim();
+        const targetReason = (data.reasonToObtainRegistration || 'Voluntary Basis').trim();
+        const tradeName = (data.tradeName || '').trim();
+        const commDate = formatDDMMYYYY(data.dateOfCommencement || data.dateOfLiability || new Date());
+        const liabDate = formatDDMMYYYY(data.dateOfLiability || data.dateOfCommencement || new Date());
+        const rule14AVal = (data.rule14A || 'No').trim();
+
         let isOnVerification = false;
 
         // =========================================================================
@@ -1815,13 +1822,6 @@ async function run() {
         // =========================================================================
         sendUpdate('⚡ Commencing complete step-by-step wizard workflow (Tabs 1 to 10) to complete each tab and achieve 100% profile with blue checkmarks (✓)...');
         sendUpdate('Business Details Auto-Fill Business Details...');
-
-        const targetConstitution = (data.businessConstitution || 'Proprietorship').trim();
-        const targetReason = (data.reasonToObtainRegistration || 'Voluntary Basis').trim();
-        const tradeName = (data.tradeName || '').trim();
-        const commDate = formatDDMMYYYY(data.dateOfCommencement || data.dateOfLiability || new Date());
-        const liabDate = formatDDMMYYYY(data.dateOfLiability || data.dateOfCommencement || new Date());
-        const rule14AVal = (data.rule14A || 'No').trim();
 
         // 1. Fill all Business Details fields on screen via DOM & Angular
         await page.evaluate(({ constVal, reasonVal, trdVal, commVal, liabVal, r14Val }) => {
@@ -2181,17 +2181,31 @@ async function run() {
             }
         } catch (e) { }
 
-        // Date of Commencement: robust location, clearing readonly, and typing
+        // Trade Name: Explicitly fill Trade Name if provided and verify it never gets overwritten by a date
         try {
-            let commInputLoc = page.locator('#cmbzdt, input[name="cmbzdt"], input[ng-model*="cmbzdt"], input[ng-model*="dtcomm"], input[id*="commence" i], input[name*="commence" i], .form-group:has-text("commencement") input, [class*="col-"]:has-text("commencement") input').first();
-            if (await commInputLoc.count() === 0) {
-                const commElemLoc = page.locator('.form-group, [class*="col-"], label, div').filter({ hasText: /commencement/i }).first();
-                if (await commElemLoc.count() > 0) {
-                    commInputLoc = commElemLoc.locator('input').first();
-                }
+            const trdLoc = page.locator('#trdnm, input[name="trdnm"], input[ng-model*="trdnm"], input[id*="trdnm" i]').first();
+            if (await trdLoc.count() > 0) {
+                await trdLoc.fill(tradeName || '').catch(() => { });
+                await trdLoc.dispatchEvent('input').catch(() => { });
+                await trdLoc.dispatchEvent('change').catch(() => { });
+                if (tradeName) sendUpdate(`Populated Trade Name: "${tradeName}"`);
             }
-            if (!commInputLoc || await commInputLoc.count() === 0) {
-                commInputLoc = page.locator('input[placeholder*="from" i], input[placeholder*="DD/MM/YYYY" i], input[uib-datepicker-popup]').first();
+        } catch (e) { }
+
+        // Date of Commencement: strictly target date inputs (never Trade Name)
+        try {
+            let commInputLoc = page.locator('#cmbzdt, input[name="cmbzdt"], input[ng-model*="cmbzdt"], input[ng-model*="dtcomm"], input[uib-datepicker-popup*="cmbzdt"]').first();
+            if (await commInputLoc.count() === 0) {
+                const datePopups = page.locator('input[uib-datepicker-popup], input[datepicker-popup]');
+                const dCount = await datePopups.count();
+                for (let di = 0; di < dCount; di++) {
+                    const dLoc = datePopups.nth(di);
+                    const isTrd = await dLoc.evaluate(el => (el.id || '').includes('trd') || (el.name || '').includes('trd')).catch(() => false);
+                    if (!isTrd) {
+                        commInputLoc = dLoc;
+                        break;
+                    }
+                }
             }
 
             if (commInputLoc && await commInputLoc.count() > 0) {
@@ -2208,7 +2222,6 @@ async function run() {
                     await commInputLoc.type(commDate, { delay: 30 }).catch(() => { });
                 }
                 await commInputLoc.press('Tab').catch(() => { });
-                // Do not press Enter, as it can clear the datepicker or submit prematurely
                 const valNow = await commInputLoc.inputValue().catch(() => '');
                 if (!valNow) {
                     await commInputLoc.fill(commDate).catch(() => { });
@@ -3321,11 +3334,12 @@ async function run() {
                         });
 
                         if (clickedSave) {
-                            sendUpdate('Clicked SAVE on Promoter form. Dismissing confirmation prompts...');
-                            for (let pAttempt = 0; pAttempt < 6; pAttempt++) {
-                                await page.waitForTimeout(800);
+                            sendUpdate('Clicked SAVE on Promoter form. Dismissing confirmation prompts (Locality & Next Promoter prompts)...');
+                            for (let pAttempt = 0; pAttempt < 12; pAttempt++) {
+                                await page.waitForTimeout(1000);
                                 const handled = await dismissAndConfirmModals('Promoter Form Save');
                                 if (handled) {
+                                    sendUpdate(`Promoter confirmation prompt handled: [${handled.text}]`);
                                     const rawLow = (handled.raw || '').toLowerCase();
                                     if (rawLow.includes('duplicate mobile') || rawLow.includes('authorized signatory tab')) {
                                         sendUpdate('⚠️ Duplicate mobile detected with Authorized Signatory. Toggling "Also Authorized Signatory" to NO...');
@@ -3351,22 +3365,6 @@ async function run() {
                                                     }
                                                 }
                                             }
-                                            if (window.angular) {
-                                                try {
-                                                    const scopes = Array.from(document.querySelectorAll('form, [ng-controller], [ng-view], body')).map(e => window.angular.element(e).scope()).filter(Boolean);
-                                                    for (const sc of scopes) {
-                                                        ['promoter', 'p', 'prdtls', 'opdtls', 'proprietor', 'promoterPartner', 'prObj'].forEach(k => {
-                                                            if (sc[k]) {
-                                                                sc[k].isasg = 'N';
-                                                                sc[k].isopas = 'N';
-                                                            }
-                                                        });
-                                                        if (sc.promoter) { sc.promoter.isasg = 'N'; sc.promoter.isopas = 'N'; }
-                                                        if (sc.p) { sc.p.isasg = 'N'; sc.p.isopas = 'N'; }
-                                                        if (!sc.$$phase) sc.$apply();
-                                                    }
-                                                } catch (e) { }
-                                            }
                                         });
                                         await page.waitForTimeout(800);
                                         // Re-click save
@@ -3383,7 +3381,21 @@ async function run() {
                                             }
                                         });
                                     }
-                                } else if (pAttempt >= 2) break;
+                                }
+
+                                // Check if promoter has successfully been added to the table
+                                const rowCount = await page.evaluate(() => {
+                                    const rows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => {
+                                        const t = (r.innerText || '').toLowerCase().trim();
+                                        return t.length > 5 && !t.includes('no records') && !t.includes('no data');
+                                    });
+                                    return rows.length;
+                                });
+
+                                if (rowCount > 0) {
+                                    sendUpdate(`✅ Promoter record successfully committed to table (${rowCount} promoter records).`);
+                                    break;
+                                }
                             }
                         }
                     } catch (e) { }

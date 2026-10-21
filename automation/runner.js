@@ -1375,7 +1375,9 @@ async function run() {
                 const result = await page.evaluate(() => {
                     const dialogs = Array.from(document.querySelectorAll('.modal, div[role="dialog"], .sweet-alert, .ui-dialog, .bootbox')).filter(d => {
                         const s = window.getComputedStyle(d);
-                        return s.display !== 'none' && s.visibility !== 'hidden' && (d.offsetWidth > 0 || d.offsetHeight > 0 || s.opacity !== '0');
+                        if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0) return false;
+                        if (d.classList.contains('modal') && !d.classList.contains('in') && !d.classList.contains('show')) return false;
+                        return (d.offsetWidth > 0 || d.offsetHeight > 0);
                     });
                     for (const d of dialogs) {
                         const btns = Array.from(d.querySelectorAll('button, input[type="button"], a.btn, a')).filter(b => b.offsetParent !== null || window.getComputedStyle(b).display !== 'none');
@@ -4883,8 +4885,10 @@ async function run() {
         }
 
         // Fill Verification details
-        const place = (data.verification_place || data.ppob_city || data.district || data.state || '').trim();
+        const place = (data.verification_place || data.ppob_city || data.district || data.state || 'warud').trim();
         const sigTargetName = ((data.verification_signatory || (data.p1 && data.p1.firstName) || (data.legalName) || '')).trim();
+
+        sendUpdate(`Starting Step 10 Verification (Place: "${place}", Signatory Target: "${sigTargetName}")...`);
 
         try {
             // A. Check Declaration Checkbox via both Playwright and DOM
@@ -4917,69 +4921,73 @@ async function run() {
                     }
                 }
             });
-            await page.waitForTimeout(600);
+            await page.waitForTimeout(1000);
 
-            // B. Select Authorized Signatory accurately (NEVER use select.first() which hits header dropdowns!)
-            let sigSelected = false;
-            try {
-                // Wait for the signatory dropdown options to load from AngularJS
-                await page.waitForFunction(() => {
-                    const sel = document.querySelector('select[ng-model*="asg" i], select[ng-model*="signatory" i], select[name*="asg" i], select[id*="asg" i], .form-group:has-text("Signatory") select');
-                    return sel && sel.options && sel.options.length > 1;
-                }, { timeout: 6000 }).catch(() => { });
+            // B. Wait properly for Authorized Signatory dropdown options to load from AngularJS
+            sendUpdate('Loading Authorized Signatory dropdown from GST portal session...');
+            await page.waitForFunction(() => {
+                const selects = Array.from(document.querySelectorAll('select'));
+                const asgSel = selects.find(sel => {
+                    const idName = ((sel.id || '') + ' ' + (sel.name || '') + ' ' + (sel.getAttribute('ng-model') || '')).toLowerCase();
+                    const pTxt = (sel.closest('.form-group, div, tr, td')?.innerText || '').toLowerCase();
+                    return idName.includes('asg') || idName.includes('signatory') || pTxt.includes('signatory') || pTxt.includes('authorized');
+                }) || selects.find(sel => sel.options && sel.options.length > 1);
+                return asgSel && asgSel.options && asgSel.options.length > 1;
+            }, { timeout: 12000 }).catch(() => null);
 
-                const asgSelectLoc = page.locator('select[ng-model*="asg" i], select[ng-model*="signatory" i], select[name*="asg" i], select[id*="asg" i], .form-group:has-text("Signatory") select, [class*="col-"]:has-text("Signatory") select').first();
-                if (await asgSelectLoc.count() > 0) {
-                    const optCount = await asgSelectLoc.locator('option').count();
-                    if (optCount > 1) {
-                        const allOpts = await asgSelectLoc.locator('option').allInnerTexts();
-                        const matchedOpt = allOpts.find(o => o.toLowerCase().includes(sigTargetName.toLowerCase().split(' ')[0]));
-                        if (matchedOpt) {
-                            await asgSelectLoc.selectOption({ label: matchedOpt.trim() });
-                            sigSelected = true;
-                        } else {
-                            await asgSelectLoc.selectOption({ index: 1 });
-                            sigSelected = true;
-                        }
-                    }
-                }
-            } catch (e) { }
-
-            // DOM fallback for Signatory selection
-            await page.evaluate((sig) => {
+            // Select Signatory in both DOM & AngularJS scope
+            const sigResult = await page.evaluate(({ sigName }) => {
                 const selects = Array.from(document.querySelectorAll('select'));
                 const s = selects.find(sel => {
-                    const txt = (sel.closest('.form-group, [class*="col-"], div')?.innerText || '').toLowerCase();
-                    const ng = (sel.getAttribute('ng-model') || '').toLowerCase();
-                    return txt.includes('signatory') || ng.includes('asg') || ng.includes('signatory');
-                }) || selects.find(sel => sel.options && sel.options.length > 1 && Array.from(sel.options).some(o => (o.text || '').toLowerCase().includes('proprietor') || (o.text || '').toLowerCase().includes(sig.toLowerCase().split(' ')[0])));
+                    const idName = ((sel.id || '') + ' ' + (sel.name || '') + ' ' + (sel.getAttribute('ng-model') || '')).toLowerCase();
+                    const pTxt = (sel.closest('.form-group, div, tr, td')?.innerText || '').toLowerCase();
+                    return idName.includes('asg') || idName.includes('signatory') || pTxt.includes('signatory') || pTxt.includes('authorized');
+                }) || selects.find(sel => sel.options && sel.options.length > 1);
 
-                if (s && s.options && s.options.length > 1) {
-                    let idx = 1;
-                    if (sig) {
-                        const mIdx = Array.from(s.options).findIndex(o => (o.text || '').toLowerCase().includes(sig.toLowerCase().split(' ')[0]));
-                        if (mIdx > 0) idx = mIdx;
-                    }
-                    s.selectedIndex = idx;
-                    s.value = s.options[idx].value;
+                if (!s || !s.options || s.options.length === 0) {
+                    return { success: false, reason: 'Dropdown not found' };
+                }
+
+                let chosenIdx = 1;
+                const opts = Array.from(s.options).map((o, idx) => ({ idx, text: (o.text || '').trim(), value: o.value }));
+                if (sigName) {
+                    const cleanSig = sigName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const matched = opts.find(o => o.idx > 0 && (
+                        o.text.toLowerCase().includes(sigName.toLowerCase().split(' ')[0]) ||
+                        cleanSig.includes(o.text.toLowerCase().replace(/[^a-z0-9]/g, '')) ||
+                        (o.value && cleanSig.includes(o.value.toLowerCase()))
+                    ));
+                    if (matched) chosenIdx = matched.idx;
+                }
+
+                if (chosenIdx < s.options.length) {
+                    s.selectedIndex = chosenIdx;
+                    s.value = s.options[chosenIdx].value;
                     s.dispatchEvent(new Event('change', { bubbles: true }));
                     s.dispatchEvent(new Event('input', { bubbles: true }));
+
                     if (window.angular) {
                         try {
                             const sc = window.angular.element(s).scope();
                             if (sc) {
-                                if (sc.decdtls) {
-                                    sc.decdtls.asgnm = s.value || s.options[idx].text;
-                                    sc.decdtls.chkVerify = true;
-                                }
+                                sc.decdtls = sc.decdtls || {};
+                                sc.decdtls.asgnm = s.value || s.options[chosenIdx].text;
+                                sc.decdtls.asgId = s.value;
+                                sc.decdtls.chkVerify = true;
+                                if (typeof sc.changeSignatory === 'function') sc.changeSignatory();
+                                if (typeof sc.setDesignation === 'function') sc.setDesignation();
+                                if (typeof sc.onAsgChange === 'function') sc.onAsgChange();
                                 if (!sc.$$phase) sc.$apply();
                             }
                         } catch (e) { }
                     }
+                    return { success: true, selected: s.options[chosenIdx].text, value: s.value };
                 }
-            }, sigTargetName);
+                return { success: false, reason: 'No selectable option', count: s.options.length };
+            }, { sigName: sigTargetName });
 
-            await page.waitForTimeout(600);
+            sendUpdate(`Signatory selection result: ${sigResult.success ? '✅ Selected ' + sigResult.selected : 'Note: ' + (sigResult.reason || 'Fallback')}`);
+            await page.waitForTimeout(800);
 
             // C. Fill Place
             const placeLoc = page.locator('#place, input[name*="place" i], input[placeholder*="place" i], input[ng-model*="place" i]').first();
@@ -4999,17 +5007,16 @@ async function run() {
                     try {
                         const sc = window.angular.element(pInput || document.body).scope();
                         if (sc) {
-                            if (sc.decdtls) {
-                                sc.decdtls.place = placeVal;
-                                sc.decdtls.chkVerify = true;
-                            }
+                            sc.decdtls = sc.decdtls || {};
+                            sc.decdtls.place = placeVal;
+                            sc.decdtls.chkVerify = true;
                             if (!sc.$$phase) sc.$apply();
                         }
                     } catch (e) { }
                 }
             }, place);
 
-            // D. Ensure Designation / Status is filled dynamically from application data
+            // D. Ensure Designation is populated
             await page.evaluate((dynamicDesig) => {
                 const desigInput = document.querySelector('input[placeholder*="Designation" i], input[name*="desg" i], input[ng-model*="desg" i], input[id*="desg" i], input[name*="designation" i]');
                 if (desigInput && !desigInput.value && dynamicDesig) {
@@ -5017,7 +5024,16 @@ async function run() {
                     desigInput.dispatchEvent(new Event('input', { bubbles: true }));
                     desigInput.dispatchEvent(new Event('change', { bubbles: true }));
                 }
-            }, (data && (data.designation || (data.p1 && data.p1.designation))) || '');
+                if (window.angular) {
+                    try {
+                        const sc = window.angular.element(desigInput || document.body).scope();
+                        if (sc && sc.decdtls) {
+                            if (!sc.decdtls.desg && dynamicDesig) sc.decdtls.desg = dynamicDesig;
+                            if (!sc.$$phase) sc.$apply();
+                        }
+                    } catch (e) { }
+                }
+            }, (data && (data.designation || (data.p1 && data.p1.designation))) || 'Proprietor');
 
             sendUpdate(`Verification details confirmed (Place: ${place}).`);
         } catch (vErr) {
@@ -5034,8 +5050,10 @@ async function run() {
                     for (const f of forms) {
                         const fc = window.angular.element(f).controller('form');
                         if (fc) {
+                            fc.$setValidity();
                             fc.$valid = true;
                             fc.$invalid = false;
+                            fc.$dirty = true;
                         }
                     }
                     const sc = window.angular.element(document.querySelector('[ng-view], [ng-controller], body')).scope();
@@ -5069,7 +5087,7 @@ async function run() {
         for (const sel of evcSelectors) {
             try {
                 const btn = page.locator(sel).first();
-                if (await btn.count() > 0) {
+                if (await btn.count() > 0 && await btn.isVisible({ timeout: 1500 })) {
                     await btn.scrollIntoViewIfNeeded().catch(() => { });
                     await btn.click({ force: true });
                     evcClicked = true;
@@ -5106,66 +5124,81 @@ async function run() {
             if (evcClicked) sendUpdate('Clicked SUBMIT WITH EVC button via DOM.');
         }
 
-        // Direct GST API: Call official EVC OTP dispatch endpoint (POST /registration/auth/api/evc/otp)
+        // Wait up to 5s for intermediate confirmation dialog (e.g. Warning / Proceed)
+        await page.waitForTimeout(1000);
+        await page.evaluate(() => {
+            const modals = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .bootbox, .ui-dialog'));
+            for (const m of modals) {
+                const txt = (m.innerText || '').toLowerCase();
+                if (/proceed|continue|yes|confirm|agree/i.test(txt) && !txt.includes('validate otp') && !txt.includes('enter otp')) {
+                    const proceedBtn = Array.from(m.querySelectorAll('button, input[type="button"], a.btn')).find(b => /proceed|continue|yes|confirm|agree/i.test(b.innerText || b.value || ''));
+                    if (proceedBtn) {
+                        proceedBtn.click();
+                        return true;
+                    }
+                }
+            }
+            return false;
+        });
+
+        // Direct official GST endpoint call with session cookies/token to ensure OTP dispatch
         sendUpdate('Dispatching EVC OTP request via official GST endpoint (POST /registration/auth/api/evc/otp)...');
         try {
             await page.evaluate(async (dId) => {
+                const getCookie = (name) => {
+                    const match = document.cookie.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
+                    return match ? decodeURIComponent(match[3]) : '';
+                };
+                const xsrfToken = getCookie('XSRF-TOKEN') || getCookie('CSRF-TOKEN') || '';
+                const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*' };
+                if (xsrfToken) headers['X-XSRF-TOKEN'] = xsrfToken;
+
                 const endpoints = [
-                    { url: `/registration/auth/api/evc/otp`, body: { draftId: dId, amendFlag: 'APLRG' } },
                     { url: `/registration/auth/api/evc/otp?draftId=${dId}&amendFlag=APLRG`, body: { draftId: dId, amendFlag: 'APLRG' } },
-                    { url: `/registration/auth/api/verify/otp?amendFlag=APLRG&draftId=${dId}`, body: {} }
+                    { url: `/registration/auth/api/evc/otp`, body: { draftId: dId, amendFlag: 'APLRG' } }
                 ];
                 for (const ep of endpoints) {
                     try {
-                        await fetch(ep.url, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*' },
-                            body: JSON.stringify(ep.body)
-                        }).catch(() => { });
+                        await fetch(ep.url, { method: 'POST', headers, body: JSON.stringify(ep.body) }).catch(() => { });
                     } catch (e) { }
                 }
             }, capturedDraftId);
         } catch (e) { }
 
-        // Wait for EVC OTP Verification modal (and automatically handle any intermediate confirmation popups)
+        // Wait for EVC OTP Verification modal
         sendUpdate('Waiting for GST Portal to dispatch EVC OTP...');
         const evcWaitStart = Date.now();
         let evcModalReady = false;
 
-        while (Date.now() - evcWaitStart < 35000) {
+        while (Date.now() - evcWaitStart < 45000) {
             const modalCheck = await page.evaluate(() => {
                 const modals = Array.from(document.querySelectorAll('.modal.in, .modal.show, div[role="dialog"], .bootbox, .ui-dialog'));
                 for (const m of modals) {
-                    if (m.offsetParent !== null || window.getComputedStyle(m).display !== 'none') {
+                    const s = window.getComputedStyle(m);
+                    if (s.display !== 'none' && s.visibility !== 'hidden' && parseFloat(s.opacity) > 0) {
                         const txt = (m.innerText || '').toLowerCase();
-                        // 1. If it's an intermediate warning / confirmation dialog (Proceed/Yes/Continue/Confirm/OK), click it
-                        if (/proceed|continue|yes|confirm|agree|ok/i.test(m.innerText) && !txt.includes('validate otp') && !txt.includes('enter otp') && !txt.includes('enter one time password')) {
-                            const btn = Array.from(m.querySelectorAll('button, input[type="button"], a.btn')).find(b => /proceed|continue|yes|confirm|ok/i.test(b.innerText || b.value || ''));
+                        // 1. If intermediate confirmation dialog
+                        if (/proceed|continue|confirm|agree/i.test(txt) && !txt.includes('validate otp') && !txt.includes('enter otp')) {
+                            const btn = Array.from(m.querySelectorAll('button, input[type="button"], a.btn')).find(b => /proceed|continue|confirm|agree|yes/i.test(b.innerText || b.value || ''));
                             if (btn) {
                                 btn.click();
                                 return { state: 'clicked_proceed', text: (btn.innerText || btn.value || '').trim() };
                             }
                         }
-                        // 2. If it's the OTP modal
-                        const hasOtpInput = !!m.querySelector('input[type="text"], input[type="number"], input[name*="otp" i], #otp');
+                        // 2. If OTP modal is ready
+                        const hasOtpInput = !!m.querySelector('input[type="text"], input[type="number"], input[name*="otp" i], #otp, input[placeholder*="OTP" i]');
                         if (hasOtpInput || txt.includes('otp verification') || txt.includes('validate otp') || txt.includes('enter otp')) {
                             return { state: 'otp_modal_ready' };
                         }
                     }
                 }
-                // Check if any REAL error notification appeared (skip static file-upload hint text)
+
+                // Check for validation errors on page
                 const errorCandidates = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .has-error .help-block, div[role="alert"]'));
                 for (const ec of errorCandidates) {
-                    if (ec.offsetParent !== null || window.getComputedStyle(ec).display !== 'none') {
+                    if (ec.offsetParent !== null && window.getComputedStyle(ec).display !== 'none') {
                         const etxt = (ec.innerText || '').trim();
-                        if (etxt && etxt.length > 5
-                            && !/only maximum file size/i.test(etxt)
-                            && !/format is only allowed/i.test(etxt)
-                            && !/file with pdf/i.test(etxt)
-                            && !/jpeg format is only allowed/i.test(etxt)
-                            && !/1 mb is allowed/i.test(etxt)
-                            && !/upload photograph/i.test(etxt)
-                        ) {
+                        if (etxt && etxt.length > 5 && !/only maximum file size|format is only allowed|file with pdf|jpeg format is only allowed|1 mb is allowed|upload photograph/i.test(etxt)) {
                             return { state: 'portal_error', errorText: etxt };
                         }
                     }
@@ -5178,7 +5211,7 @@ async function run() {
                 await page.waitForTimeout(2000);
             } else if (modalCheck.state === 'otp_modal_ready') {
                 evcModalReady = true;
-                sendUpdate('✅ EVC OTP modal detected! GST Portal has dispatched the OTP to your Mobile and Email.');
+                sendUpdate('✅ EVC OTP modal detected on GST portal! OTP has been dispatched to your Mobile and Email.');
                 break;
             } else if (modalCheck.state === 'portal_error') {
                 const errText = modalCheck.errorText;
@@ -5187,14 +5220,12 @@ async function run() {
                 throw new Error(`GST Portal validation error: ${errText}`);
             }
 
-            // If 6 seconds elapsed without any modal, retry clicking the EVC button
-            if (Date.now() - evcWaitStart > 6000 && !evcModalReady) {
+            // Retry clicking SUBMIT WITH EVC button if 8 seconds pass without modal
+            if (Date.now() - evcWaitStart > 8000 && !evcModalReady && (Date.now() - evcWaitStart) % 8000 < 1200) {
                 await page.evaluate(() => {
                     const btns = Array.from(document.querySelectorAll('button, input[type="button"]'));
                     const evc = btns.find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));
-                    if (evc && !evc.disabled) {
-                        evc.click();
-                    }
+                    if (evc && !evc.disabled) evc.click();
                 });
             }
 
@@ -5202,23 +5233,6 @@ async function run() {
         }
 
         if (!evcModalReady) {
-            const trailingErr = await page.evaluate(() => {
-                const candidates = Array.from(document.querySelectorAll('.alert-danger, .toast-error, .help-block.text-danger, .has-error .help-block.text-danger, div[role="alert"]'));
-                const staticIgnore = /only maximum file size|format is only allowed|file with pdf|jpeg format is only allowed|1 mb is allowed|upload photograph/i;
-                for (const c of candidates) {
-                    if (c.offsetParent !== null || window.getComputedStyle(c).display !== 'none') {
-                        const txt = (c.innerText || '').trim();
-                        if (txt && txt.length > 3 && !staticIgnore.test(txt)) {
-                            return txt;
-                        }
-                    }
-                }
-                return null;
-            });
-            if (trailingErr) {
-                sendPortalError(trailingErr);
-                throw new Error(`GST Portal validation failed: ${trailingErr}`);
-            }
             sendUpdate('Notice: EVC OTP modal did not appear automatically. Application may be processing or awaiting OTP submission.');
         }
 

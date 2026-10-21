@@ -7,6 +7,7 @@ const https = require('https');
 const { Server } = require('socket.io');
 const { supabase, oldSupabase } = require('./database');
 const logger = require('./logger');
+const { buildGstApplicationPayload, getStateCode } = require('./utils/gst_payload_builder');
 
 const app = express();
 const PORT = 3002;
@@ -125,6 +126,218 @@ app.get('/api/gst-endpoints', (req, res) => {
         endpoints: resolved,
         templates
     });
+});
+
+// Helper: Validate all 10 steps of GST application
+function validateGstApplicationData(data) {
+    const missing = [];
+    data = data || {};
+
+    // Step 1: Business Details
+    if (!data.pan) missing.push({ step: 1, field: 'pan', label: 'PAN Number' });
+    if (!data.legalName) missing.push({ step: 1, field: 'legalName', label: 'Legal Name of Business' });
+    if (!data.businessConstitution) missing.push({ step: 1, field: 'businessConstitution', label: 'Constitution of Business' });
+    if (!data.state && !data.ppob_state) missing.push({ step: 1, field: 'state', label: 'State' });
+    if (!data.dateOfCommencement) missing.push({ step: 1, field: 'dateOfCommencement', label: 'Date of Commencement' });
+    if (!data.dateOfLiability) missing.push({ step: 1, field: 'dateOfLiability', label: 'Date of Liability' });
+
+    // Step 2: Promoter / Partners
+    const p1 = data.p1 || {};
+    if (!p1.firstName && !data.legalName) missing.push({ step: 2, field: 'p1_firstName', label: 'Promoter First Name' });
+    if (!p1.dob && !data.dob) missing.push({ step: 2, field: 'p1_dob', label: 'Promoter Date of Birth' });
+    if (!p1.mobile && !data.mobile) missing.push({ step: 2, field: 'p1_mobile', label: 'Promoter Mobile' });
+    if (!p1.email && !data.email) missing.push({ step: 2, field: 'p1_email', label: 'Promoter Email' });
+
+    // Step 3: Authorized Signatory
+    const hasPromoterAuthSig = p1.alsoAuthorizedSignatory || p1.primary || data.authSigSameAsPromoter;
+    const a1 = data.a1 || {};
+    if (!hasPromoterAuthSig && !a1.firstName) {
+        missing.push({ step: 3, field: 'a1_firstName', label: 'Authorized Signatory Details' });
+    }
+
+    // Step 5: Principal Place of Business
+    if (!data.ppob_pincode) missing.push({ step: 5, field: 'ppob_pincode', label: 'PPOB PIN Code' });
+    if (!data.ppob_city && !data.district && !data.ppob_district) missing.push({ step: 5, field: 'ppob_city', label: 'PPOB City' });
+    if (!data.ppob_natureOfPossession) missing.push({ step: 5, field: 'ppob_natureOfPossession', label: 'Nature of Possession of Premises' });
+
+    // Step 7: Goods and Services (HSN)
+    const hasHsn = (Array.isArray(data.goods_hsn) && data.goods_hsn.length > 0) ||
+                   (Array.isArray(data.goods_sac) && data.goods_sac.length > 0) ||
+                   (typeof data.goods_hsn === 'string' && data.goods_hsn.trim().length > 0) ||
+                   (typeof data.hsn === 'string' && data.hsn.trim().length > 0) ||
+                   (Array.isArray(data.hsnGoods) && data.hsnGoods.length > 0);
+    if (!hasHsn) {
+        missing.push({ step: 7, field: 'goods_hsn', label: 'HSN / SAC Code' });
+    }
+
+    // Step 10: Verification
+    if (!data.verification_place && !data.ppob_city && !data.district) {
+        missing.push({ step: 10, field: 'verification_place', label: 'Verification Place' });
+    }
+
+    const totalSteps = 10;
+    const stepsWithMissing = new Set(missing.map(m => m.step));
+    const completedSteps = totalSteps - stepsWithMissing.size;
+    const percentage = missing.length === 0 ? 100 : Math.min(99, Math.round((completedSteps / totalSteps) * 100));
+
+    return {
+        isValid: missing.length === 0,
+        percentage,
+        completedSteps: `${completedSteps}/${totalSteps}`,
+        missingFields: missing
+    };
+}
+
+// POST /api/gst/validate - Validate full 10-step form data
+app.post('/api/gst/validate', (req, res) => {
+    const data = req.body.data || req.body;
+    const report = validateGstApplicationData(data);
+    res.json({ success: true, ...report });
+});
+
+// POST /api/gst/generate-json - Compile full 10-step GST Registration JSON payload
+app.post('/api/gst/generate-json', async (req, res) => {
+    try {
+        let { appId, data, draftId, trn, options } = req.body || {};
+
+        if (appId && !data) {
+            const { data: row } = await supabase.from('applications').select('*').eq('appId', appId).single();
+            if (!row) {
+                return res.status(404).json({ error: `Application ${appId} not found in database.` });
+            }
+            data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            draftId = draftId || row.appId;
+            trn = trn || row.trn || (data && data.trn);
+        }
+
+        if (!data) {
+            return res.status(400).json({ error: 'data or appId is required.' });
+        }
+
+        const effectiveDraftId = draftId || (data && (data.draftId || data._appId)) || '92980126';
+        const effectiveTrn = trn || (data && data.trn) || '';
+        const payload = buildGstApplicationPayload(data, effectiveDraftId, effectiveTrn, options || {});
+        const validation = validateGstApplicationData(data);
+
+        res.json({
+            success: true,
+            message: 'Official 10-step GST Registration JSON payload generated successfully.',
+            draftId: effectiveDraftId,
+            trn: effectiveTrn,
+            validation,
+            payload
+        });
+    } catch (err) {
+        console.error('Error generating GST payload:', err);
+        res.status(500).json({ error: 'Failed to compile GST payload: ' + err.message });
+    }
+});
+
+// GET /api/applications/:id/gst-json - Directly retrieve compiled 10-step GST JSON for an application
+app.get('/api/applications/:id/gst-json', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { data: row } = await supabase.from('applications').select('*').eq('appId', id).single();
+        if (!row) {
+            return res.status(404).json({ error: `Application ${id} not found.` });
+        }
+        const appData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+        const payload = buildGstApplicationPayload(appData, id, row.trn || (appData && appData.trn) || '');
+        const validation = validateGstApplicationData(appData);
+
+        res.json({
+            success: true,
+            appId: id,
+            status: row.status,
+            validation,
+            payload
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to build GST JSON: ' + err.message });
+    }
+});
+
+// POST /api/gst/upload-draft - Upload 10-step JSON payload directly to GST Portal draft API
+app.post('/api/gst/upload-draft', async (req, res) => {
+    try {
+        let { appId, data, draftId, trn, cookies, xsrfToken, payload } = req.body || {};
+
+        if (appId && (!data && !payload)) {
+            const { data: row } = await supabase.from('applications').select('*').eq('appId', appId).single();
+            if (row) {
+                data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                draftId = draftId || row.appId;
+                trn = trn || row.trn || (data && data.trn);
+            }
+        }
+
+        if (!payload && data) {
+            payload = buildGstApplicationPayload(data, draftId, trn);
+        }
+
+        if (!payload) {
+            return res.status(400).json({ error: 'Valid application data, payload, or appId is required.' });
+        }
+
+        const effectiveDraftId = payload.aplCd || draftId || '';
+
+        // If active portal session cookies provided, directly POST to official endpoint
+        if (cookies) {
+            const targetUrl = process.env.GST_API_SAVE_APP_DRAFT || 'https://reg.gst.gov.in/registration/auth/api/save/appdraftnewreg';
+            const headers = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/plain, */*',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://reg.gst.gov.in/registration/',
+                'Cookie': cookies
+            };
+            if (xsrfToken) headers['X-XSRF-TOKEN'] = xsrfToken;
+
+            const postReq = https.request(targetUrl, {
+                method: 'POST',
+                headers
+            }, (postRes) => {
+                let raw = '';
+                postRes.on('data', chunk => raw += chunk);
+                postRes.on('end', () => {
+                    let json = null;
+                    try { json = JSON.parse(raw); } catch (e) { }
+
+                    // Also invoke generateFinalformJsonWithApoB to sync official final form
+                    if (effectiveDraftId) {
+                        const finalFormUrl = `https://reg.gst.gov.in/registration/auth/api/verify/generateFinalformJsonWithApoB?amendFlag=APLRG&draftId=${effectiveDraftId}`;
+                        https.get(finalFormUrl, { headers }, () => { }).on('error', () => { });
+                    }
+
+                    return res.json({
+                        success: postRes.statusCode === 200,
+                        status: postRes.statusCode,
+                        portalResponse: json || raw,
+                        draftId: effectiveDraftId
+                    });
+                });
+            });
+
+            postReq.on('error', (err) => {
+                return res.status(502).json({ error: 'GST Portal request failed: ' + err.message });
+            });
+
+            postReq.write(JSON.stringify(payload));
+            postReq.end();
+        } else {
+            // Return prepared payload with official endpoint metadata
+            return res.json({
+                success: true,
+                message: '10-Step GST Registration JSON prepared. Ready for direct in-session upload to /registration/auth/api/save/appdraftnewreg.',
+                draftId: effectiveDraftId,
+                endpoint: 'https://reg.gst.gov.in/registration/auth/api/save/appdraftnewreg',
+                payload
+            });
+        }
+    } catch (err) {
+        console.error('Error in /api/gst/upload-draft:', err);
+        res.status(500).json({ error: 'Server error: ' + err.message });
+    }
 });
 
 // Helper for proxying GET requests to official GST Portal API

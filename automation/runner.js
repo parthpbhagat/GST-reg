@@ -1170,53 +1170,88 @@ async function run() {
             console.error('[GST Payload Save Error]:', saveErr.message);
         }
 
-        // Direct in-page upload using official GST POST save endpoint: /registration/auth/api/save/appdraftnewreg
-        sendUpdate(`Posting full Application JSON to GST Portal (save/appdraftnewreg)...`);
-        const saveApiResult = await page.evaluate(async (payload) => {
-            try {
-                // 1. Try Angular $http first which carries full session context & CSRF tokens
-                if (window.angular) {
-                    try {
-                        const bodyEl = document.querySelector('[ng-app], [ng-controller], [ng-view], body');
-                        const injector = window.angular.element(bodyEl).injector();
-                        const $http = injector ? injector.get('$http') : null;
-                        if ($http) {
-                            const httpRes = await $http.post('/registration/auth/api/save/appdraftnewreg', payload);
-                            return { ok: true, status: httpRes.status, json: httpRes.data, text: JSON.stringify(httpRes.data) };
-                        }
-                    } catch (ngErr) {
-                        if (ngErr && ngErr.status && ngErr.status !== 405) {
-                            return { ok: false, status: ngErr.status, json: ngErr.data, error: ngErr.statusText };
+        // Direct in-page upload using official GST PUT save endpoint: /registration/auth/api/save/appdraftnewreg
+        sendUpdate(`Uploading full 10-Step Application JSON to GST Portal via official PUT endpoints...`);
+        const saveApiResult = await page.evaluate(async ({ payload, draftId }) => {
+            const report = {};
+            const saveUrls = [
+                `/registration/auth/api/save/appdraftnewreg?draftId=${draftId}&amendFlag=APLRG`,
+                `/registration/auth/api/save/appdraftnewreg?amendFlag=APLRG`,
+                `/registration/auth/api/save/appdraftnewreg`,
+                `/registration/auth/api/appdraftnewreg?draftId=${draftId}&amendFlag=APLRG`,
+                `/registration/auth/api/appdraftnewreg`
+            ];
+
+            const getCookie = (name) => {
+                const match = document.cookie.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
+                return match ? decodeURIComponent(match[3]) : '';
+            };
+            const xsrfToken = getCookie('XSRF-TOKEN') || getCookie('CSRF-TOKEN') || '';
+            const headers = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/plain, */*'
+            };
+            if (xsrfToken) headers['X-XSRF-TOKEN'] = xsrfToken;
+
+            // 1. Try Angular $http.put first which carries full session context & CSRF tokens
+            if (window.angular) {
+                try {
+                    const bodyEl = document.querySelector('[ng-app], [ng-controller], [ng-view], body');
+                    const injector = window.angular.element(bodyEl).injector();
+                    const $http = injector ? injector.get('$http') : null;
+                    if ($http) {
+                        for (const u of saveUrls) {
+                            try {
+                                const httpRes = await $http.put(u, payload);
+                                if (httpRes && (httpRes.status === 200 || httpRes.status === 201)) {
+                                    return { ok: true, status: httpRes.status, url: u, method: '$http.put', json: httpRes.data, text: JSON.stringify(httpRes.data) };
+                                }
+                            } catch (ngErr) {
+                                report[u + ' ($http.put)'] = ngErr.status || ngErr.message;
+                            }
                         }
                     }
-                }
-
-                // 2. Fallback to fetch with cookies / XSRF token
-                const getCookie = (name) => {
-                    const match = document.cookie.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
-                    return match ? decodeURIComponent(match[3]) : '';
-                };
-                const xsrfToken = getCookie('XSRF-TOKEN') || getCookie('CSRF-TOKEN') || '';
-                const headers = {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json, text/plain, */*'
-                };
-                if (xsrfToken) headers['X-XSRF-TOKEN'] = xsrfToken;
-
-                const resSave = await fetch('/registration/auth/api/save/appdraftnewreg', {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify(payload)
-                });
-                const status = resSave.status;
-                const text = await resSave.text();
-                let json = null;
-                try { json = JSON.parse(text); } catch (e) { }
-                return { ok: resSave.ok, status, json, text };
-            } catch (err) {
-                return { ok: false, error: err.message };
+                } catch (e) { }
             }
-        }, finalGstPayload);
+
+            // 2. Fetch with PUT
+            for (const u of saveUrls) {
+                try {
+                    const resSave = await fetch(u, {
+                        method: 'PUT',
+                        headers: headers,
+                        body: JSON.stringify(payload)
+                    });
+                    const status = resSave.status;
+                    const text = await resSave.text();
+                    let json = null;
+                    try { json = JSON.parse(text); } catch (e) { }
+                    if (resSave.ok || status === 200) {
+                        return { ok: true, status, url: u, method: 'fetch.put', json, text };
+                    }
+                    report[u + ' (fetch.put)'] = status + ': ' + text.slice(0, 100);
+                } catch (err) {
+                    report[u + ' (fetch.put)'] = err.message;
+                }
+            }
+
+            // 3. Fallback: also try POST
+            for (const u of saveUrls) {
+                try {
+                    const resPost = await fetch(u, {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(payload)
+                    });
+                    if (resPost.ok || resPost.status === 200) {
+                        const json = await resPost.json().catch(() => ({}));
+                        return { ok: true, status: resPost.status, url: u, method: 'fetch.post', json, text: JSON.stringify(json) };
+                    }
+                } catch (e) { }
+            }
+
+            return { ok: false, report };
+        }, { payload: finalGstPayload, draftId: capturedDraftId });
 
         // Multi-State Registration Flow: Submit Common Info & State-wise Drafts
         if (automationMode === 'multistate') {
@@ -5363,17 +5398,18 @@ async function run() {
                         arn = candidate;
                     }
                 }
-                const isSuccess = bodyText.toLowerCase().includes('success') ||
-                    bodyText.toLowerCase().includes('acknowledgment') ||
-                    bodyText.toLowerCase().includes('submitted successfully') ||
-                    !modal || modal.offsetParent === null;
+                const isSuccess = bodyText.toLowerCase().includes('successfully submitted') ||
+                    bodyText.toLowerCase().includes('application has been submitted') ||
+                    bodyText.toLowerCase().includes('acknowledgment reference number') ||
+                    bodyText.toLowerCase().includes('application reference number') ||
+                    !!arn;
                 return { isError: false, isSuccess, arn, bodySnippet: bodyText.substring(0, 300) };
             });
 
             if (checkStatus.isError) {
                 sendUpdate(`❌ Invalid EVC OTP entered. Portal error: ${checkStatus.msg}. Please re-enter.`);
                 await page.waitForTimeout(1000);
-            } else {
+            } else if (checkStatus.isSuccess || checkStatus.arn) {
                 evcOtpSuccess = true;
                 sendUpdate('🎉 GST Application successfully submitted with EVC!');
                 if (checkStatus.arn) {
@@ -5398,6 +5434,9 @@ async function run() {
                     });
                     sendUpdate('Application status updated to Registered in database.');
                 } catch (e) { }
+            } else {
+                sendUpdate('Awaiting portal confirmation or valid OTP submission. Please verify in the open browser.');
+                await page.waitForTimeout(3000);
             }
         }
 

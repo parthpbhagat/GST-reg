@@ -283,7 +283,8 @@ app.post('/api/gst/upload-draft', async (req, res) => {
 
         // If active portal session cookies provided, directly POST to official endpoint
         if (cookies) {
-            const targetUrl = process.env.GST_API_SAVE_APP_DRAFT || 'https://reg.gst.gov.in/registration/auth/api/save/appdraftnewreg';
+            const baseTarget = process.env.GST_API_SAVE_APP_DRAFT || 'https://reg.gst.gov.in/registration/auth/api/save/appdraftnewreg';
+            const targetUrl = effectiveDraftId ? `${baseTarget}?draftId=${effectiveDraftId}&amendFlag=APLRG` : `${baseTarget}?amendFlag=APLRG`;
             const headers = {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json, text/plain, */*',
@@ -294,7 +295,7 @@ app.post('/api/gst/upload-draft', async (req, res) => {
             if (xsrfToken) headers['X-XSRF-TOKEN'] = xsrfToken;
 
             const postReq = https.request(targetUrl, {
-                method: 'POST',
+                method: 'PUT',
                 headers
             }, (postRes) => {
                 let raw = '';

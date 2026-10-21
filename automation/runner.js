@@ -2213,13 +2213,59 @@ async function run() {
         await page.waitForTimeout(2500);
 
         // =========================================================================
-        // [FULL 10-STEP WIZARD AUTOMATION]
-        // Step 1 to Step 10: Process each tab through the official wizard to ensure
-        // that all tabs (Promoters, Auth Signatory, Auth Rep, PPOB, APOB, HSN, State Specific, Aadhaar)
-        // receive their official blue checkmark (✓) and the Profile reaches 100%!
+        // [DIRECT JSON UPLOAD TO FINAL VERIFICATION]
+        // User Mode: Full JSON already uploaded to draft. Skip UI form automation.
+        // Direct navigation to Step 10 Verification for manual EVC OTP submission.
         // =========================================================================
-        sendUpdate('⚡ Commencing official 10-step wizard progression to secure 100% Profile with blue checkmarks (✓)...');
+        sendUpdate('⚡ Direct JSON Upload Mode: Navigating directly to Verification (Step 10)...');
         let isOnVerification = false;
+
+        try {
+            // 1. Ensure Aadhaar opt-in YES is committed
+            await page.goto('https://reg.gst.gov.in/registration/auth/newappl/aadhar', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
+            await page.waitForTimeout(1000);
+            await dismissAndConfirmModals('Aadhaar Direct Check');
+
+            await page.evaluate(() => {
+                const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
+                const yesR = radios.find(r => (r.value || '').toUpperCase() === 'Y' || (r.labels && r.labels[0] && r.labels[0].innerText.toLowerCase().includes('yes')) || (r.parentElement?.innerText || '').toLowerCase().includes('yes'));
+                if (yesR && !yesR.checked) {
+                    yesR.checked = true;
+                    yesR.click();
+                    yesR.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                const cbs = Array.from(document.querySelectorAll('table tbody tr input[type="checkbox"], input[id*="aadhaar" i], input[id*="adhr" i]'));
+                for (const cb of cbs) {
+                    if (!cb.checked) {
+                        cb.checked = true;
+                        cb.click();
+                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }
+            });
+            await page.waitForTimeout(500);
+            await dismissAndConfirmModals('Aadhaar Opted Yes');
+
+            // 2. Direct navigate to Final Form Verification (Step 10)
+            sendUpdate('Opening Final Form Verification screen (Step 10)...');
+            await page.goto('https://reg.gst.gov.in/registration/auth/newappl/verify', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { });
+            await page.waitForTimeout(2000);
+            await dismissAndConfirmModals('Direct Verification Entry');
+
+            isOnVerification = await page.evaluate(() => {
+                const text = (document.body.innerText || '').toLowerCase();
+                const hasEvc = !!Array.from(document.querySelectorAll('button, input')).find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));
+                const hasDecl = text.includes('hereby solemnly') || text.includes('affirm and declare') || !!document.querySelector('#chkVerify');
+                const url = window.location.href || '';
+                return url.includes('/verify') || (hasEvc && hasDecl);
+            });
+
+            if (isOnVerification) {
+                sendUpdate('✅ Arrived at Step 10: Final Form Verification screen.');
+            }
+        } catch (fastErr) {
+            sendUpdate(`Direct jump note: ${fastErr.message}. Fallback checking verification state...`);
+        }
 
         for (let tabStep = 0; tabStep < 22 && !isOnVerification; tabStep++) {
             // Check if we have reached Verification screen with all steps complete

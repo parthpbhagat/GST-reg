@@ -1233,9 +1233,30 @@ window.validateFullForm = function () {
     return true;
 };
 
+window.saveCurrentStepApi = async function (stepNum) {
+    try {
+        const appId = (window.form && window.form._appId) || window.activeAutomationAppId;
+        if (!appId) return;
+        const res = await fetch(`${API_BASE_URL}/api/gst/step/${stepNum}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ appId, stepData: window.form })
+        });
+        const json = await res.json();
+        console.log(`[Modular Step ${stepNum}] Saved via API:`, json);
+        return json;
+    } catch (e) {
+        console.warn(`[Modular Step ${stepNum}] Save error:`, e);
+    }
+};
+
 function setStep(newStep) {
     if (newStep === step + 1) {
         if (!validateStep(step)) return;
+    }
+
+    if (newStep > step) {
+        window.saveCurrentStepApi(step + 1);
     }
 
     if (newStep === 2) {
@@ -2961,6 +2982,18 @@ window.startAutomationPipeline = async function (id, mode = 'regular', multiStat
     addTerminalLog('Connecting to secure backend automation pipeline...');
 
     activeAutomationAppId = id;
+
+    // Pre-sync official 10-step GST Registration payload with backend draft
+    try {
+        await fetch(`${API_BASE_URL}/api/gst/final-form/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ appId: id })
+        });
+        addTerminalLog('Official 10-step GST Registration JSON synchronized successfully.');
+    } catch (e) {
+        console.warn('Final form sync warning:', e);
+    }
 
     if (!socket) {
         socket = io(`${API_BASE_URL}`);

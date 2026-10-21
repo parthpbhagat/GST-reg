@@ -1769,6 +1769,47 @@ async function run() {
             }
         };
 
+        let isOnVerification = false;
+
+        // =========================================================================
+        // [TURBO FAST-PATH: Direct Verification Jump after API Sync]
+        // =========================================================================
+        sendUpdate('⚡ Checking Turbo Fast-Path: Testing direct navigation to Step 10 Verification...');
+        try {
+            const turboJumpSuccess = await page.evaluate(() => {
+                const tabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) > li, .step-wizard li, .wizard-steps li'));
+                const verifyTab = tabs.find(e => (e.innerText || '').toLowerCase().includes('verification'));
+                if (verifyTab) {
+                    const link = verifyTab.querySelector('a, button') || verifyTab;
+                    link.click();
+                    return true;
+                }
+                return false;
+            });
+
+            if (turboJumpSuccess) {
+                await page.waitForTimeout(2500);
+                await dismissAndConfirmModals('Turbo Jump Verification');
+                const isReadyForVerification = await page.evaluate(() => {
+                    const text = (document.body.innerText || '').toLowerCase();
+                    const hasEvc = !!Array.from(document.querySelectorAll('button, input')).find(b => (b.innerText || b.value || '').toUpperCase().includes('EVC'));
+                    const hasDecl = text.includes('hereby solemnly') || text.includes('affirm and declare') || !!document.querySelector('#chkVerify, #chkVerification');
+                    const hasIncompleteWarning = text.includes('submit buttons will get enabled only after all mandatory fields are filled');
+                    return (hasEvc || hasDecl) && !hasIncompleteWarning;
+                });
+
+                if (isReadyForVerification) {
+                    sendUpdate('🎉 Turbo Fast-Path SUCCESS! 100% Profile achieved directly via API sync. Proceeding straight to Verification & EVC!');
+                    isOnVerification = true;
+                } else {
+                    sendUpdate('Turbo Fast-Path note: Portal requires sequential tab visits to refresh Angular models. Running step-by-step verification...');
+                }
+            }
+        } catch (turboErr) {
+            sendUpdate(`Turbo Fast-Path note: ${turboErr.message}`);
+        }
+
+        if (!isOnVerification) {
         // =========================================================================
         // [પગલું ૪: SEQUENTIAL WIZARD EXECUTION (STEPS 1 TO 10)]
         // =========================================================================
@@ -2329,10 +2370,9 @@ async function run() {
             }
         } catch (e) { }
 
-        await page.waitForTimeout(2000);
-        await dismissAndConfirmModals('Business Details Initial Save');
-
-        let isOnVerification = false;
+            await page.waitForTimeout(2000);
+            await dismissAndConfirmModals('Business Details Initial Save');
+        }
 
         for (let tabStep = 0; tabStep < 25 && !isOnVerification; tabStep++) {
             // Check if we have reached Verification screen with genuine 100% profile

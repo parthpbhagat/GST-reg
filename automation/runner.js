@@ -1745,9 +1745,14 @@ async function run() {
                 sendUpdate(`Advancing in-page wizard navigation to "${nextTabLabel}"...`);
                 const tabClicked = await page.evaluate((label) => {
                     const wizardTabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) > li, .step-wizard li, .wizard-steps li'));
+                    const target = label.toLowerCase();
                     const matching = wizardTabs.find(e => {
                         const t = (e.innerText || e.textContent || '').trim().toLowerCase();
-                        return t === label.toLowerCase() || t.includes(label.toLowerCase());
+                        if (t === target || t.includes(target) || target.includes(t)) return true;
+                        const keywords = ['promoter', 'signatory', 'representative', 'principal', 'additional', 'goods', 'state', 'aadhaar', 'verification', 'business'];
+                        const matchedKw = keywords.find(k => target.includes(k));
+                        if (matchedKw && t.includes(matchedKw)) return true;
+                        return false;
                     });
                     if (matching) {
                         const link = matching.querySelector('a, button') || matching;

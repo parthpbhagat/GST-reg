@@ -400,7 +400,7 @@ function buildGstApplicationPayload(data, draftId = '', trn = '', options = {}) 
         }
 
         asgdtls.push(Object.assign({}, firstOp, {
-            eid: 2,
+            eid: 1,
             isasg: 'Y',
             isasgcmpt: 'Y',
             ispas: 'Y',

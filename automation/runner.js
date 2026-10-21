@@ -1580,6 +1580,51 @@ async function run() {
                 await page.waitForTimeout(800);
                 const handled = await dismissAndConfirmModals(stepLabel);
                 if (handled) {
+                    const rawLow = (handled.raw || '').toLowerCase();
+                    if (rawLow.includes('duplicate mobile') || rawLow.includes('authorized signatory tab')) {
+                        sendUpdate('⚠️ Duplicate mobile detected with Authorized Signatory. Toggling "Also Authorized Signatory" to NO to save cleanly...');
+                        await page.evaluate(() => {
+                            const labels = Array.from(document.querySelectorAll('label, div, p, span, h4, h5'));
+                            const asTarget = labels.find(el => {
+                                const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                return t.includes('also authorized signatory') || t.includes('also signatory');
+                            });
+                            if (asTarget) {
+                                const container = asTarget.closest('.form-group, .row, div, section') || asTarget.parentElement;
+                                if (container) {
+                                    const isYes = (container.innerText || '').toLowerCase().includes('yes');
+                                    if (isYes) {
+                                        const clickEl = container.querySelector('.switch, label.switch, span.slider, div.toggle, switch, ui-switch, [role="checkbox"], input[type="checkbox"]') || container;
+                                        clickEl.click();
+                                    }
+                                    const cb = container.querySelector('input[type="checkbox"]');
+                                    if (cb) {
+                                        cb.checked = false;
+                                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                                        cb.dispatchEvent(new Event('input', { bubbles: true }));
+                                    }
+                                }
+                            }
+                            if (window.angular) {
+                                try {
+                                    const scopes = Array.from(document.querySelectorAll('form, [ng-controller], [ng-view], body')).map(e => window.angular.element(e).scope()).filter(Boolean);
+                                    for (const sc of scopes) {
+                                        ['promoter', 'p', 'prdtls', 'opdtls', 'proprietor', 'promoterPartner', 'prObj'].forEach(k => {
+                                            if (sc[k]) {
+                                                sc[k].isasg = 'N';
+                                                sc[k].isopas = 'N';
+                                            }
+                                        });
+                                        if (sc.promoter) { sc.promoter.isasg = 'N'; sc.promoter.isopas = 'N'; }
+                                        if (sc.p) { sc.p.isasg = 'N'; sc.p.isopas = 'N'; }
+                                        if (!sc.$$phase) sc.$apply();
+                                    }
+                                } catch (e) { }
+                            }
+                        });
+                        await page.waitForTimeout(800);
+                        await clickSaveButton();
+                    }
                     await page.waitForTimeout(1000);
                 } else if (m >= 3) {
                     break;
@@ -1638,8 +1683,54 @@ async function run() {
                 await page.waitForTimeout(1000);
                 for (let m = 0; m < 6; m++) {
                     const h = await dismissAndConfirmModals(stepLabel);
-                    if (h) await page.waitForTimeout(1000);
-                    else if (m >= 2) break;
+                    if (h) {
+                        const rawLow = (h.raw || '').toLowerCase();
+                        if (rawLow.includes('duplicate mobile') || rawLow.includes('authorized signatory tab')) {
+                            sendUpdate('⚠️ Duplicate mobile detected with Authorized Signatory. Toggling "Also Authorized Signatory" to NO...');
+                            await page.evaluate(() => {
+                                const labels = Array.from(document.querySelectorAll('label, div, p, span, h4, h5'));
+                                const asTarget = labels.find(el => {
+                                    const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                    return t.includes('also authorized signatory') || t.includes('also signatory');
+                                });
+                                if (asTarget) {
+                                    const container = asTarget.closest('.form-group, .row, div, section') || asTarget.parentElement;
+                                    if (container) {
+                                        const isYes = (container.innerText || '').toLowerCase().includes('yes');
+                                        if (isYes) {
+                                            const clickEl = container.querySelector('.switch, label.switch, span.slider, div.toggle, switch, ui-switch, [role="checkbox"], input[type="checkbox"]') || container;
+                                            clickEl.click();
+                                        }
+                                        const cb = container.querySelector('input[type="checkbox"]');
+                                        if (cb) {
+                                            cb.checked = false;
+                                            cb.dispatchEvent(new Event('change', { bubbles: true }));
+                                            cb.dispatchEvent(new Event('input', { bubbles: true }));
+                                        }
+                                    }
+                                }
+                                if (window.angular) {
+                                    try {
+                                        const scopes = Array.from(document.querySelectorAll('form, [ng-controller], [ng-view], body')).map(e => window.angular.element(e).scope()).filter(Boolean);
+                                        for (const sc of scopes) {
+                                            ['promoter', 'p', 'prdtls', 'opdtls', 'proprietor', 'promoterPartner', 'prObj'].forEach(k => {
+                                                if (sc[k]) {
+                                                    sc[k].isasg = 'N';
+                                                    sc[k].isopas = 'N';
+                                                }
+                                            });
+                                            if (sc.promoter) { sc.promoter.isasg = 'N'; sc.promoter.isopas = 'N'; }
+                                            if (sc.p) { sc.p.isasg = 'N'; sc.p.isopas = 'N'; }
+                                            if (!sc.$$phase) sc.$apply();
+                                        }
+                                    } catch (e) { }
+                                }
+                            });
+                            await page.waitForTimeout(800);
+                            await clickSaveButton();
+                        }
+                        await page.waitForTimeout(1000);
+                    } else if (m >= 2) break;
                 }
 
                 stillOnStep = await page.evaluate((curr) => {
@@ -1653,16 +1744,14 @@ async function run() {
             if (nextTabLabel) {
                 sendUpdate(`Advancing in-page wizard navigation to "${nextTabLabel}"...`);
                 const tabClicked = await page.evaluate((label) => {
-                    const allEls = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, .wizard-steps li, a, div, span, button'));
-                    const matching = allEls.filter(e => {
+                    const wizardTabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) > li, .step-wizard li, .wizard-steps li'));
+                    const matching = wizardTabs.find(e => {
                         const t = (e.innerText || e.textContent || '').trim().toLowerCase();
                         return t === label.toLowerCase() || t.includes(label.toLowerCase());
                     });
-                    const navTab = matching.find(e => e.closest('ul.nav-tabs, .step-wizard, .wizard-steps, nav') || e.tagName === 'A' || e.tagName === 'LI');
-                    if (navTab) {
-                        navTab.click();
-                        const link = navTab.querySelector('a, button');
-                        if (link) link.click();
+                    if (matching) {
+                        const link = matching.querySelector('a, button') || matching;
+                        link.click();
                         return true;
                     }
                     return false;
@@ -2283,6 +2372,39 @@ async function run() {
 
             // Inspect active tab / current screen via official GST Portal URL endpoints (Primary), Breadcrumb, and Headings
             const currentUrl = page.url() || '';
+            if (currentUrl.includes('/auth/dashboard') || currentUrl.endsWith('/home') || currentUrl.endsWith('/home/')) {
+                sendUpdate('Detected dashboard screen outside application wizard. Re-entering application wizard...');
+                await page.evaluate(() => {
+                    if (window.angular) {
+                        try {
+                            const tr = document.querySelector('table tbody tr');
+                            if (tr) {
+                                const sc = window.angular.element(tr).scope();
+                                if (sc && typeof sc.editSavedapp === 'function') {
+                                    const item = sc.x || sc.app || (sc.savedAppList && sc.savedAppList[0]);
+                                    sc.editSavedapp(item);
+                                    if (!sc.$$phase) sc.$apply();
+                                    return;
+                                }
+                            }
+                        } catch (e) { }
+                    }
+                    const table = document.querySelector('table');
+                    if (table) {
+                        const row = table.querySelector('tbody tr');
+                        if (row) {
+                            const actionCell = row.cells[row.cells.length - 1];
+                            if (actionCell) {
+                                const btn = actionCell.querySelector('a, button, i, span') || actionCell;
+                                btn.click();
+                            }
+                        }
+                    }
+                });
+                await page.waitForTimeout(3000);
+                continue;
+            }
+
             let urlStepKey = '';
             if (currentUrl.includes('/newappl/business/place')) urlStepKey = 'principal place';
             else if (currentUrl.includes('/newappl/business/addlplace')) urlStepKey = 'additional places';
@@ -2311,7 +2433,7 @@ async function run() {
 
                 // 2. Headings on the active form view (ignoring portal footer / news links)
                 const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, .panel-title, .card-title, .form-title, .title'));
-                const staticIgnoreHeadings = /news and updates|quick links|help|contact us|portal policies|disclaimer|related links|goods and services tax/i;
+                const staticIgnoreHeadings = /news and updates|quick links|help|contact us|portal policies|disclaimer|related links|goods and services tax|upcoming due dates|due date/i;
                 const headingTexts = headings.map(h => (h.innerText || '').trim().toLowerCase()).filter(t => t.length > 3 && !staticIgnoreHeadings.test(t));
 
                 // 3. Wizard steps
@@ -3158,7 +3280,65 @@ async function run() {
                             for (let pAttempt = 0; pAttempt < 6; pAttempt++) {
                                 await page.waitForTimeout(800);
                                 const handled = await dismissAndConfirmModals('Promoter Form Save');
-                                if (!handled && pAttempt >= 2) break;
+                                if (handled) {
+                                    const rawLow = (handled.raw || '').toLowerCase();
+                                    if (rawLow.includes('duplicate mobile') || rawLow.includes('authorized signatory tab')) {
+                                        sendUpdate('⚠️ Duplicate mobile detected with Authorized Signatory. Toggling "Also Authorized Signatory" to NO...');
+                                        await page.evaluate(() => {
+                                            const labels = Array.from(document.querySelectorAll('label, div, p, span, h4, h5'));
+                                            const asTarget = labels.find(el => {
+                                                const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+                                                return t.includes('also authorized signatory') || t.includes('also signatory');
+                                            });
+                                            if (asTarget) {
+                                                const container = asTarget.closest('.form-group, .row, div, section') || asTarget.parentElement;
+                                                if (container) {
+                                                    const isYes = (container.innerText || '').toLowerCase().includes('yes');
+                                                    if (isYes) {
+                                                        const clickEl = container.querySelector('.switch, label.switch, span.slider, div.toggle, switch, ui-switch, [role="checkbox"], input[type="checkbox"]') || container;
+                                                        clickEl.click();
+                                                    }
+                                                    const cb = container.querySelector('input[type="checkbox"]');
+                                                    if (cb) {
+                                                        cb.checked = false;
+                                                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                                                        cb.dispatchEvent(new Event('input', { bubbles: true }));
+                                                    }
+                                                }
+                                            }
+                                            if (window.angular) {
+                                                try {
+                                                    const scopes = Array.from(document.querySelectorAll('form, [ng-controller], [ng-view], body')).map(e => window.angular.element(e).scope()).filter(Boolean);
+                                                    for (const sc of scopes) {
+                                                        ['promoter', 'p', 'prdtls', 'opdtls', 'proprietor', 'promoterPartner', 'prObj'].forEach(k => {
+                                                            if (sc[k]) {
+                                                                sc[k].isasg = 'N';
+                                                                sc[k].isopas = 'N';
+                                                            }
+                                                        });
+                                                        if (sc.promoter) { sc.promoter.isasg = 'N'; sc.promoter.isopas = 'N'; }
+                                                        if (sc.p) { sc.p.isasg = 'N'; sc.p.isopas = 'N'; }
+                                                        if (!sc.$$phase) sc.$apply();
+                                                    }
+                                                } catch (e) { }
+                                            }
+                                        });
+                                        await page.waitForTimeout(800);
+                                        // Re-click save
+                                        await page.evaluate(() => {
+                                            const btns = Array.from(document.querySelectorAll('button, input[type="button"], a.btn'));
+                                            const saveBtn = btns.find(b => {
+                                                const t = (b.innerText || b.value || '').trim();
+                                                return /^save$/i.test(t) || (/save/i.test(t) && !/continue/i.test(t));
+                                            });
+                                            if (saveBtn) {
+                                                saveBtn.removeAttribute('disabled');
+                                                saveBtn.disabled = false;
+                                                saveBtn.click();
+                                            }
+                                        });
+                                    }
+                                } else if (pAttempt >= 2) break;
                             }
                         }
                     } catch (e) { }
@@ -3290,6 +3470,46 @@ async function run() {
 
                 // Case 1: Signatories are present in Table mode
                 if (asgState.rowCount > 0 && !hasDuplicateEmailError) {
+                    // 1a. Clean up duplicate row if rowCount > 1
+                    if (asgState.rowCount > 1) {
+                        sendUpdate(`Detected duplicate row in Authorized Signatory table (${asgState.rowCount} rows). Removing extra row...`);
+                        try {
+                            const deleted = await page.evaluate(() => {
+                                const rows = Array.from(document.querySelectorAll('table tbody tr')).filter(r => {
+                                    const t = (r.innerText || '').toLowerCase();
+                                    return t.length > 5 && !t.includes('no records') && !t.includes('no data');
+                                });
+                                if (rows.length > 1) {
+                                    const lastRow = rows[rows.length - 1];
+                                    const delBtn = lastRow.querySelector('.fa-trash, .fa-trash-o, [title*="Delete" i], [aria-label*="Delete" i], button.btn-danger, a.btn-danger');
+                                    if (delBtn) {
+                                        delBtn.click();
+                                        return true;
+                                    }
+                                }
+                                return false;
+                            });
+                            if (deleted) {
+                                await page.waitForTimeout(1000);
+                                await dismissAndConfirmModals('Delete Duplicate Signatory');
+                                await page.waitForTimeout(1000);
+                            }
+                        } catch (e) { }
+                    }
+
+                    // 1b. If form is open while rows exist in table, cancel/close the open form
+                    if (asgState.hasForm && asgState.rowCount > 0) {
+                        sendUpdate('Closing open Authorized Signatory form to preserve existing table record...');
+                        await page.evaluate(() => {
+                            const cancelBtn = Array.from(document.querySelectorAll('button, input[type="button"], a.btn')).find(b => {
+                                const t = (b.innerText || b.value || '').trim().toLowerCase();
+                                return t === 'cancel' || t === 'back' || t === 'close';
+                            });
+                            if (cancelBtn) cancelBtn.click();
+                        });
+                        await page.waitForTimeout(1000);
+                    }
+
                     // Check Primary Authorized Signatory checkbox/radio in the table
                     try {
                         const rowLoc = page.locator('table tbody tr').first();
@@ -4849,12 +5069,13 @@ async function run() {
                     sendUpdate('Notice: Verification tab reached but Profile is incomplete. Navigating to incomplete tabs...');
                     // Click the first incomplete wizard tab
                     const jumped = await page.evaluate(() => {
-                        const tabs = Array.from(document.querySelectorAll('ul.nav-tabs li, .step-wizard li, .wizard-steps li, .nav li, a, div'));
+                        const tabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) > li, .step-wizard li, .wizard-steps li'));
                         for (const t of tabs) {
-                            const isCheck = !!t.querySelector('.fa-check, [class*="check"], svg, img[src*="check"]');
-                            const txt = (t.innerText || '').toLowerCase();
-                            if (!isCheck && (txt.includes('promoter') || txt.includes('authorized representative') || txt.includes('additional place') || txt.includes('aadhaar'))) {
-                                const clickEl = t.querySelector('a, button, div') || t;
+                            const isCheck = !!t.querySelector('.fa-check, [class*="check"], svg, img[src*="check"]') || t.classList.contains('completed');
+                            const txt = (t.innerText || '').trim();
+                            const lower = txt.toLowerCase();
+                            if (!isCheck && !lower.includes('verification') && !lower.includes('home') && !lower.includes('dashboard') && txt.length > 2) {
+                                const clickEl = t.querySelector('a, button') || t;
                                 clickEl.click();
                                 return txt;
                             }
@@ -4866,10 +5087,12 @@ async function run() {
                         await page.waitForTimeout(2500);
                         continue;
                     } else {
-                        // Fallback: click Promoter tab
+                        // Fallback: click Promoter tab via exact wizard selector
+                        sendUpdate('Profile incomplete: Navigating to Promoter tab to verify details...');
                         await page.evaluate(() => {
-                            const el = Array.from(document.querySelectorAll('a, li, div')).find(e => (e.innerText || '').toLowerCase().includes('promoter'));
-                            if (el) el.click();
+                            const tabs = Array.from(document.querySelectorAll('ul.nav-tabs:not(.navbar-nav) > li a'));
+                            const pTab = tabs.find(a => (a.innerText || '').toLowerCase().includes('promoter'));
+                            if (pTab) pTab.click();
                         });
                         await page.waitForTimeout(2500);
                         continue;
